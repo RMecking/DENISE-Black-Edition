@@ -24,15 +24,15 @@ extern int TIMEWIN, ROWI;
 extern float TWLENGTH_PLUS, TWLENGTH_MINUS, GAMMA;
 extern float WD_DAMP, WD_DAMP1, SCALERHO, SCALEQS;
 extern float GAMMA_GRAV;
-
+extern char FILE_TAPER[STRING_SIZE];
 /* definition of local variables */
 int i;
 char str [80];
 
-fscanf(fp,"%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s",str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str);
+fscanf(fp,"%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s",str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str);
 for (i=1;i<=nstage;i++){
      
-fscanf(fp,"%f%i%f%f%i%i%f%f%f%i%i%i%i%i%f%f%i%i%i%i%f%f%i%i%f%f%f%i%f%i",&PRO,&TIME_FILT,&FC_START,&FC_END,&ORDER,&TIMEWIN,&GAMMA,&TWLENGTH_MINUS,&TWLENGTH_PLUS,&INV_VP_ITER,&INV_VS_ITER,&INV_RHO_ITER,&INV_QS_ITER,&SPATFILTER,&WD_DAMP,&WD_DAMP1,&EPRECOND,&LNORM,&ROWI,&INV_STF,&OFFSETC_STF,&EPS_STF,&NORMALIZE,&OFFSET_MUTE,&OFFSETC,&SCALERHO,&SCALEQS,&ENV,&GAMMA_GRAV,&N_ORDER);
+fscanf(fp,"%f%i%f%f%i%i%f%f%f%s%i%i%i%i%i%f%f%i%i%i%i%f%f%i%i%f%f%f%i%f%i",&PRO,&TIME_FILT,&FC_START,&FC_END,&ORDER,&TIMEWIN,&GAMMA,&TWLENGTH_MINUS,&TWLENGTH_PLUS,&FILE_TAPER, &INV_VP_ITER,&INV_VS_ITER,&INV_RHO_ITER,&INV_QS_ITER,&SPATFILTER,&WD_DAMP,&WD_DAMP1,&EPRECOND,&LNORM,&ROWI,&INV_STF,&OFFSETC_STF,&EPS_STF,&NORMALIZE,&OFFSET_MUTE,&OFFSETC,&SCALERHO,&SCALEQS,&ENV,&GAMMA_GRAV,&N_ORDER);
 }
 
 fclose(fp);

@@ -19,7 +19,7 @@ void taper_grad(float **waveconv, float **taper_coeff, float **srcpos, int nshot
         extern int FREE_SURF, NX, NY, NXG, NYG;
         extern int NPROCX, NPROCY, MYID, POS[3];
         extern int GRADT1, GRADT2, GRADT3, GRADT4;
-        extern char TFILE[STRING_SIZE];
+        extern char TFILE[STRING_SIZE], FILE_TAPER[STRING_SIZE];
         extern FILE *FP;
 
         /* local variables */
@@ -565,7 +565,7 @@ void taper_grad(float **waveconv, float **taper_coeff, float **srcpos, int nshot
         /* ======================== */
         /* Read Taper from file     */
         /* ======================== */
-
+	/* layer stripping (Rebekka, 20.01.2020): unterschiedliche taper pro stage einladen)*/
         if ((sws >= 4) && (sws <= 6))
         {
 
@@ -577,18 +577,24 @@ void taper_grad(float **waveconv, float **taper_coeff, float **srcpos, int nshot
 
                 if (sws == 4)
                 {
-			sprintf(modfile, "%s.bin", TFILE);
+			sprintf(modfile, "%s_%s.bin", TFILE,FILE_TAPER);
                         fp_taper = fopen(modfile, "r");
+                        fprintf(FP, "\n **Message from taper_grid (printed by PE %d):\n", MYID);
+                        fprintf(FP, " Loader taper_%s.bin.\n", FILE_TAPER);			
                 }
                 if (sws == 5)
                 {
-			sprintf(modfile, "%s_u.bin", TFILE);
+			sprintf(modfile, "%s_u_%s.bin", TFILE,FILE_TAPER);
                         fp_taper = fopen(modfile, "r");
+                        fprintf(FP, "\n **Message from taper_grid (printed by PE %d):\n", MYID);
+                        fprintf(FP, " loaded taper_u_%s.bin.\n", FILE_TAPER);			
                 }
                 if (sws == 6)
                 {
-			sprintf(modfile, "%s_rho.bin", TFILE);
+			sprintf(modfile, "%s_rho_%s.bin", TFILE,FILE_TAPER);
                         fp_taper = fopen(modfile, "r");
+                        fprintf(FP, "\n **Message from taper_grid (printed by PE %d):\n", MYID);
+                        fprintf(FP, " loaded taper_rho_%s.bin.\n", FILE_TAPER);			
                 }
 
                 /* loop over global grid */
@@ -619,7 +625,7 @@ void taper_grad(float **waveconv, float **taper_coeff, float **srcpos, int nshot
 
                 fclose(fp_taper);
 
-                sprintf(modfile, "%s_coeff_file.bin", TFILE);
+                sprintf(modfile, "%s_coeff_file_%s.bin", TFILE,FILE_TAPER);
                 writemod(modfile, taper_coeff, 3);
 
                 MPI_Barrier(MPI_COMM_WORLD);

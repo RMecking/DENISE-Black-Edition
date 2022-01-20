@@ -7,30 +7,33 @@
 double calc_res(float **sectiondata, float **section, float **sectiondiff, float **sectiondiffold, int ntr, int ns, int LNORM, double L2, int itest, int sws, int swstestshot, int ntr_glob, int **recpos, int **recpos_loc, float **srcpos, int nsrc_glob, int ishot, int iter){
 
 /* declaration of variables */
-extern float DT, DH, OFFSETC, FC, FC_START, FC_END, C_vp, C_rho;
+extern float DT, DH, OFFSETC, FC, FC_START, FC_END, C_vp, C_rho, TWLENGTH_PLUS, TWLENGTH_MINUS, GAMMA;
 extern int REC1, REC2, MYID, MYID_SHOT, ORDER, COMP_WEIGHT;
 extern int TRKILL, GRAD_FORM, ENV, N_ORDER;
 extern char TRKILL_FILE[STRING_SIZE];
+extern char PICKS_FILE[STRING_SIZE];
 extern int NORMALIZE, TIMEWIN, MODE, OFFSET_MUTE;
 
 int Lcount,i,j,invtime,k,h,umax=0,h1;
-int NAGC;
+int NAGC, diffwi=1;
 
 double l2;
-
+char pickfile_char[STRING_SIZE];
 float RMS, RMS_obs, signL1, intseis;
 float abs_data, abs_synthetics, data_mult_synthetics, intseis_data, intseis_synthetics;
 float intseis_section, intseis_sectiondata, offset, xr, yr, xs, ys;
-float *picked_times=NULL, eps;
+float *picked_times=NULL, eps, *pick_tmp1, dump;
 float **integrated_section=NULL, **integrated_sectiondata=NULL;
 float **integrated_sectiondata_envelope=NULL, **integrated_section_envelope=NULL, **integrated_section_hilbert=NULL;
 float ** agc_sectiondata = NULL;
 float **dummy_1=NULL, **dummy_2=NULL; 
-float EPS_LNORM, EPS_LNORM6, tmp, tmp1;
+float EPS_LNORM, EPS_LNORM6, tmp, tmp1, vdir=850.00, tdir;
 
 /* NIM objective function parameters */
 float Qmod, Qtrue, Q1, Q2, Q3;
 float ** Q_mod=NULL, ** Q_true=NULL, **dQ=NULL; 
+
+FILE *fptime;
 
 /* EPS_LNORM=1e1; */
 EPS_LNORM=0.0;
@@ -38,6 +41,36 @@ EPS_LNORM6=1e-9;
 eps=1e-15;
 
 if(TIMEWIN) picked_times = vector(1,ntr);
+
+if(TIMEWIN==1){
+
+pick_tmp1 = vector(1,ntr_glob);
+
+sprintf(pickfile_char,"%s%i.dat",PICKS_FILE,ishot);
+
+fptime=fopen(pickfile_char,"r");
+if (fptime == NULL) {
+err(" picks_?.dat could not be opened !");
+}
+
+  for(i=1;i<=ntr_glob;i++){
+    fscanf(fptime,"%f",&dump);
+    pick_tmp1[i] = dump;
+  }
+
+fclose(fptime);
+
+/* distribute picks on CPUs */
+h=1;
+  for(i=1;i<=ntr;i++){
+
+    picked_times[h] = pick_tmp1[recpos_loc[3][i]];
+    
+    h++;}
+
+free_vector(pick_tmp1,1,ntr_glob);
+    
+} /* end of if(TIMEWIN==1) */
 
 /* sectiondiff will be set to zero*/
 umax=ntr*ns;
@@ -418,7 +451,31 @@ for(i=1;i<=ntr;i++){
                        
                         if(j==1){sectiondata[i][j]=section[i][j];}
                         
+			if(TIMEWIN == 1 && diffwi ==1){
 			
+			    /* get source and receiver positions */
+                            xr = recpos[1][recpos_loc[3][i]]*DH;
+                            xs = srcpos[1][ishot];
+                            yr = recpos[2][recpos_loc[3][i]]*DH;
+                            ys = srcpos[2][ishot];
+
+                            /* calculate absolute offset */
+                            offset = sqrt(((xs-xr)*(xs-xr))+((ys-yr)*(ys-yr)));
+
+			    /* compute direct wave arrival time tdir */
+			    /*tdir = offset / vdir;*/
+			    tdir=picked_times[i];
+			    if((j*DT) <= tdir + TWLENGTH_MINUS){
+			    	sectiondata[i][j] *= exp(-GAMMA*(j*DT-(tdir+TWLENGTH_MINUS))*(j*DT-(tdir+TWLENGTH_MINUS)));
+				    section[i][j] *= exp(-GAMMA*(j*DT-(tdir+TWLENGTH_MINUS))*(j*DT-(tdir+TWLENGTH_MINUS)));
+			    }
+			    if((j*DT) >= tdir + TWLENGTH_PLUS){
+			    	sectiondata[i][j] *= exp(-GAMMA*(j*DT-(tdir+TWLENGTH_PLUS))*(j*DT-(tdir+TWLENGTH_PLUS)));
+				    section[i][j] *= exp(-GAMMA*(j*DT-(tdir+TWLENGTH_PLUS))*(j*DT-(tdir+TWLENGTH_PLUS)));
+			    }			    
+
+			}
+						
 			/* calculate L1 residuals */
 			if(LNORM==1){
 			if(((sectiondata[i][j]-section[i][j]))>0){signL1=1.0;}
