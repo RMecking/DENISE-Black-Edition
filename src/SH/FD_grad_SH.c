@@ -221,13 +221,13 @@ mem_fwiPSV(nseismograms,ntr,ns,fdo3,nd,buffsize,ntr_glob);
 
 /* Define gradient formulation */
 /* GRAD_FORM = 2 - stress-velocity gradients for symmetrized impedance matrix */
-GRAD_FORM = 2;
+/*GRAD_FORM = 2;*/
 
 /* Calculate FD-based gradient for model parameter class FD_GRAD_MAT */
 /* FD_GRAD_MAT = 1 - S-wave velocity */
 /* FD_GRAD_MAT = 2 - density */
 /* FD_GRAD_MAT = 3 - tau_s = 2/Qs */
-FD_GRAD_MAT = 2;
+FD_GRAD_MAT = 1;
 
 /* allocate memory for SH forward problem */
 alloc_SH(&waveSH,&waveSH_PML);

@@ -265,6 +265,10 @@ if(LNORM==6){
            calc_hilbert(dummy_1,dummy_2,ns,ntr);
 
         }
+	/* L5 envelope objective function*/
+	if(ENV==5){
+	/*hier werden eigentlich nur irgendwelche Normierungsfaktoren berechnet...*/
+	}
 	
 
 } /* end of if LNORM==6 */
@@ -390,6 +394,35 @@ for(i=1;i<=ntr;i++){
 	abs_data=sqrt(abs_data);
 	abs_synthetics=sqrt(abs_synthetics);
 	
+     }
+     /* L5 envelope norm*/
+     if(LNORM==6 && ENV==5){
+    	abs_data=0.0;
+	abs_synthetics=0.0;
+	data_mult_synthetics=0.0;
+	
+        if(GRAD_FORM==2){
+	   for(j=1;j<=ns;j++){
+	      intseis_data=integrated_sectiondata_envelope[i][j];
+	      intseis_synthetics=integrated_section_envelope[i][j];
+	      abs_data+=intseis_data*intseis_data;
+	      abs_synthetics+=intseis_synthetics*intseis_synthetics;
+	      data_mult_synthetics+=intseis_synthetics*intseis_data;
+	   }
+        }
+
+        /*if(GRAD_FORM==1){
+           for(j=1;j<=ns;j++){
+              intseis_data=integrated_sectiondata[i][j];  
+              intseis_synthetics=integrated_section[i][j];  
+              abs_data+=intseis_data*intseis_data;  
+              abs_synthetics+=intseis_synthetics*intseis_synthetics;  
+              data_mult_synthetics+=intseis_synthetics*intseis_data;  
+           }
+        }*/
+
+	abs_data=sqrt(abs_data);
+	abs_synthetics=sqrt(abs_synthetics);     
      }
      
      if(LNORM==7){
@@ -549,6 +582,17 @@ for(i=1;i<=ntr;i++){
                           if(ENV==2){ /* Log L2 envelope objective function */
                             sectiondiff[i][invtime]=dummy_2[i][j] - ((integrated_section[i][j]/(integrated_section_envelope[i][j]*integrated_section_envelope[i][j]+EPS_LNORM6))*(log(integrated_sectiondata_envelope[i][j]+EPS_LNORM6)-log(integrated_section_envelope[i][j]+EPS_LNORM6)));
                           }
+			  if(ENV==5){ /* L5 envelope objective function */
+                          if(GRAD_FORM==2){
+			    intseis_data = integrated_sectiondata_envelope[i][j];
+			    intseis_synthetics = integrated_section_envelope[i][j];
+                          }
+                          tmp = abs_synthetics*abs_synthetics*abs_synthetics*abs_data;
+                          tmp1 = abs_synthetics*abs_data;
+
+                          sectiondiff[i][invtime]=((intseis_synthetics*data_mult_synthetics)/(tmp+EPS_LNORM6)) - (intseis_data/(tmp1+EPS_LNORM6));			  
+			  			  
+			  }
 
                         }
 			
@@ -629,7 +673,14 @@ for(i=1;i<=ntr;i++){
            if(ENV==2){ /* Log L2 envelope objective function */
 	      L2+=0.5 * (log(integrated_section_envelope[i][invtime]+EPS_LNORM6)-log(integrated_sectiondata_envelope[i][invtime]+EPS_LNORM6)) * (log(integrated_section_envelope[i][invtime]+EPS_LNORM6)-log(integrated_sectiondata_envelope[i][invtime]+EPS_LNORM6));
 	   }
-
+	   /* L5 envelope objective function Oh & Alkalifah, 2018 */
+	   if (ENV==5) { 
+              tmp = abs_data*abs_synthetics;
+	      L2-=(intseis_data*intseis_synthetics)/(tmp+EPS_LNORM6);	  
+	      if (j==ns && i==ntr){
+	      printf("L5-envelope misfit: %f \n", L2);
+	      } 
+	   }
 
          }
 	 
