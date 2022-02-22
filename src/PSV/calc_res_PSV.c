@@ -28,7 +28,7 @@ if((QUELLTYPB==1)||(QUELLTYPB==3)||(QUELLTYPB==5)||(QUELLTYPB==7)){ /* if QUELLT
 
 inseis(ishot,(*seisPSVfwi).sectionread,ntr_glob,ns,1,iter);
 
-if (TIME_FILT){
+if (TIME_FILT==1){
    apply_tdfilt((*seisPSVfwi).sectionread,ntr_glob,ns,ORDER,FC,FC_START);
 }
 
@@ -47,7 +47,7 @@ if(TIMELAPSE==1){
   /* read synthetic seismic data at time step t0 vx */
   inseis(ishot,(*seisPSVfwi).sectionread,ntr_glob,ns,9,iter);
 
-  if (TIME_FILT){
+  if (TIME_FILT==1){
    apply_tdfilt((*seisPSVfwi).sectionread,ntr_glob,ns,ORDER,FC,FC_START);
   }
   
@@ -81,7 +81,7 @@ if((QUELLTYPB==1)||(QUELLTYPB==2)||(QUELLTYPB==6)||(QUELLTYPB==7)){ /* if QUELLT
 
 inseis(ishot,(*seisPSVfwi).sectionread,ntr_glob,ns,2,iter);
 
-if (TIME_FILT){
+if (TIME_FILT==1){
    apply_tdfilt((*seisPSVfwi).sectionread,ntr_glob,ns,ORDER,FC,FC_START);
 }
 
@@ -100,7 +100,7 @@ if(TIMELAPSE==1){
     /* read synthetic seismic data at time step t0 vy */
     inseis(ishot,(*seisPSVfwi).sectionread,ntr_glob,ns,10,iter); 
 
-    if (TIME_FILT){	
+    if (TIME_FILT==1){	
        apply_tdfilt((*seisPSVfwi).sectionread,ntr_glob,ns,ORDER,FC,FC_START);
     }
    
@@ -135,7 +135,7 @@ if(QUELLTYPB>=4){ /* if QUELLTYPB */
 
 inseis(ishot,(*seisPSVfwi).sectionread,ntr_glob,ns,11,iter);
 
-if (TIME_FILT){
+if (TIME_FILT==1){
    apply_tdfilt((*seisPSVfwi).sectionread,ntr_glob,ns,ORDER,FC,FC_START);
 }
 
@@ -154,7 +154,7 @@ if(TIMELAPSE==1){
     /* read synthetic seismic data at time step t0 vy */
     inseis(ishot,(*seisPSVfwi).sectionread,ntr_glob,ns,15,iter);
 
-    if (TIME_FILT){
+    if (TIME_FILT==1){
        apply_tdfilt((*seisPSVfwi).sectionread,ntr_glob,ns,ORDER,FC,FC_START);
     }
 

@@ -51,7 +51,7 @@ void stf_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct ma
 	      /* --------------------------------- */
 	      inseis(ishot,(*seisPSVfwi).sectionread,ntr_glob,ns,2,iter);
 
-	      if (TIME_FILT){
+	      if (TIME_FILT==1){
                  apply_tdfilt((*seisPSVfwi).sectionread,ntr_glob,ns,ORDER,FC,FC_START);
 	      }
 

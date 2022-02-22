@@ -113,7 +113,7 @@ double obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct 
 		}
 
 		/* time domain filtering*/
-		if ((TIME_FILT)&&(INV_STF==0)){
+		if ((TIME_FILT==1)&&(INV_STF==0)){
 	
 		   /* time domain filtering of the source signal */
 		   apply_tdfilt((*acq).signals,nsrc_loc,ns,ORDER,FC,FC_START);

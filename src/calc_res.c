@@ -9,7 +9,7 @@ double calc_res(float **sectiondata, float **section, float **sectiondiff, float
 /* declaration of variables */
 extern float DT, DH, OFFSETC, FC, FC_START, FC_END, C_vp, C_rho, TWLENGTH_PLUS, TWLENGTH_MINUS, GAMMA;
 extern int REC1, REC2, MYID, MYID_SHOT, ORDER, COMP_WEIGHT;
-extern int TRKILL, GRAD_FORM, ENV, N_ORDER;
+extern int TRKILL, GRAD_FORM, ENV, N_ORDER, TIME_FILT;
 extern char TRKILL_FILE[STRING_SIZE];
 extern char PICKS_FILE[STRING_SIZE];
 extern int NORMALIZE, TIMEWIN, MODE, OFFSET_MUTE;
@@ -231,10 +231,12 @@ if(LNORM==6){
         calc_hilbert(integrated_section,integrated_section_hilbert,ns,ntr); 
 
 	/* low-pass filter envelope data */
-	/*timedomain_filt(integrated_sectiondata_envelope,FC,ORDER,ntr,ns,1);
+	
+	if (TIME_FILT==2){
+	timedomain_filt(integrated_sectiondata_envelope,FC,ORDER,ntr,ns,1);
 	timedomain_filt(integrated_section_envelope,FC,ORDER,ntr,ns,1);
-	timedomain_filt(integrated_section_hilbert,FC,ORDER,ntr,ns,1);*/
-
+	timedomain_filt(integrated_section_hilbert,FC,ORDER,ntr,ns,1);
+	}
 
         /* L2 envelope objective function*/
         if(ENV==1){
@@ -267,7 +269,7 @@ if(LNORM==6){
         }
 	/* L5 envelope objective function*/
 	if(ENV==5){
-	/*hier werden eigentlich nur irgendwelche Normierungsfaktoren berechnet...*/
+	/*hier werden eigentlich nur irgendwelche Normierungsfaktoren berechnet... in L5 nicht gebraucht*/
 	}
 	
 
@@ -411,15 +413,15 @@ for(i=1;i<=ntr;i++){
 	   }
         }
 
-        /*if(GRAD_FORM==1){
+        if(GRAD_FORM==1){
            for(j=1;j<=ns;j++){
-              intseis_data=integrated_sectiondata[i][j];  
-              intseis_synthetics=integrated_section[i][j];  
+              intseis_data=integrated_sectiondata_envelope[i][j];  
+              intseis_synthetics=integrated_section_envelope[i][j];  
               abs_data+=intseis_data*intseis_data;  
               abs_synthetics+=intseis_synthetics*intseis_synthetics;  
               data_mult_synthetics+=intseis_synthetics*intseis_data;  
            }
-        }*/
+        }
 
 	abs_data=sqrt(abs_data);
 	abs_synthetics=sqrt(abs_synthetics);     
@@ -583,7 +585,7 @@ for(i=1;i<=ntr;i++){
                             sectiondiff[i][invtime]=dummy_2[i][j] - ((integrated_section[i][j]/(integrated_section_envelope[i][j]*integrated_section_envelope[i][j]+EPS_LNORM6))*(log(integrated_sectiondata_envelope[i][j]+EPS_LNORM6)-log(integrated_section_envelope[i][j]+EPS_LNORM6)));
                           }
 			  if(ENV==5){ /* L5 envelope objective function */
-                          if(GRAD_FORM==2){
+                          if(GRAD_FORM==2 || GRAD_FORM==1){ /* da die Variablen fuer GRADFORM 1 und 2 gleichbenannt sind*/
 			    intseis_data = integrated_sectiondata_envelope[i][j];
 			    intseis_synthetics = integrated_section_envelope[i][j];
                           }

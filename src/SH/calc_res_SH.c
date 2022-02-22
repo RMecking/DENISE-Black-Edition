@@ -28,7 +28,7 @@ if(QUELLTYPB){ /* if QUELLTYPB */
 
     inseis(ishot,(*seisSHfwi).sectionread,ntr_glob,ns,2,iter);
 
-    if (TIME_FILT){
+    if (TIME_FILT==1){
         apply_tdfilt((*seisSHfwi).sectionread,ntr_glob,ns,ORDER,FC,FC_START);
     }
 

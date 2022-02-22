@@ -148,7 +148,7 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 		}
 
 		/* time domain filtering*/
-		if ((TIME_FILT) && (INV_STF == 0))
+		if ((TIME_FILT==1) && (INV_STF == 0))
 		{
 
 			/* time domain filtering of the source signal */

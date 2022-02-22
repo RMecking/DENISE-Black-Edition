@@ -50,7 +50,7 @@ void stf_sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *
 	      /* --------------------------------- */
 	      inseis(ishot,(*seisSHfwi).sectionread,ntr_glob,ns,2,iter);
 
-	      if (TIME_FILT){
+	      if (TIME_FILT==1){
                  apply_tdfilt((*seisSHfwi).sectionread,ntr_glob,ns,ORDER,FC,FC_START);
 	      }
 

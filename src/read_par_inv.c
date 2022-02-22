@@ -59,7 +59,7 @@ if(MYID==0){
    
    printf("\n\n");
    printf(" --------------- Frequency filtering -------------------\n");
-	if (TIME_FILT){
+	if (TIME_FILT==1){
 	   printf(" TIME_FILT=%d: Time domain filtering is applied \n",TIME_FILT);
 
            if (FC_START<=0.0){
@@ -73,6 +73,9 @@ if(MYID==0){
            }
 
         }
+	else if (TIME_FILT==2){
+	   printf(" TIME_FILT=%d: Time domain filtering on the envelopes is applied \n",TIME_FILT);
+	   }
 	else printf(" TIME_FILT=%d: No time domain filtering is applied.\n",TIME_FILT);
 
    printf("\n\n");
