@@ -239,7 +239,7 @@ homogeneous reference enlarges the tested dimension from 120 to 360 cells so
 the external reference boundary cannot return during analysis. Material,
 `DH`, `DT`, FD8/Holberg coefficients, source function, source/receiver offsets,
 and grid phase are identical. Because DENISE fixes its coordinate origin and
-does not accept a negative model origin, left/top references cannot literally
+does not accept a negative model origin, left/`y_min` references cannot literally
 retain their input coordinate numbers while moving those boundaries outward.
 Every reference therefore translates source and receiver together by exactly
 120 grid cells in the enlarged dimension. This is a change of computational
@@ -315,8 +315,8 @@ Observed WSL baseline (acceptance values above were declared independently):
 | --- | ---: | ---: |
 | SH left normal | 0.000344021 | -69.27 dB |
 | SH right normal | 0.000317903 | -69.95 dB |
-| SH top normal | 0.000344021 | -69.27 dB |
-| SH bottom normal | 0.000317903 | -69.95 dB |
+| SH `y_min` normal | 0.000344021 | -69.27 dB |
+| SH `y_max` normal | 0.000317903 | -69.95 dB |
 | SH oblique right | 0.000730314 | -62.73 dB |
 | SH corner/overlap | 0.001310140 | -57.65 dB |
 | P normal x | 0.0003053 | -70.31 dB |
@@ -324,11 +324,104 @@ Observed WSL baseline (acceptance values above were declared independently):
 | SV normal x | 0.0006380 | -63.90 dB |
 | SH right, `FW=0` | 0.254429 | -11.89 dB |
 
-Left/right and top/bottom differences are both 0.686 dB. Disabling CPML
+Left/right and `y_min`/`y_max` differences are both 0.686 dB. Here `y_min` is
+DENISE's physical upper side and the side on which `FREE_SURF=1` replaces CPML;
+`y_max` is the physical lower side. Disabling CPML
 degrades the metric by 58.07 dB. All three non-reference MPI layouts currently
 have relative L2 `0.0` and correlation `1.0` (within floating display). The
 eight CPML pytest cases, comprising 25 DENISE runs, take about 70 seconds in
 the documented WSL environment and remain in the mandatory quick suite.
+
+## M3 free-surface and elastic-interface verification (review stop)
+
+M3 was intentionally stopped after the predeclared normal-SV interface timing
+criterion failed. The failing case and its generated metrics remain in the
+suite. No tolerance was relaxed and no solver file was changed. The oblique
+interface and both new MPI tests were implemented before this result but were
+not executed locally after the stop condition.
+
+### Capability audit and coordinate conventions
+
+The active elastic P/SV loop calls `surface_elastic_PML_PSV(1, ...)`. That
+routine states and implements the stress-free surface at `y=0.5*DH`, or 5 m for
+the M3 grid. All analytical surface paths use that location. In contrast, the
+free-surface blocks in both elastic and viscoelastic SH stepping functions are
+commented out. M3 therefore makes no SH free-surface claim; this is an existing
+capability gap, not repaired here.
+
+All analytical intervals now must lie wholly between the first DENISE sample
+at `dt` and the final sample at `NT*dt`. `time_interval()` raises instead of
+silently clipping either edge, and `time_window()` delegates to that strict
+implementation.
+
+The generated layered model assigns one-based rows 1 through 120 to the upper
+medium and rows 121 through 240 to the lower medium. Row-centre values straddle
+the nominal `y=1200 m` interface. This is not a claim of sub-grid sharpness:
+DENISE's `av_rho()` arithmetically averages adjacent densities onto velocity
+positions, while `av_mue()` harmonically averages the four surrounding shear
+moduli onto the `sxy` position. FD8 derivatives also span four gridpoints on
+each side.
+
+### Independent analytical methods and predeclared criteria
+
+The Python-only analytical module constructs displacement polarizations and
+tractions from isotropic Lamé parameters, then solves the two free-surface
+traction equations or the four displacement/traction interface equations by
+Gaussian elimination. Unit tests recover the normal free-surface P coefficient
+`-1`, zero converted SV at normal incidence, and the normal impedance formula.
+Stationary two-segment rays are solved independently and unit-tested against
+Snell's law.
+
+Normal reflected amplitudes use equal-path homogeneous calibration runs, so
+source wavelet, two-dimensional spreading, and Green-function phase are not
+blindly compared with plane-wave coefficients. Acceptance was declared as
+15% relative amplitude error, correlation at least 0.98, and timing
+`2*dt + 0.5%` of propagation time. Negative controls require the unwanted
+residual to be at most `1e-3` of the contrast reflection for identical layers
+and at most 0.10 of the free-surface reflection for an absorbing upper side.
+Oblique plane-wave amplitudes are diagnostic only; mandatory checks use
+Snell-law timing differences and projected polarization.
+
+### Observed completed results
+
+The normal P/SV free surface passed. Its physical reflection path is 1790 m:
+the observed reflection-minus-direct interval is 0.4600 s versus 0.46333 s
+analytical. The equal-path calibration differs by 3.6 ms, reflected amplitude
+error is 0.121%, and polarity-adjusted correlation is 0.99949. With
+`FREE_SURF=0`, the late upper-CPML trace is only `5.36e-4` of the free-surface
+reflection L2 amplitude.
+
+The oblique free-surface P and converted-SV case passed the unchanged 4.61 ms
+tolerance. Observed versus predicted differences are 0.3732/0.37608 s for
+reflected P minus direct P and 0.2044/0.20616 s for SV minus P. Projected energy
+dominance is 5633.7 for P longitudinal/transverse and 3154.1 for SV
+transverse/longitudinal. Plane-wave displacement coefficients are recorded
+diagnostically (`Rpp=-0.8460`, `Rps=-0.6778`).
+
+The normal P interface case passed. For `Vp/Vs/rho = 3000/1800/2000` above and
+`3600/2100/2300` below, the independent normal coefficient is `Rpp=0.159664`;
+fixed `vy` has coefficient `-0.159664`. Reflection versus equal-path
+calibration peaks differ by 0.4 ms, amplitude error is 0.369%, and correlation
+is 0.99979. The identical-layer residual is exactly zero in this run.
+Transmission arrival is 0.5048 s versus 0.49444 s absolute prediction and is
+kept diagnostic because absolute particle-velocity peak phase includes the
+finite-bandwidth Green response.
+
+### Preserved failing shear-interface result
+
+The normal SV case uses an x-force and `vx`, with analytical shear-impedance
+coefficient `-0.145907`. Amplitude error is 3.308% and phase correlation
+0.99704, both passing. However, the reflection peak is 0.8144 s while the
+equal-path homogeneous calibration peak is 0.8076 s: a 6.8 ms difference
+against the predeclared 4.133 ms tolerance. The assertion remains failing.
+
+The relevant existing path is the FD8 `sxy` update using harmonically averaged
+`uipjp`, followed by the velocity update using averaged reciprocal density.
+The observed delay may reflect the effective staggered transition rather than
+a defective continuum travel speed, but deciding whether the criterion should
+explicitly include a wider numerical-interface allowance requires independent
+scientific review. M3 does not change the averaging, stress update, model, or
+tolerance.
 
 Each run writes `stdout.txt`, `stderr.txt`, and `run_metadata.json` into its
 pytest temporary directory. Metadata includes the absolute executed binary

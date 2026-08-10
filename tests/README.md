@@ -12,6 +12,10 @@ symmetry, Gxx reciprocity, and both-component MPI reproducibility.
 The CPML suite uses paired compact/reference domains to measure reflections at
 all four sides for SH, P and SV waves, including oblique, corner, disabled-CPML,
 and MPI-decomposition checks.
+M3 adds P/SV free-surface and elastic-interface cases. The current M3 branch
+intentionally retains a failing normal-SV interface timing assertion for
+independent review; see `docs/verification.md`. SH free-surface propagation is
+not claimed because the current SH stepping path does not apply that boundary.
 
 See `docs/verification.md` for installation, commands, tolerances, generated
 artifacts, and failure inspection.

@@ -144,21 +144,29 @@ def time_window(
 ) -> list[float]:
     if dt_s <= 0.0 or half_width_s <= 0.0:
         raise ValueError("Window timestep and half-width must be positive")
-    start = max(0, math.ceil((center_s - half_width_s) / dt_s - 1.0e-12) - 1)
-    stop = min(len(trace), math.floor((center_s + half_width_s) / dt_s + 1.0e-12))
-    if start >= stop:
-        raise ValueError("Time window does not overlap the trace")
-    return list(trace[start:stop])
+    return time_interval(
+        trace,
+        start_s=center_s - half_width_s,
+        stop_s=center_s + half_width_s,
+        dt_s=dt_s,
+    )
 
 
 def time_interval(
     trace: Sequence[float], *, start_s: float, stop_s: float, dt_s: float
 ) -> list[float]:
-    """Return samples whose DENISE times `(index + 1) * dt` lie in an interval."""
+    """Return a fully contained interval; never clip analytical windows."""
     if dt_s <= 0.0 or start_s < 0.0 or stop_s <= start_s:
         raise ValueError("Interval requires dt > 0 and 0 <= start < stop")
-    start = max(0, math.ceil(start_s / dt_s - 1.0e-12) - 1)
-    stop = min(len(trace), math.floor(stop_s / dt_s + 1.0e-12))
+    first_sample_s = dt_s
+    last_sample_s = len(trace) * dt_s
+    if start_s < first_sample_s - 1.0e-12 or stop_s > last_sample_s + 1.0e-12:
+        raise ValueError(
+            f"Requested interval [{start_s}, {stop_s}] s is not fully contained in "
+            f"seismogram [{first_sample_s}, {last_sample_s}] s"
+        )
+    start = math.ceil(start_s / dt_s - 1.0e-12) - 1
+    stop = math.floor(stop_s / dt_s + 1.0e-12)
     if start >= stop:
         raise ValueError("Time interval does not overlap the trace")
     return list(trace[start:stop])
