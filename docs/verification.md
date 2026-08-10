@@ -332,13 +332,12 @@ have relative L2 `0.0` and correlation `1.0` (within floating display). The
 eight CPML pytest cases, comprising 25 DENISE runs, take about 70 seconds in
 the documented WSL environment and remain in the mandatory quick suite.
 
-## M3 free-surface and elastic-interface verification (review stop)
+## M3 free-surface and elastic-interface verification
 
-M3 was intentionally stopped after the predeclared normal-SV interface timing
-criterion failed. The failing case and its generated metrics remain in the
-suite. No tolerance was relaxed and no solver file was changed. The oblique
-interface and both new MPI tests were implemented before this result but were
-not executed locally after the stop condition.
+The first M3 review found that two timing failures were primarily test-geometry
+errors: input coordinates had been treated as though all staggered fields were
+collocated. The rework corrects physical coordinates and vector collocation
+without changing any solver file or relaxing any tolerance.
 
 ### Capability audit and coordinate conventions
 
@@ -354,13 +353,35 @@ at `dt` and the final sample at `NT*dt`. `time_interval()` raises instead of
 silently clipping either edge, and `time_window()` delegates to that strict
 implementation.
 
+DENISE first converts positive input coordinates to one-based integer grid
+indices with `iround(coordinate/DH)`, where `iround(x)=floor(x+0.5)`. For grid
+indices `(i,j)`, the verification harness uses these physical positions:
+
+| Field | Physical position |
+| --- | --- |
+| material parameters, `sxx`, `syy` | `((i-0.5) DH, (j-0.5) DH)` |
+| `vx` | `(i DH, (j-0.5) DH)` |
+| `vy` | `((i-0.5) DH, j DH)` |
+| `sxy` | `(i DH, j DH)` |
+
+Explosive sources are therefore located on the `sxx`/`syy` grid, x-force
+sources on the `vx` grid, and each recorded velocity component on its native
+grid. For oblique tests, three receiver inputs are used. Native `vx` is averaged
+between the central and `+DH` y receivers, while native `vy` is averaged between
+the central and `+DH` x receivers. Both resulting components occupy the central
+`sxy` point before longitudinal/transverse projection. Pure-Python tests verify
+all field mappings, nearest-index conversion, inverse coordinate construction,
+the receiver stencil, and exact collocation of constant and linear fields.
+
 The generated layered model assigns one-based rows 1 through 120 to the upper
-medium and rows 121 through 240 to the lower medium. Row-centre values straddle
-the nominal `y=1200 m` interface. This is not a claim of sub-grid sharpness:
-DENISE's `av_rho()` arithmetically averages adjacent densities onto velocity
-positions, while `av_mue()` harmonically averages the four surrounding shear
-moduli onto the `sxy` position. FD8 derivatives also span four gridpoints on
-each side.
+medium and rows 121 through 240 to the lower medium. At `DH=10 m`, the adjacent
+material centres are at 1195 m and 1205 m, so the nominal continuum interface
+remains exactly `y=1200 m`. This is distinct from the staggered field positions
+and from material averaging on those positions. DENISE's `av_rho()`
+arithmetically averages adjacent densities onto velocity positions, while
+`av_mue()` harmonically averages the four surrounding shear moduli onto the
+`sxy` position. These averages are not described as moving the interface; an
+effective shift would require a separate convergence experiment.
 
 ### Independent analytical methods and predeclared criteria
 
@@ -382,46 +403,42 @@ and at most 0.10 of the free-surface reflection for an absorbing upper side.
 Oblique plane-wave amplitudes are diagnostic only; mandatory checks use
 Snell-law timing differences and projected polarization.
 
-### Observed completed results
+### Corrected observed results
 
-The normal P/SV free surface passed. Its physical reflection path is 1790 m:
-the observed reflection-minus-direct interval is 0.4600 s versus 0.46333 s
-analytical. The equal-path calibration differs by 3.6 ms, reflected amplitude
-error is 0.121%, and polarity-adjusted correlation is 0.99949. With
-`FREE_SURF=0`, the late upper-CPML trace is only `5.36e-4` of the free-surface
-reflection L2 amplitude.
+For the normal free surface, source input `(1200,700) m` is the physical stress
+point `(1195,695) m`; receiver input `(1200,1100) m` is the physical `vy` point
+`(1195,1100) m`; and the surface is at 5 m. Direct and reflected paths are thus
+405 m and 1785 m. Their analytical difference is exactly 1380 m / 3000 m/s =
+0.4600 s, equal to the observed peak difference. The calibration was corrected
+from input y=2190 m to 2180 m, giving an exact physical 1785 m path. Reflection
+and calibration peaks both occur at 0.7536 s; amplitude error is 0.1681% and
+correlation 0.999821. The `FREE_SURF=0` residual ratio is `5.45e-4`.
 
-The oblique free-surface P and converted-SV case passed the unchanged 4.61 ms
-tolerance. Observed versus predicted differences are 0.3732/0.37608 s for
-reflected P minus direct P and 0.2044/0.20616 s for SV minus P. Projected energy
-dominance is 5633.7 for P longitudinal/transverse and 3154.1 for SV
-transverse/longitudinal. Plane-wave displacement coefficients are recorded
-diagnostically (`Rpp=-0.8460`, `Rps=-0.6778`).
+The collocated oblique free-surface receiver is `(1400,900) m`, and the physical
+stress source is `(895,695) m`. Reflected-P minus direct error is 0.0275 ms and
+converted-SV minus P error is 0.0459 ms, against the unchanged 4.604 ms
+tolerance. Energy ratios are 1181.37 for P longitudinal/transverse and 757.17
+for SV transverse/longitudinal.
 
-The normal P interface case passed. For `Vp/Vs/rho = 3000/1800/2000` above and
-`3600/2100/2300` below, the independent normal coefficient is `Rpp=0.159664`;
-fixed `vy` has coefficient `-0.159664`. Reflection versus equal-path
-calibration peaks differ by 0.4 ms, amplitude error is 0.369%, and correlation
-is 0.99979. The identical-layer residual is exactly zero in this run.
-Transmission arrival is 0.5048 s versus 0.49444 s absolute prediction and is
-kept diagnostic because absolute particle-velocity peak phase includes the
-finite-bandwidth Green response.
+For the normal P interface, the physical stress source is `(1195,495) m` and
+the reflected `vy` receiver is `(1195,700) m`. The reflected path is 1205 m,
+not the old nominal 1200 m, and the existing calibration is confirmed to have
+the same 1205 m physical path. Peaks differ by 0.4 ms; amplitude error is
+0.3689%, correlation 0.999790, and the identical-medium residual is zero.
 
-### Preserved failing shear-interface result
+For normal SV, x-force input y=500 m is physical `vx` y=495 m and receiver
+input y=700 m is physical `vx` y=695 m. The reflection path is 1210 m. The old
+calibration path was 1200 m; deriving an equal-path receiver through the
+geometry helper gives input y=1710 m, physical y=1705 m, and a 1210 m path.
+Reflection and calibration peaks are 0.8144 s and 0.8128 s, a 1.6 ms difference
+within the unchanged 4.161 ms tolerance. Amplitude error is 2.833% and phase
+correlation 0.997505.
 
-The normal SV case uses an x-force and `vx`, with analytical shear-impedance
-coefficient `-0.145907`. Amplitude error is 3.308% and phase correlation
-0.99704, both passing. However, the reflection peak is 0.8144 s while the
-equal-path homogeneous calibration peak is 0.8076 s: a 6.8 ms difference
-against the predeclared 4.133 ms tolerance. The assertion remains failing.
-
-The relevant existing path is the FD8 `sxy` update using harmonically averaged
-`uipjp`, followed by the velocity update using averaged reciprocal density.
-The observed delay may reflect the effective staggered transition rather than
-a defective continuum travel speed, but deciding whether the criterion should
-explicitly include a wider numerical-interface allowance requires independent
-scientific review. M3 does not change the averaging, stress update, model, or
-tolerance.
+For the oblique interface, the physical stress source is `(895,495) m` and the
+collocated receiver is `(1400,700) m`. Analytical P and converted-SV travel
+times are 0.435514 s and 0.553084 s. Their analytical difference is 0.117571 s
+versus 0.118800 s observed: 1.229 ms error within the unchanged 3.565 ms
+tolerance. P and SV polarization energy ratios are 140.46 and 614.93.
 
 Each run writes `stdout.txt`, `stderr.txt`, and `run_metadata.json` into its
 pytest temporary directory. Metadata includes the absolute executed binary

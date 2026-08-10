@@ -35,7 +35,12 @@ class LayeredPSVConfig:
 
     @property
     def interface_y_m(self) -> float:
-        """Nominal boundary between row centres j and j+1."""
+        """Nominal continuum boundary between the upper and lower row centres.
+
+        For DH=10 m and interface_upper_row=120, material row centres are at
+        1195 m and 1205 m, so their boundary remains exactly 1200 m. Staggered
+        field locations and material averaging do not redefine this property.
+        """
         return self.interface_upper_row * self.dh_m
 
     @property
