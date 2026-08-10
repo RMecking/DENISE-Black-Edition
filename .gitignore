@@ -4,9 +4,13 @@ ehthumbs.db
 
 # compilation and execution outputs
 *.o
+*.a
 *.err
 *.out
 *.su.shot*
+__pycache__/
+.pytest_cache/
+.tmp-m0*/
 
 # Folder config file
 Desktop.ini
