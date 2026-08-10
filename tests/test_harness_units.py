@@ -4,8 +4,11 @@ import math
 
 import pytest
 
+from tests.conftest import unavailable_dependency
 from tests.cases.homogeneous_sh import HomogeneousSHConfig, generate_case
+from tests.utilities.runner import executable_sha256
 from tests.utilities.seismogram import (
+    fit_propagation_velocity,
     first_break_index,
     normalized_correlation,
     read_ascii_seismograms,
@@ -49,3 +52,28 @@ def test_comparison_metrics_have_expected_values():
     first = [[1.0, 2.0], [-1.0, 0.5]]
     assert relative_l2(first, first) == 0.0
     assert math.isclose(normalized_correlation(first, first), 1.0)
+
+
+def test_velocity_fit_recovers_slope_and_free_intercept():
+    offsets = [200.0, 300.0, 400.0, 500.0, 600.0]
+    picks = [0.12 + offset / 2000.0 for offset in offsets]
+    fit = fit_propagation_velocity(offsets, picks)
+    assert math.isclose(fit.velocity_m_s, 2000.0)
+    assert math.isclose(fit.intercept_s, 0.12)
+    assert fit.maximum_absolute_residual_s < 1.0e-12
+
+
+def test_missing_dependency_skips_in_development_mode():
+    with pytest.raises(pytest.skip.Exception):
+        unavailable_dependency("missing", required=False)
+
+
+def test_missing_dependency_fails_in_verification_mode():
+    with pytest.raises(pytest.fail.Exception):
+        unavailable_dependency("missing", required=True)
+
+
+def test_executable_hash_uses_sha256(tmp_path):
+    executable = tmp_path / "denise"
+    executable.write_bytes(b"DENISE verification fixture\n")
+    assert executable_sha256(executable) == "7066bfa05e8b9d79ea04630c63754c5e442c4cc93c9a43e4bbdfeb12fd84b7d0"

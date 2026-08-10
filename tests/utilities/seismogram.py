@@ -1,8 +1,20 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
+
+
+@dataclass(frozen=True)
+class VelocityFit:
+    velocity_m_s: float
+    intercept_s: float
+    residuals_s: list[float]
+
+    @property
+    def maximum_absolute_residual_s(self) -> float:
+        return max(abs(value) for value in self.residuals_s)
 
 
 def read_ascii_seismograms(path: Path, receiver_count: int, samples_per_trace: int) -> list[list[float]]:
@@ -79,6 +91,29 @@ def source_pick_delay(
         threshold_fraction=threshold_fraction,
     )
     return (index + 1) * dt
+
+
+def fit_propagation_velocity(offsets_m: Sequence[float], pick_times_s: Sequence[float]) -> VelocityFit:
+    """Fit pick_time = intercept + offset / velocity by ordinary least squares."""
+    if len(offsets_m) != len(pick_times_s) or len(offsets_m) < 2:
+        raise ValueError("Velocity fitting requires equally sized inputs with at least two picks")
+    mean_offset = sum(offsets_m) / len(offsets_m)
+    mean_time = sum(pick_times_s) / len(pick_times_s)
+    denominator = sum((offset - mean_offset) ** 2 for offset in offsets_m)
+    if denominator == 0.0:
+        raise ValueError("Velocity fitting requires at least two distinct offsets")
+    slope = sum(
+        (offset - mean_offset) * (pick - mean_time)
+        for offset, pick in zip(offsets_m, pick_times_s)
+    ) / denominator
+    if slope <= 0.0:
+        raise ValueError("Fitted travel-time slope must be positive")
+    intercept = mean_time - slope * mean_offset
+    residuals = [
+        pick - (intercept + slope * offset)
+        for offset, pick in zip(offsets_m, pick_times_s)
+    ]
+    return VelocityFit(velocity_m_s=1.0 / slope, intercept_s=intercept, residuals_s=residuals)
 
 
 def relative_l2(first: Sequence[Sequence[float]], second: Sequence[Sequence[float]]) -> float:

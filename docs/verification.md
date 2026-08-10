@@ -22,6 +22,12 @@ Run all tests from the repository root:
 python3 -m pytest -v
 ```
 
+For release verification and CI, make DENISE and MPI mandatory:
+
+```bash
+python3 -m pytest -v --require-denise
+```
+
 Run only the M0 physics checks or point at a non-default executable:
 
 ```bash
@@ -30,8 +36,10 @@ DENISE_BIN=/other/bin/denise python3 -m pytest tests/physics/test_homogeneous_sh
 ```
 
 `MPIEXEC` changes the launcher and `MPIEXEC_FLAGS` supplies extra launcher
-arguments. If `bin/denise` or the launcher is absent, integration tests skip
-with an explicit reason while the pure-Python harness tests still run.
+arguments. In the default development mode, an absent `bin/denise` or launcher
+skips integration tests with an explicit reason. With `--require-denise`, either
+condition fails the run, and any skipped integration test is converted to a
+failure. CI always uses this mandatory mode.
 
 ## Homogeneous SH case
 
@@ -50,7 +58,7 @@ with an explicit reason while the pure-Python harness tests still run.
 | Receivers | x=900, 1000, 1100, 1200, 1300 m; y=600 m |
 | FD order / coefficients | 8 / Holberg 0.1% setting |
 | CPML | 15 grid points, 2000 m/s damping velocity, 10 Hz |
-| MPI decompositions | 1 x 1 and 2 x 1 |
+| MPI decompositions | 1 x 1, 2 x 1, 1 x 2, and 2 x 2 |
 
 The Courant number `Vs * dt / dh` is 0.1. Even using 2.5 times the nominal
 Ricker frequency as a conservative bandwidth estimate, the shortest wavelength
@@ -75,7 +83,7 @@ amplitude over one quarter of the nominal source period. The first sample at
 is applied to the exact discretized DENISE Ricker wavelet; its causal source
 delay is subtracted before comparison with `distance / Vs`.
 
-The tolerance is:
+The diagnostic absolute tolerance is:
 
 ```text
 2 * dt + 0.25 / source_frequency = 0.026 s
@@ -87,14 +95,36 @@ is already constrained by the Holberg 0.1% setting and eight points per
 conservative shortest wavelength. This tolerance was defined from sampling and
 bandwidth, not from the measured result.
 
-MPI reproducibility compares the complete 1 x 1 and 2 x 1 seismogram arrays.
-It requires relative L2 error at most `1e-5` and normalized correlation at least
-`0.999999`. Bitwise identity is neither tested nor required.
+The propagation-velocity assertion is deliberately stronger. Raw first-break
+picks at all receiver offsets are fit by ordinary least squares to
+`t_pick(r) = t0 + r / Vs_fit`. The free intercept removes the constant source
+wavelet and picker delay from the tested slope. The test requires the relative
+error in `Vs_fit` to be at most 1%, and it also requires the maximum fit residual
+to be no more than two timesteps (1 ms).
+
+The 1% velocity tolerance follows from the numerical resolution. Picks are
+quantized at 0.5 ms over a 0.2 s differential travel-time aperture; a one-sample
+end-to-end perturbation is about 0.25% in slope. All source and receiver
+coordinates lie exactly on the 10 m grid, so geometry introduces no rounding
+error in this case. The eighth-order Holberg 0.1% setting and eight grid points
+per conservative shortest wavelength keep expected FD dispersion well below
+1%. The remaining margin covers picker quantization and small finite-bandwidth
+or decomposition effects without inheriting the permissive 26 ms absolute
+first-break tolerance.
+
+MPI reproducibility compares complete 2 x 1, 1 x 2, and 2 x 2 seismogram arrays
+against the 1 x 1 reference. Every variant requires relative L2 error at most
+`1e-5` and normalized correlation at least `0.999999`. The four-rank 2 x 2 case
+remains in the quick suite because the complete local suite takes only a few
+seconds. Bitwise identity is neither tested nor required.
 
 Each run writes `stdout.txt`, `stderr.txt`, and `run_metadata.json` into its
-pytest temporary directory. Metadata includes the commit, active Makefile
-compiler settings, compiler and MPI versions, ranks, test configuration,
-command, return code, and runtime. Travel-time and MPI tests additionally write
+pytest temporary directory. Metadata includes the absolute executed binary
+path and SHA-256, repository commit and dirty state, MPI ranks, command,
+return code, runtime, and MPI version. Local Makefile variables and the current
+compiler wrapper are recorded separately as local build context and are
+explicitly not claimed as provenance for an externally supplied executable.
+Travel-time and MPI tests additionally write
 `travel_time_metrics.json` and `mpi_metrics.json`. Use pytest's
 `--basetemp=/path/to/artifacts` option to retain them at a known location:
 
@@ -104,3 +134,15 @@ python3 -m pytest tests/physics/test_homogeneous_sh.py -vv --basetemp=/tmp/denis
 
 On failure, inspect the pytest assertion first, then the generated stdout,
 stderr, metadata, parameter file, geometry, and seismogram in that run folder.
+
+## GitHub Actions
+
+`.github/workflows/verification.yml` runs on pull requests targeting
+`modernization` and by manual dispatch. It installs the Linux toolchain,
+OpenMPI, FFTW, and pytest; builds both `libcseife` and `bin/denise`; runs the
+pure-Python unit tests; then runs all physics tests with `--require-denise`.
+The physics step sets `MPIEXEC_FLAGS=--oversubscribe` because the hosted runner
+provides fewer CPU slots than the four MPI ranks used by the small 2 x 2 case;
+this changes process placement only, not the DENISE model or decomposition.
+Missing dependencies, build failures, skipped integration tests, and physics
+assertion failures therefore fail the job.

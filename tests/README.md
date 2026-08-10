@@ -8,3 +8,6 @@
 
 See `docs/verification.md` for installation, commands, tolerances, generated
 artifacts, and failure inspection.
+
+Use `--require-denise` for verification or CI. Development runs may omit the
+flag to allow explicit skips when the executable or MPI launcher is unavailable.
