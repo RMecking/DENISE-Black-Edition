@@ -9,7 +9,7 @@ import pytest
 from tests.cases.homogeneous_psv import HomogeneousPSVConfig, generate_case, with_geometry
 from tests.utilities.runner import result_summary, run_denise
 from tests.utilities.seismogram import (
-    absolute_peak_index_in_window,
+    absolute_peak_index_in_interval,
     all_finite,
     fit_propagation_velocity,
     first_break_index,
@@ -115,16 +115,20 @@ def _sv_peak_velocity_metrics(
     config: HomogeneousPSVConfig, traces: list[list[float]]
 ) -> tuple[dict[str, object], float]:
     offsets = config.receiver_offsets_m()
-    half_width = 0.5 / config.source_frequency_hz
     peak_delay = 1.5 / config.source_frequency_hz
+    p_exclusion_guard = 0.25 / config.source_frequency_hz
+    upper_margin = 0.5 / config.source_frequency_hz
+    intervals = [
+        (
+            peak_delay + offset / config.vp_m_s + p_exclusion_guard,
+            peak_delay + offset / config.vs_m_s + upper_margin,
+        )
+        for offset in offsets
+    ]
     raw_picks = [
-        (absolute_peak_index_in_window(
-            trace,
-            center_s=peak_delay + offset / config.vs_m_s,
-            half_width_s=half_width,
-            dt_s=config.dt_s,
-        ) + 1) * config.dt_s
-        for offset, trace in zip(offsets, traces)
+        (absolute_peak_index_in_interval(trace, start_s=start, stop_s=stop, dt_s=config.dt_s) + 1)
+        * config.dt_s
+        for trace, (start, stop) in zip(traces, intervals)
     ]
     fit = fit_propagation_velocity(offsets, raw_picks)
     relative_error = abs(fit.velocity_m_s - config.vs_m_s) / config.vs_m_s
@@ -137,13 +141,16 @@ def _sv_peak_velocity_metrics(
             "expected_peak_s": peak_delay + offset / config.vs_m_s,
             "fit_residual_s": residual,
         }
-        for receiver, offset, pick, residual in zip(
-            config.receivers_m, offsets, raw_picks, fit.residuals_s
+        for receiver, offset, pick, residual, interval in zip(
+            config.receivers_m, offsets, raw_picks, fit.residuals_s, intervals
         )
     ]
+    for receiver, interval in zip(receivers, intervals):
+        receiver["pick_interval_s"] = list(interval)
     metrics = {
-        "pick_method": "maximum absolute transverse velocity in analytical S peak +/- 0.5/f",
-        "pick_window_half_width_s": half_width,
+        "pick_method": "maximum absolute transverse velocity after analytical P peak + 0.25/f and through analytical S peak + 0.5/f",
+        "p_exclusion_guard_s": p_exclusion_guard,
+        "s_peak_upper_margin_s": upper_margin,
         "model_velocity_m_s": config.vs_m_s,
         "fitted_velocity_m_s": fit.velocity_m_s,
         "relative_velocity_error": relative_error,

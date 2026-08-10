@@ -17,6 +17,14 @@ class VelocityFit:
         return max(abs(value) for value in self.residuals_s)
 
 
+@dataclass(frozen=True)
+class CPMLReflectionMetrics:
+    direct_l2: float
+    late_residual_l2: float
+    reflection_ratio: float
+    reflection_db: float
+
+
 def read_ascii_seismograms(path: Path, receiver_count: int, samples_per_trace: int) -> list[list[float]]:
     """Read DENISE SEIS_FORMAT=2 output, which stores traces consecutively."""
     values = [float(token) for token in path.read_text(encoding="ascii").split()]
@@ -143,6 +151,19 @@ def time_window(
     return list(trace[start:stop])
 
 
+def time_interval(
+    trace: Sequence[float], *, start_s: float, stop_s: float, dt_s: float
+) -> list[float]:
+    """Return samples whose DENISE times `(index + 1) * dt` lie in an interval."""
+    if dt_s <= 0.0 or start_s < 0.0 or stop_s <= start_s:
+        raise ValueError("Interval requires dt > 0 and 0 <= start < stop")
+    start = max(0, math.ceil(start_s / dt_s - 1.0e-12) - 1)
+    stop = min(len(trace), math.floor(stop_s / dt_s + 1.0e-12))
+    if start >= stop:
+        raise ValueError("Time interval does not overlap the trace")
+    return list(trace[start:stop])
+
+
 def absolute_peak_index_in_window(
     trace: Sequence[float], *, center_s: float, half_width_s: float, dt_s: float
 ) -> int:
@@ -157,6 +178,49 @@ def absolute_peak_index_in_window(
     if trace[start + local_index] == 0.0:
         raise ValueError("Peak-pick window contains no signal")
     return start + local_index
+
+
+def absolute_peak_index_in_interval(
+    trace: Sequence[float], *, start_s: float, stop_s: float, dt_s: float
+) -> int:
+    """Return the global absolute-peak index in a predeclared time interval."""
+    window = time_interval(trace, start_s=start_s, stop_s=stop_s, dt_s=dt_s)
+    start = max(0, math.ceil(start_s / dt_s - 1.0e-12) - 1)
+    local_index = max(range(len(window)), key=lambda index: abs(window[index]))
+    if window[local_index] == 0.0:
+        raise ValueError("Peak-pick interval contains no signal")
+    return start + local_index
+
+
+def cpml_reflection_metrics(
+    compact: Sequence[float],
+    reference: Sequence[float],
+    *,
+    dt_s: float,
+    direct_window_s: tuple[float, float],
+    reflection_window_s: tuple[float, float],
+) -> CPMLReflectionMetrics:
+    """Measure late compact-domain residual relative to reference direct energy."""
+    if len(compact) != len(reference):
+        raise ValueError("Compact and reference traces have different lengths")
+    direct = time_interval(
+        reference, start_s=direct_window_s[0], stop_s=direct_window_s[1], dt_s=dt_s
+    )
+    compact_late = time_interval(
+        compact, start_s=reflection_window_s[0], stop_s=reflection_window_s[1], dt_s=dt_s
+    )
+    reference_late = time_interval(
+        reference, start_s=reflection_window_s[0], stop_s=reflection_window_s[1], dt_s=dt_s
+    )
+    direct_l2 = math.sqrt(signal_energy(direct))
+    late_residual_l2 = math.sqrt(
+        sum((left - right) ** 2 for left, right in zip(compact_late, reference_late))
+    )
+    if direct_l2 == 0.0:
+        raise ValueError("CPML metric requires non-zero reference direct energy")
+    ratio = late_residual_l2 / direct_l2
+    reflection_db = -math.inf if ratio == 0.0 else 20.0 * math.log10(ratio)
+    return CPMLReflectionMetrics(direct_l2, late_residual_l2, ratio, reflection_db)
 
 
 def signal_energy(trace: Sequence[float]) -> float:
