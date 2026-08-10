@@ -15,6 +15,14 @@ from tests.utilities.elastic_analytics import (
     zoeppritz_p_coefficients,
 )
 from tests.utilities.runner import executable_sha256
+from tests.utilities.staggered_grid import (
+    collocate_velocity_at_sxy,
+    denise_grid_index,
+    field_position,
+    input_coordinate_for_field_position,
+    input_field_position,
+    sxy_collocation_stencil,
+)
 from tests.utilities.seismogram import (
     absolute_peak_index_in_interval,
     absolute_peak_index_in_window,
@@ -203,3 +211,52 @@ def test_layered_generator_writes_declared_row_assignment(tmp_path):
     values.frombytes((tmp_path / "model" / "layered.vp").read_bytes())
     assert list(values) == [3000.0, 3000.0, 3600.0, 3600.0] * 2
     assert config.interface_y_m == 20.0
+
+
+@pytest.mark.parametrize(
+    "field, expected",
+    [
+        ("material", (15.0, 25.0)),
+        ("sxx", (15.0, 25.0)),
+        ("syy", (15.0, 25.0)),
+        ("vx", (20.0, 25.0)),
+        ("vy", (15.0, 30.0)),
+        ("sxy", (20.0, 30.0)),
+    ],
+)
+def test_staggered_field_positions(field, expected):
+    assert field_position(2, 3, 10.0, field) == expected
+
+
+def test_input_coordinates_are_rounded_before_staggered_mapping():
+    assert denise_grid_index(24.9, 10.0) == 2
+    assert denise_grid_index(25.0, 10.0) == 3
+    assert input_field_position((20.0, 30.0), 10.0, "vx") == (20.0, 25.0)
+    assert input_field_position((20.0, 30.0), 10.0, "vy") == (15.0, 30.0)
+
+
+def test_inverse_field_coordinate_derives_equal_path_receiver_input():
+    assert input_coordinate_for_field_position(1705.0, 10.0, axis="y", field="vx") == 1710.0
+    assert input_coordinate_for_field_position(2180.0, 10.0, axis="y", field="vy") == 2180.0
+    with pytest.raises(ValueError, match="not representable"):
+        input_coordinate_for_field_position(1700.0, 10.0, axis="y", field="vx")
+
+
+def test_sxy_collocation_stencil_has_required_neighbors():
+    assert sxy_collocation_stencil((1400.0, 900.0), 10.0) == (
+        (1400.0, 900.0), (1400.0, 910.0), (1410.0, 900.0)
+    )
+
+
+def test_sxy_collocation_recovers_constant_fields():
+    assert collocate_velocity_at_sxy([2.0, 2.0], [2.0, 2.0], [-3.0, -3.0], [-3.0, -3.0]) == (
+        [2.0, 2.0], [-3.0, -3.0]
+    )
+
+
+def test_sxy_collocation_recovers_linear_fields_at_midpoint():
+    vx, vy = collocate_velocity_at_sxy(
+        [1.0, 3.0], [3.0, 5.0], [10.0, 14.0], [14.0, 18.0]
+    )
+    assert vx == [2.0, 4.0]
+    assert vy == [12.0, 16.0]

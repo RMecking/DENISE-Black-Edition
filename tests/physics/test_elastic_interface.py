@@ -10,6 +10,12 @@ from tests.cases.homogeneous_psv import HomogeneousPSVConfig, generate_case as g
 from tests.cases.layered_psv import LayeredPSVConfig, generate_case as generate_layered
 from tests.utilities.elastic_analytics import two_segment_ray, zoeppritz_p_coefficients
 from tests.utilities.physics_run import run_psv_case
+from tests.utilities.staggered_grid import (
+    collocate_velocity_at_sxy,
+    input_coordinate_for_field_position,
+    input_field_position,
+    sxy_collocation_stencil,
+)
 from tests.utilities.seismogram import (
     absolute_peak_index_in_interval,
     normalized_correlation,
@@ -71,12 +77,30 @@ def test_normal_p_interface_and_identical_medium_control(
         contrast, vp2_m_s=contrast.vp1_m_s, vs2_m_s=contrast.vs1_m_s,
         rho2_kg_m3=contrast.rho1_kg_m3,
     )
+    source_physical = input_field_position(
+        (contrast.source_x_m, contrast.source_y_m), contrast.dh_m, "sxx"
+    )
+    reflected_receiver_physical = input_field_position(
+        contrast.receivers_m[0], contrast.dh_m, "vy"
+    )
+    physical_reflection_path = (
+        contrast.interface_y_m - source_physical[1]
+        + contrast.interface_y_m - reflected_receiver_physical[1]
+    )
+    calibration_source_input_y = 500.0
+    calibration_source_physical_y = input_field_position(
+        (1200.0, calibration_source_input_y), contrast.dh_m, "sxx"
+    )[1]
+    calibration_receiver_physical_y = calibration_source_physical_y + physical_reflection_path
+    calibration_receiver_input_y = input_coordinate_for_field_position(
+        calibration_receiver_physical_y, contrast.dh_m, axis="y", field="vy"
+    )
     calibration = HomogeneousPSVConfig(
         nx=240, ny=240, time_s=contrast.time_s, dt_s=contrast.dt_s,
         vp_m_s=contrast.vp1_m_s, vs_m_s=contrast.vs1_m_s,
         density_kg_m3=contrast.rho1_kg_m3,
-        source_x_m=1200.0, source_y_m=500.0,
-        receivers_m=((1200.0, 1700.0),),
+        source_x_m=1200.0, source_y_m=calibration_source_input_y,
+        receivers_m=((1200.0, calibration_receiver_input_y),),
     )
     identity_reference = replace(
         calibration, source_y_m=contrast.source_y_m, receivers_m=contrast.receivers_m,
@@ -97,10 +121,18 @@ def test_normal_p_interface_and_identical_medium_control(
         tmp_path / "identity_reference", repository_root=repository_root,
         denise_binary=denise_binary, mpiexec=mpiexec, config=identity_reference,
     )
-    reflection_path = (
+    nominal_reflection_path = (
         contrast.interface_y_m - contrast.source_y_m
         + contrast.interface_y_m - contrast.receivers_m[0][1]
     )
+    reflection_path = physical_reflection_path
+    calibration_source_physical = input_field_position(
+        (calibration.source_x_m, calibration.source_y_m), calibration.dh_m, "sxx"
+    )
+    calibration_receiver_physical = input_field_position(
+        calibration.receivers_m[0], calibration.dh_m, "vy"
+    )
+    calibration_path = math.dist(calibration_source_physical, calibration_receiver_physical)
     source_peak = 1.5 / contrast.source_frequency_hz
     reflection_peak = source_peak + reflection_path / contrast.vp1_m_s
     reflection = [a - b for a, b in zip(contrast_vy[0], identical_vy[0])]
@@ -130,16 +162,28 @@ def test_normal_p_interface_and_identical_medium_control(
         signal_energy(identical_window) / signal_energy(reflection_window)
     )
 
+    transmission_receiver_physical = input_field_position(
+        contrast.receivers_m[1], contrast.dh_m, "vy"
+    )
     transmission_time = (
-        (contrast.interface_y_m - contrast.source_y_m) / contrast.vp1_m_s
-        + (contrast.receivers_m[1][1] - contrast.interface_y_m) / contrast.vp2_m_s
+        (contrast.interface_y_m - source_physical[1]) / contrast.vp1_m_s
+        + (transmission_receiver_physical[1] - contrast.interface_y_m) / contrast.vp2_m_s
     )
     transmission_peak = source_peak + transmission_time
     transmission_pick = _pick(contrast_vy[1], transmission_peak, contrast.dt_s)
     timing_tolerance = 2.0 * contrast.dt_s + 0.005 * reflection_path / contrast.vp1_m_s
     metrics = {
         "interface_y_m": contrast.interface_y_m,
+        "source_input_m": [contrast.source_x_m, contrast.source_y_m],
+        "source_physical_sxx_syy_m": source_physical,
+        "reflection_receiver_input_m": contrast.receivers_m[0],
+        "reflection_receiver_physical_vy_m": reflected_receiver_physical,
+        "old_nominal_reflection_path_m": nominal_reflection_path,
         "reflection_path_m": reflection_path,
+        "calibration_source_physical_sxx_syy_m": calibration_source_physical,
+        "calibration_receiver_input_m": calibration.receivers_m[0],
+        "calibration_receiver_physical_vy_m": calibration_receiver_physical,
+        "calibration_path_m": calibration_path,
         "expected_reflection_peak_s": reflection_peak,
         "observed_reflection_peak_s": reflection_pick,
         "calibration_peak_s": calibration_pick,
@@ -157,6 +201,7 @@ def test_normal_p_interface_and_identical_medium_control(
         json.dumps(metrics, indent=2) + "\n", encoding="utf-8"
     )
     assert abs(reflection_pick - calibration_pick) <= timing_tolerance
+    assert math.isclose(calibration_path, reflection_path, abs_tol=1.0e-12)
     assert amplitude_error <= AMPLITUDE_RELATIVE_TOLERANCE
     assert correlation >= PHASE_CORRELATION_MIN
     assert identical_ratio <= IDENTICAL_CONTROL_RATIO_MAX
@@ -173,12 +218,28 @@ def test_normal_sv_interface_reflection(tmp_path, repository_root, denise_binary
         contrast, vp2_m_s=contrast.vp1_m_s, vs2_m_s=contrast.vs1_m_s,
         rho2_kg_m3=contrast.rho1_kg_m3,
     )
+    source_physical = input_field_position(
+        (contrast.source_x_m, contrast.source_y_m), contrast.dh_m, "vx"
+    )
+    receiver_physical = input_field_position(contrast.receivers_m[0], contrast.dh_m, "vx")
+    physical_path = (
+        contrast.interface_y_m - source_physical[1]
+        + contrast.interface_y_m - receiver_physical[1]
+    )
+    calibration_source_input_y = 500.0
+    calibration_source_physical_y = input_field_position(
+        (1200.0, calibration_source_input_y), contrast.dh_m, "vx"
+    )[1]
+    calibration_receiver_physical_y = calibration_source_physical_y + physical_path
+    calibration_receiver_input_y = input_coordinate_for_field_position(
+        calibration_receiver_physical_y, contrast.dh_m, axis="y", field="vx"
+    )
     calibration = HomogeneousPSVConfig(
         nx=240, ny=240, time_s=contrast.time_s, dt_s=contrast.dt_s,
         vp_m_s=contrast.vp1_m_s, vs_m_s=contrast.vs1_m_s,
         density_kg_m3=contrast.rho1_kg_m3,
-        source_x_m=1200.0, source_y_m=500.0, source_type=2,
-        receivers_m=((1200.0, 1700.0),),
+        source_x_m=1200.0, source_y_m=calibration_source_input_y, source_type=2,
+        receivers_m=((1200.0, calibration_receiver_input_y),),
     )
     contrast_vx, _ = _run_layer(
         tmp_path / "contrast", repository_root=repository_root,
@@ -192,7 +253,17 @@ def test_normal_sv_interface_reflection(tmp_path, repository_root, denise_binary
         tmp_path / "calibration", repository_root=repository_root,
         denise_binary=denise_binary, mpiexec=mpiexec, config=calibration,
     )
-    path = 2.0 * contrast.interface_y_m - contrast.source_y_m - contrast.receivers_m[0][1]
+    old_nominal_path = (
+        2.0 * contrast.interface_y_m - contrast.source_y_m - contrast.receivers_m[0][1]
+    )
+    path = physical_path
+    calibration_source_physical = input_field_position(
+        (calibration.source_x_m, calibration.source_y_m), calibration.dh_m, "vx"
+    )
+    calibration_receiver_physical = input_field_position(
+        calibration.receivers_m[0], calibration.dh_m, "vx"
+    )
+    calibration_path = math.dist(calibration_source_physical, calibration_receiver_physical)
     peak = 1.5 / contrast.source_frequency_hz + path / contrast.vs1_m_s
     reflection = [a - b for a, b in zip(contrast_vx[0], identical_vx[0])]
     reflection_pick = _pick(reflection, peak, contrast.dt_s)
@@ -208,9 +279,20 @@ def test_normal_sv_interface_reflection(tmp_path, repository_root, denise_binary
     tolerance = 2.0 * contrast.dt_s + 0.005 * path / contrast.vs1_m_s
     metrics = {
         "interface_y_m": contrast.interface_y_m,
+        "source_input_m": [contrast.source_x_m, contrast.source_y_m],
+        "source_physical_vx_m": source_physical,
+        "receiver_input_m": contrast.receivers_m[0],
+        "receiver_physical_vx_m": receiver_physical,
+        "old_nominal_reflection_path_m": old_nominal_path,
+        "actual_staggered_reflection_path_m": path,
+        "old_nominal_calibration_path_m": 1200.0,
+        "calibration_receiver_input_m": calibration.receivers_m[0],
+        "calibration_receiver_physical_vx_m": calibration_receiver_physical,
+        "corrected_calibration_path_m": calibration_path,
         "shear_impedance_reflection_coefficient_fixed_vx": coefficient,
         "observed_reflection_peak_s": reflection_pick,
         "calibration_peak_s": calibration_pick,
+        "observed_peak_difference_s": abs(reflection_pick - calibration_pick),
         "timing_tolerance_s": tolerance,
         "amplitude_error": amplitude_error,
         "phase_correlation": correlation,
@@ -219,14 +301,16 @@ def test_normal_sv_interface_reflection(tmp_path, repository_root, denise_binary
         json.dumps(metrics, indent=2) + "\n", encoding="utf-8"
     )
     assert abs(reflection_pick - calibration_pick) <= tolerance
+    assert math.isclose(calibration_path, path, abs_tol=1.0e-12)
     assert amplitude_error <= AMPLITUDE_RELATIVE_TOLERANCE
     assert correlation >= PHASE_CORRELATION_MIN
 
 
 def test_oblique_p_interface_mode_conversion(tmp_path, repository_root, denise_binary, mpiexec):
+    central_receiver = (1400.0, 700.0)
     contrast = LayeredPSVConfig(
         time_s=0.9, source_x_m=900.0, source_y_m=500.0,
-        receivers_m=((1400.0, 700.0),),
+        receivers_m=sxy_collocation_stencil(central_receiver, 10.0),
     )
     identical = replace(
         contrast, vp2_m_s=contrast.vp1_m_s, vs2_m_s=contrast.vs1_m_s,
@@ -240,10 +324,17 @@ def test_oblique_p_interface_mode_conversion(tmp_path, repository_root, denise_b
         tmp_path / "identical", repository_root=repository_root,
         denise_binary=denise_binary, mpiexec=mpiexec, config=identical,
     )
-    residual_x = [a - b for a, b in zip(contrast_vx[0], identical_vx[0])]
-    residual_y = [a - b for a, b in zip(contrast_vy[0], identical_vy[0])]
-    source = (contrast.source_x_m, contrast.source_y_m)
-    receiver = contrast.receivers_m[0]
+    contrast_collocated_x, contrast_collocated_y = collocate_velocity_at_sxy(
+        contrast_vx[0], contrast_vx[1], contrast_vy[0], contrast_vy[2]
+    )
+    identical_collocated_x, identical_collocated_y = collocate_velocity_at_sxy(
+        identical_vx[0], identical_vx[1], identical_vy[0], identical_vy[2]
+    )
+    residual_x = [a - b for a, b in zip(contrast_collocated_x, identical_collocated_x)]
+    residual_y = [a - b for a, b in zip(contrast_collocated_y, identical_collocated_y)]
+    source_input = (contrast.source_x_m, contrast.source_y_m)
+    source = input_field_position(source_input, contrast.dh_m, "sxx")
+    receiver = input_field_position(central_receiver, contrast.dh_m, "sxy")
     p_ray = two_segment_ray(
         source, receiver, boundary_y_m=contrast.interface_y_m,
         incident_velocity_m_s=contrast.vp1_m_s, outgoing_velocity_m_s=contrast.vp1_m_s,
@@ -280,11 +371,18 @@ def test_oblique_p_interface_mode_conversion(tmp_path, repository_root, denise_b
     tolerance = 2.0 * contrast.dt_s + 0.005 * sv_ray.travel_time_s
     metrics = {
         "interface_y_m": contrast.interface_y_m,
+        "source_input_m": source_input,
+        "source_physical_sxx_syy_m": source,
+        "receiver_stencil_input_m": contrast.receivers_m,
+        "collocated_receiver_physical_sxy_m": receiver,
         "p_ray": p_ray.__dict__, "sv_ray": sv_ray.__dict__,
         "expected_p_peak_s": p_peak, "observed_p_peak_s": p_pick,
         "expected_sv_peak_s": sv_peak, "observed_sv_peak_s": sv_pick,
         "expected_sv_minus_p_s": sv_ray.travel_time_s - p_ray.travel_time_s,
         "observed_sv_minus_p_s": sv_pick - p_pick,
+        "sv_minus_p_error_s": abs(
+            (sv_pick - p_pick) - (sv_ray.travel_time_s - p_ray.travel_time_s)
+        ),
         "timing_tolerance_s": tolerance,
         "p_longitudinal_to_transverse_energy_ratio": p_ratio,
         "sv_transverse_to_longitudinal_energy_ratio": sv_ratio,

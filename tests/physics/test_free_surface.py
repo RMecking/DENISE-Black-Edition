@@ -9,6 +9,12 @@ import pytest
 from tests.cases.homogeneous_psv import HomogeneousPSVConfig, generate_case
 from tests.utilities.elastic_analytics import free_surface_p_coefficients, two_segment_ray
 from tests.utilities.physics_run import run_psv_case
+from tests.utilities.staggered_grid import (
+    collocate_velocity_at_sxy,
+    input_coordinate_for_field_position,
+    input_field_position,
+    sxy_collocation_stencil,
+)
 from tests.utilities.seismogram import (
     absolute_peak_index_in_interval,
     normalized_correlation,
@@ -47,9 +53,24 @@ def _normal_configs():
         receivers_m=((1200.0, 1100.0),), free_surface=True,
     )
     control = replace(free, free_surface=False)
+    source_physical = input_field_position(
+        (free.source_x_m, free.source_y_m), free.dh_m, "sxx"
+    )
+    receiver_physical = input_field_position(free.receivers_m[0], free.dh_m, "vy")
+    reflection_distance = (source_physical[1] - SURFACE_Y_M) + (
+        receiver_physical[1] - SURFACE_Y_M
+    )
+    calibration_source_input_y = 400.0
+    calibration_source_physical_y = input_field_position(
+        (free.source_x_m, calibration_source_input_y), free.dh_m, "sxx"
+    )[1]
+    calibration_receiver_physical_y = calibration_source_physical_y + reflection_distance
+    calibration_receiver_input_y = input_coordinate_for_field_position(
+        calibration_receiver_physical_y, free.dh_m, axis="y", field="vy"
+    )
     calibration = replace(
-        free, ny=300, free_surface=False, source_y_m=400.0,
-        receivers_m=((1200.0, 2190.0),),
+        free, ny=300, free_surface=False, source_y_m=calibration_source_input_y,
+        receivers_m=((1200.0, calibration_receiver_input_y),),
     )
     return free, control, calibration
 
@@ -77,9 +98,22 @@ def test_psv_free_surface_normal_incidence_and_negative_control(
         tmp_path / "image_path_calibration", repository_root=repository_root,
         denise_binary=denise_binary, mpiexec=mpiexec, config=calibration,
     )
-    direct_distance = 400.0
-    reflection_distance = (free.source_y_m - SURFACE_Y_M) + (
-        free.receivers_m[0][1] - SURFACE_Y_M
+    source_input = (free.source_x_m, free.source_y_m)
+    receiver_input = free.receivers_m[0]
+    source_physical = input_field_position(source_input, free.dh_m, "sxx")
+    receiver_physical = input_field_position(receiver_input, free.dh_m, "vy")
+    calibration_source_physical = input_field_position(
+        (calibration.source_x_m, calibration.source_y_m), calibration.dh_m, "sxx"
+    )
+    calibration_receiver_physical = input_field_position(
+        calibration.receivers_m[0], calibration.dh_m, "vy"
+    )
+    direct_distance = math.dist(source_physical, receiver_physical)
+    reflection_distance = (source_physical[1] - SURFACE_Y_M) + (
+        receiver_physical[1] - SURFACE_Y_M
+    )
+    calibration_distance = math.dist(
+        calibration_source_physical, calibration_receiver_physical
     )
     source_peak = 1.5 / free.source_frequency_hz
     direct_peak = source_peak + direct_distance / free.vp_m_s
@@ -118,8 +152,17 @@ def test_psv_free_surface_normal_incidence_and_negative_control(
     )
     metrics = {
         "surface_y_m": SURFACE_Y_M,
+        "source_input_m": source_input,
+        "source_physical_sxx_syy_m": source_physical,
+        "receiver_input_m": receiver_input,
+        "receiver_physical_vy_m": receiver_physical,
         "direct_distance_m": direct_distance,
         "reflection_distance_m": reflection_distance,
+        "calibration_source_input_m": [calibration.source_x_m, calibration.source_y_m],
+        "calibration_source_physical_sxx_syy_m": calibration_source_physical,
+        "calibration_receiver_input_m": calibration.receivers_m[0],
+        "calibration_receiver_physical_vy_m": calibration_receiver_physical,
+        "calibration_distance_m": calibration_distance,
         "expected_direct_peak_s": direct_peak,
         "observed_direct_peak_s": direct_pick,
         "expected_reflected_peak_s": reflected_peak,
@@ -146,6 +189,7 @@ def test_psv_free_surface_normal_incidence_and_negative_control(
         (reflection_pick - direct_pick)
         - (reflection_distance - direct_distance) / free.vp_m_s
     ) <= timing_tolerance
+    assert math.isclose(calibration_distance, reflection_distance, abs_tol=1.0e-12)
     assert abs(reflection_pick - calibration_pick) <= timing_tolerance
     assert amplitude_error <= AMPLITUDE_RELATIVE_TOLERANCE
     assert phase_correlation >= PHASE_CORRELATION_MIN
@@ -153,9 +197,10 @@ def test_psv_free_surface_normal_incidence_and_negative_control(
 
 
 def test_psv_free_surface_oblique_modes(tmp_path, repository_root, denise_binary, mpiexec):
+    central_receiver = (1400.0, 900.0)
     free = HomogeneousPSVConfig(
         nx=240, ny=240, time_s=1.05, source_x_m=900.0, source_y_m=700.0,
-        receivers_m=((1400.0, 900.0),), free_surface=True,
+        receivers_m=sxy_collocation_stencil(central_receiver, 10.0), free_surface=True,
     )
     control = replace(free, free_surface=False)
     free_vx, free_vy = _run(
@@ -166,10 +211,17 @@ def test_psv_free_surface_oblique_modes(tmp_path, repository_root, denise_binary
         tmp_path / "control", repository_root=repository_root,
         denise_binary=denise_binary, mpiexec=mpiexec, config=control,
     )
-    residual_x = [a - b for a, b in zip(free_vx[0], control_vx[0])]
-    residual_y = [a - b for a, b in zip(free_vy[0], control_vy[0])]
-    source = (free.source_x_m, free.source_y_m)
-    receiver = free.receivers_m[0]
+    free_collocated_x, free_collocated_y = collocate_velocity_at_sxy(
+        free_vx[0], free_vx[1], free_vy[0], free_vy[2]
+    )
+    control_collocated_x, control_collocated_y = collocate_velocity_at_sxy(
+        control_vx[0], control_vx[1], control_vy[0], control_vy[2]
+    )
+    residual_x = [a - b for a, b in zip(free_collocated_x, control_collocated_x)]
+    residual_y = [a - b for a, b in zip(free_collocated_y, control_collocated_y)]
+    source_input = (free.source_x_m, free.source_y_m)
+    source = input_field_position(source_input, free.dh_m, "sxx")
+    receiver = input_field_position(central_receiver, free.dh_m, "sxy")
     p_ray = two_segment_ray(
         source, receiver, boundary_y_m=SURFACE_Y_M,
         incident_velocity_m_s=free.vp_m_s, outgoing_velocity_m_s=free.vp_m_s,
@@ -184,7 +236,9 @@ def test_psv_free_surface_oblique_modes(tmp_path, repository_root, denise_binary
     p_direction = (receiver[0] - p_ray.boundary_x_m, receiver[1] - SURFACE_Y_M)
     sv_direction = (receiver[0] - sv_ray.boundary_x_m, receiver[1] - SURFACE_Y_M)
     direct_direction = (receiver[0] - source[0], receiver[1] - source[1])
-    direct_longitudinal, _ = project_components(free_vx[0], free_vy[0], direct_direction)
+    direct_longitudinal, _ = project_components(
+        free_collocated_x, free_collocated_y, direct_direction
+    )
     p_longitudinal, p_transverse = project_components(residual_x, residual_y, p_direction)
     sv_longitudinal, sv_transverse = project_components(residual_x, residual_y, sv_direction)
     p_pick = (
@@ -221,6 +275,10 @@ def test_psv_free_surface_oblique_modes(tmp_path, repository_root, denise_binary
     tolerance = 2.0 * free.dt_s + 0.005 * sv_ray.travel_time_s
     metrics = {
         "surface_y_m": SURFACE_Y_M,
+        "source_input_m": source_input,
+        "source_physical_sxx_syy_m": source,
+        "receiver_stencil_input_m": free.receivers_m,
+        "collocated_receiver_physical_sxy_m": receiver,
         "p_ray": p_ray.__dict__,
         "sv_ray": sv_ray.__dict__,
         "expected_p_peak_s": p_peak,
@@ -229,8 +287,14 @@ def test_psv_free_surface_oblique_modes(tmp_path, repository_root, denise_binary
         "observed_sv_peak_s": sv_pick,
         "expected_p_minus_direct_s": p_ray.travel_time_s - direct_travel,
         "observed_p_minus_direct_s": p_pick - direct_pick,
+        "p_minus_direct_error_s": abs(
+            (p_pick - direct_pick) - (p_ray.travel_time_s - direct_travel)
+        ),
         "expected_sv_minus_p_s": sv_ray.travel_time_s - p_ray.travel_time_s,
         "observed_sv_minus_p_s": sv_pick - p_pick,
+        "sv_minus_p_error_s": abs(
+            (sv_pick - p_pick) - (sv_ray.travel_time_s - p_ray.travel_time_s)
+        ),
         "timing_tolerance_s": tolerance,
         "p_longitudinal_to_transverse_energy_ratio": p_long_e / p_trans_e,
         "sv_transverse_to_longitudinal_energy_ratio": sv_trans_e / sv_long_e,
