@@ -10,7 +10,7 @@ ehthumbs.db
 *.su.shot*
 __pycache__/
 .pytest_cache/
-.tmp-m0*/
+.tmp-m*/
 
 # Folder config file
 Desktop.ini

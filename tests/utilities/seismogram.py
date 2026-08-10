@@ -116,6 +116,62 @@ def fit_propagation_velocity(offsets_m: Sequence[float], pick_times_s: Sequence[
     return VelocityFit(velocity_m_s=1.0 / slope, intercept_s=intercept, residuals_s=residuals)
 
 
+def project_components(
+    first: Sequence[float], second: Sequence[float], direction: tuple[float, float]
+) -> tuple[list[float], list[float]]:
+    """Project two particle-velocity components parallel/perpendicular to direction."""
+    if len(first) != len(second):
+        raise ValueError("Component traces have different lengths")
+    norm = math.hypot(*direction)
+    if norm == 0.0:
+        raise ValueError("Projection direction must be non-zero")
+    nx, ny = direction[0] / norm, direction[1] / norm
+    parallel = [nx * vx + ny * vy for vx, vy in zip(first, second)]
+    perpendicular = [-ny * vx + nx * vy for vx, vy in zip(first, second)]
+    return parallel, perpendicular
+
+
+def time_window(
+    trace: Sequence[float], *, center_s: float, half_width_s: float, dt_s: float
+) -> list[float]:
+    if dt_s <= 0.0 or half_width_s <= 0.0:
+        raise ValueError("Window timestep and half-width must be positive")
+    start = max(0, math.ceil((center_s - half_width_s) / dt_s - 1.0e-12) - 1)
+    stop = min(len(trace), math.floor((center_s + half_width_s) / dt_s + 1.0e-12))
+    if start >= stop:
+        raise ValueError("Time window does not overlap the trace")
+    return list(trace[start:stop])
+
+
+def absolute_peak_index_in_window(
+    trace: Sequence[float], *, center_s: float, half_width_s: float, dt_s: float
+) -> int:
+    """Return the global index of the largest absolute sample in a time window."""
+    if dt_s <= 0.0 or half_width_s <= 0.0:
+        raise ValueError("Peak-pick timestep and half-width must be positive")
+    start = max(0, math.ceil((center_s - half_width_s) / dt_s - 1.0e-12) - 1)
+    stop = min(len(trace), math.floor((center_s + half_width_s) / dt_s + 1.0e-12))
+    if start >= stop:
+        raise ValueError("Peak-pick window does not overlap the trace")
+    local_index = max(range(stop - start), key=lambda index: abs(trace[start + index]))
+    if trace[start + local_index] == 0.0:
+        raise ValueError("Peak-pick window contains no signal")
+    return start + local_index
+
+
+def signal_energy(trace: Sequence[float]) -> float:
+    return sum(value * value for value in trace)
+
+
+def relative_amplitude_error(first: Sequence[float], second: Sequence[float]) -> float:
+    first_norm = math.sqrt(signal_energy(first))
+    second_norm = math.sqrt(signal_energy(second))
+    scale = max(first_norm, second_norm)
+    if scale == 0.0:
+        raise ValueError("Amplitude comparison requires a non-zero signal")
+    return abs(first_norm - second_norm) / scale
+
+
 def relative_l2(first: Sequence[Sequence[float]], second: Sequence[Sequence[float]]) -> float:
     if len(first) != len(second) or any(len(a) != len(b) for a, b in zip(first, second)):
         raise ValueError("Seismogram arrays have different shapes")
