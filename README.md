@@ -24,3 +24,8 @@ Daniel Koehn (2011): Time Domain 2D Elastic Full Waveform Tomography, PhD-Thesis
 Available at: http://nbn-resolving.de/urn:nbn:de:gbv:8-diss-67866 
 
 Daniel Koehn
+
+## Developer documentation
+
+- [Current build and execution workflow](docs/current_build_and_execution.md)
+- [Verification harness](docs/verification.md)
