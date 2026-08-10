@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import shlex
 import subprocess
@@ -28,7 +29,9 @@ def _capture(command: Sequence[str], cwd: Path) -> str | None:
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
-    return result.stdout.strip() or None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
 
 
 def _active_make_variables(makefile: Path) -> dict[str, str]:
@@ -45,6 +48,14 @@ def _active_make_variables(makefile: Path) -> dict[str, str]:
     return values
 
 
+def executable_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def run_denise(
     *,
     repository_root: Path,
@@ -55,8 +66,9 @@ def run_denise(
     configuration: dict[str, Any],
     timeout_seconds: float = 120.0,
 ) -> RunResult:
+    executable_path = denise_binary.resolve(strict=True)
     extra_args = shlex.split(os.environ.get("MPIEXEC_FLAGS", ""))
-    command = [mpiexec, *extra_args, "-np", str(ranks), str(denise_binary), "denise.inp", "workflow.inp"]
+    command = [mpiexec, *extra_args, "-np", str(ranks), str(executable_path), "denise.inp", "workflow.inp"]
     started = time.perf_counter()
     timed_out = False
     try:
@@ -85,6 +97,7 @@ def run_denise(
     stderr_path.write_text(stderr, encoding="utf-8")
 
     make_variables = _active_make_variables(repository_root / "src" / "Makefile")
+    git_status = _capture(["git", "status", "--porcelain"], repository_root)
     metadata = {
         "command": command,
         "returncode": returncode,
@@ -92,10 +105,27 @@ def run_denise(
         "runtime_seconds": runtime,
         "mpi_ranks": ranks,
         "test_configuration": configuration,
-        "denise_git_commit": _capture(["git", "rev-parse", "HEAD"], repository_root),
-        "compiler_command": make_variables.get("CC"),
-        "compiler_version": _capture([make_variables.get("CC", "mpicc"), "--version"], repository_root),
-        "compiler_flags": make_variables,
+        "executable": {
+            "path": str(executable_path),
+            "sha256": executable_sha256(executable_path),
+        },
+        "repository": {
+            "git_commit": _capture(["git", "rev-parse", "HEAD"], repository_root),
+            "dirty": None if git_status is None else bool(git_status),
+            "status_porcelain": git_status or "",
+        },
+        "local_build_context": {
+            "description": (
+                "Observed repository Makefile/toolchain context only; not verified provenance "
+                "for an externally supplied executable."
+            ),
+            "makefile": str((repository_root / "src" / "Makefile").resolve()),
+            "compiler_command": make_variables.get("CC"),
+            "compiler_version": _capture(
+                [make_variables.get("CC", "mpicc"), "--version"], repository_root
+            ),
+            "make_variables": make_variables,
+        },
         "mpi_version": _capture([mpiexec, "--version"], repository_root),
     }
     metadata_path = case_directory / "run_metadata.json"

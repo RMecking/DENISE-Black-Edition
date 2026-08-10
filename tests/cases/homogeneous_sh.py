@@ -36,8 +36,11 @@ class HomogeneousSHConfig:
         return len(self.receiver_x_m)
 
     def analytical_travel_times(self) -> list[float]:
+        return [offset / self.vs_m_s for offset in self.receiver_offsets_m()]
+
+    def receiver_offsets_m(self) -> list[float]:
         return [
-            math.hypot(x - self.source_x_m, self.receiver_y_m - self.source_y_m) / self.vs_m_s
+            math.hypot(x - self.source_x_m, self.receiver_y_m - self.source_y_m)
             for x in self.receiver_x_m
         ]
 

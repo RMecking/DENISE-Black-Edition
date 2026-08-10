@@ -22,6 +22,17 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=os.environ.get("MPIEXEC", "mpirun"),
         help="MPI launcher executable (default: MPIEXEC or mpirun).",
     )
+    group.addoption(
+        "--require-denise",
+        action="store_true",
+        help="Fail instead of skipping when DENISE or MPI is unavailable; intended for CI/verification.",
+    )
+
+
+def unavailable_dependency(message: str, *, required: bool) -> None:
+    if required:
+        pytest.fail(message, pytrace=False)
+    pytest.skip(message)
 
 
 @pytest.fixture(scope="session")
@@ -36,8 +47,11 @@ def denise_binary(pytestconfig: pytest.Config) -> Path:
     if not candidate.is_absolute():
         candidate = (REPOSITORY_ROOT / candidate).resolve()
     if not candidate.is_file():
-        pytest.skip(f"DENISE executable not found: {candidate}. Build it with 'make -C src denise'.")
-    return candidate
+        unavailable_dependency(
+            f"DENISE executable not found: {candidate}. Build it with 'make -C src denise'.",
+            required=pytestconfig.getoption("--require-denise"),
+        )
+    return candidate.resolve()
 
 
 @pytest.fixture(scope="session")
@@ -45,5 +59,21 @@ def mpiexec(pytestconfig: pytest.Config) -> str:
     configured = str(pytestconfig.getoption("--mpiexec"))
     resolved = shutil.which(configured)
     if resolved is None:
-        pytest.skip(f"MPI launcher not found: {configured}")
+        unavailable_dependency(
+            f"MPI launcher not found: {configured}",
+            required=pytestconfig.getoption("--require-denise"),
+        )
     return resolved
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo):
+    outcome = yield
+    report = outcome.get_result()
+    if (
+        item.config.getoption("--require-denise")
+        and item.get_closest_marker("integration") is not None
+        and report.skipped
+    ):
+        report.outcome = "failed"
+        report.longrepr = "DENISE integration tests may not skip in --require-denise mode"

@@ -1,0 +1,34 @@
+name: DENISE verification
+
+on:
+  pull_request:
+    branches: [modernization]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  m0-verification:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install build and test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential openmpi-bin libopenmpi-dev libfftw3-dev python3-pytest
+
+      - name: Build libcseife
+        run: make -C libcseife
+
+      - name: Build DENISE
+        run: make -C src denise
+
+      - name: Run pure-Python harness tests
+        run: python3 -m pytest tests/test_harness_units.py -v
+
+      - name: Run mandatory DENISE physics verification
+        run: python3 -m pytest tests/physics -v --require-denise
