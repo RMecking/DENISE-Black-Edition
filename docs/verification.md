@@ -141,5 +141,8 @@ stderr, metadata, parameter file, geometry, and seismogram in that run folder.
 `modernization` and by manual dispatch. It installs the Linux toolchain,
 OpenMPI, FFTW, and pytest; builds both `libcseife` and `bin/denise`; runs the
 pure-Python unit tests; then runs all physics tests with `--require-denise`.
+The physics step sets `MPIEXEC_FLAGS=--oversubscribe` because the hosted runner
+provides fewer CPU slots than the four MPI ranks used by the small 2 x 2 case;
+this changes process placement only, not the DENISE model or decomposition.
 Missing dependencies, build failures, skipped integration tests, and physics
 assertion failures therefore fail the job.

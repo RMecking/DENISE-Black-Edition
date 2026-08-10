@@ -31,4 +31,6 @@ jobs:
         run: python3 -m pytest tests/test_harness_units.py -v
 
       - name: Run mandatory DENISE physics verification
+        env:
+          MPIEXEC_FLAGS: --oversubscribe
         run: python3 -m pytest tests/physics -v --require-denise
