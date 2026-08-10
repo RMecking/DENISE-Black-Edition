@@ -9,6 +9,9 @@
 The physics suite contains independent homogeneous elastic SH and P/SV cases.
 The P/SV suite covers P and SV velocity, projected polarization, source
 symmetry, Gxx reciprocity, and both-component MPI reproducibility.
+The CPML suite uses paired compact/reference domains to measure reflections at
+all four sides for SH, P and SV waves, including oblique, corner, disabled-CPML,
+and MPI-decomposition checks.
 
 See `docs/verification.md` for installation, commands, tolerances, generated
 artifacts, and failure inspection.

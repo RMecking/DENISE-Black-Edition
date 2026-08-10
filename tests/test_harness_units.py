@@ -9,7 +9,9 @@ from tests.cases.homogeneous_psv import HomogeneousPSVConfig, generate_case as g
 from tests.cases.homogeneous_sh import HomogeneousSHConfig, generate_case
 from tests.utilities.runner import executable_sha256
 from tests.utilities.seismogram import (
+    absolute_peak_index_in_interval,
     absolute_peak_index_in_window,
+    cpml_reflection_metrics,
     fit_propagation_velocity,
     first_break_index,
     normalized_correlation,
@@ -123,3 +125,26 @@ def test_absolute_peak_index_in_window_returns_global_index():
     assert absolute_peak_index_in_window(
         trace, center_s=0.2, half_width_s=0.11, dt_s=0.1
     ) == 2
+
+
+def test_absolute_peak_interval_can_exclude_an_earlier_larger_peak():
+    trace = [0.0, 9.0, 0.0, -4.0, 0.0]
+    assert absolute_peak_index_in_interval(
+        trace, start_s=0.3, stop_s=0.5, dt_s=0.1
+    ) == 3
+
+
+def test_cpml_reflection_metric_has_known_ratio_and_decibels():
+    reference = [2.0, 0.0, 0.0, 0.0]
+    compact = [2.0, 0.0, 0.2, 0.0]
+    metrics = cpml_reflection_metrics(
+        compact,
+        reference,
+        dt_s=0.1,
+        direct_window_s=(0.05, 0.15),
+        reflection_window_s=(0.25, 0.35),
+    )
+    assert metrics.direct_l2 == 2.0
+    assert math.isclose(metrics.late_residual_l2, 0.2)
+    assert math.isclose(metrics.reflection_ratio, 0.1)
+    assert math.isclose(metrics.reflection_db, -20.0)

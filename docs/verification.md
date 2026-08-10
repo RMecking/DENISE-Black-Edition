@@ -7,7 +7,9 @@ inputs, runs the unmodified executable, reads seismograms back into Python, and
 checks numerical behaviour without depending on C solver internals. M0 provides
 a homogeneous elastic SH case and M1 adds independent homogeneous isotropic
 elastic P/SV baselines. These are regression baselines for later refactoring,
-not a complete physics validation suite. Python 3.9 or newer is required.
+and M2 adds quantitative paired-domain CPML reflection tests. These are
+regression baselines for later refactoring, not a complete physics validation
+suite. Python 3.9 or newer is required.
 
 Install Python and build dependencies, then build DENISE:
 
@@ -160,10 +162,13 @@ The SV case uses the same five offsets on the 3-4-5 direction `(0.6, 0.8)`.
 A type-4 rotated point force has direction `(-0.8, 0.6)`, exactly transverse
 to those rays according to DENISE's `(-sin(azimuth), cos(azimuth))` convention.
 Each recorded `(vx, vy)` vector is projected onto the ray-transverse direction.
-The pick is the maximum absolute transverse velocity within `+/- 0.5/f`
-(50 ms) of the analytical S main-lobe time `1.5/f + r/Vs`. This window is wide
-compared with sampling and expected dispersion but separates the S mode from a
-P-speed arrival. The peak picks are independently fit to
+The pick is the maximum absolute transverse velocity in a predeclared interval
+from `1.5/f + r/Vp + 0.25/f` through `1.5/f + r/Vs + 0.5/f`. Thus every lower
+bound lies 25 ms after the predicted P main-lobe peak; in particular, the
+200 m P peak cannot enter the S search despite the modes being separated by
+only 44.4 ms there. The upper bound retains 50 ms after the predicted S peak.
+The interval comes entirely from analytical velocities and source bandwidth,
+not from observed picks. The peak picks are independently fit to
 `t_pick = t0 + r / Vs_fit`, again with a 1% velocity limit and `2*dt` residual
 limit. Thus P and SV fits cannot pass if both modes propagate at one velocity.
 
@@ -225,6 +230,105 @@ The observed local baseline is distinct from the analytical requirements:
 Six P/SV integration tests take approximately 25 seconds in the documented
 WSL development environment. Exact metrics are written as JSON beside the run
 artifacts.
+
+## CPML reflection verification
+
+M2 measures boundary energy with paired black-box runs. The compact run lets a
+wave encounter the selected 15-cell CPML and return to the receiver. Its
+homogeneous reference enlarges the tested dimension from 120 to 360 cells so
+the external reference boundary cannot return during analysis. Material,
+`DH`, `DT`, FD8/Holberg coefficients, source function, source/receiver offsets,
+and grid phase are identical. Because DENISE fixes its coordinate origin and
+does not accept a negative model origin, left/top references cannot literally
+retain their input coordinate numbers while moving those boundaries outward.
+Every reference therefore translates source and receiver together by exactly
+120 grid cells in the enlarged dimension. This is a change of computational
+origin only: physical geometry and integer staggered-grid placement are
+preserved. Each metrics file records that translation.
+
+The paired direct windows must agree to relative L2 at most `1e-3` and
+correlation at least `0.999999`. The L2 limit allows 0.1% single-precision
+difference from different global loop bounds while remaining over 30 times
+tighter than the 3.16% amplitude ratio represented by the normal-incidence
+acceptance limit. Observed direct mismatch is also reported; it is not included
+in the late residual definition.
+
+For traces `d_compact` and `d_reference`, M2 computes
+
+```text
+d_reflection(t) = d_compact(t) - d_reference(t)
+R = ||d_reflection||_2,late / ||d_reference||_2,direct
+R_dB = 20 log10(R)
+```
+
+Both linear ratio and amplitude dB are stored. A more negative value is better.
+Normal-incidence SH, P, and SV require `R_dB <= -30 dB`. The harder oblique and
+corner cases use a predeclared `-25 dB` limit. Opposite SH sides may differ by
+at most 3 dB. These are acceptance criteria, distinct from the observed values
+below.
+
+### Geometry and analytical windows
+
+Normal cases use a 1200 m tested dimension and 2400 m transverse dimension.
+The source and receiver are 100 m apart and face the selected boundary. The
+inner and outer compact-boundary image paths are 1200 and 1500 m. Direct
+windows span `1.5/f + r_direct/V +/- 0.75/f`; late windows span from
+`1.5/f + r_inner/V - 0.5/f` through
+`1.5/f + r_outer/V + 0.5/f`. Consequently SH uses direct `[0.125,0.275] s`
+and late `[0.700,0.950] s`; P uses direct approximately
+`[0.1083,0.2583] s` and late `[0.500,0.700] s`; SV uses direct approximately
+`[0.1306,0.2806] s` and late `[0.7667,1.0333] s`. The nearest transverse
+boundary returns occur after each simulation ends.
+
+The oblique SH ray has direct vector `(-100,-600) m`; its right-boundary image
+paths are 1341.64 and 1615.55 m, giving late `[0.77082,1.00777] s`.
+The diagonal corner case has direct vector `(-100,-100) m`. Its conservative
+late interval `[0.40414,0.83640] s` starts at the earliest inner side-PML image
+path `sqrt(600^2+100^2) m` and ends after the outer-corner path
+`sqrt(900^2+900^2) m`. It therefore includes the transition from individual
+side damping into the region where x and y CPML overlap, rather than claiming
+to isolate a mathematically pure corner reflection.
+
+SH records `vz`. Explosive P tests record the longitudinal component (`vx` for
+x incidence and `vy` for y incidence). The SV test uses a y-directed point
+force on an x ray; the ray-transverse projection reduces exactly to recorded
+`vy`, so P and SV metrics remain separate.
+
+### CPML negative control, MPI, and observed baseline
+
+The negative control sets the existing input parameter `FW=0`. Existing DENISE
+branches guard CPML allocation and updates with `FW>0`, so this disables the
+absorbing layer without source changes or solver instrumentation. The disabled
+case must be at least 15 dB worse than the enabled case. This threshold tests
+sensitivity rather than CPML quality; the enabled run must independently pass
+the `-30 dB` criterion.
+
+The representative right-going SH compact case runs as 1x1, 2x1, 1x2, and
+2x2. In x-decomposed runs the outgoing wave and boundary return cross the
+internal x interface; the source lies on the y partition line in y-decomposed
+runs. Complete `vz` traces retain the M0/M1 limits: relative L2 at most `1e-5`
+and normalized correlation at least `0.999999`.
+
+Observed WSL baseline (acceptance values above were declared independently):
+
+| Case | Reflection ratio | Level |
+| --- | ---: | ---: |
+| SH left normal | 0.000344021 | -69.27 dB |
+| SH right normal | 0.000317903 | -69.95 dB |
+| SH top normal | 0.000344021 | -69.27 dB |
+| SH bottom normal | 0.000317903 | -69.95 dB |
+| SH oblique right | 0.000730314 | -62.73 dB |
+| SH corner/overlap | 0.001310140 | -57.65 dB |
+| P normal x | 0.0003053 | -70.31 dB |
+| P normal y | 0.0003049 | -70.31 dB |
+| SV normal x | 0.0006380 | -63.90 dB |
+| SH right, `FW=0` | 0.254429 | -11.89 dB |
+
+Left/right and top/bottom differences are both 0.686 dB. Disabling CPML
+degrades the metric by 58.07 dB. All three non-reference MPI layouts currently
+have relative L2 `0.0` and correlation `1.0` (within floating display). The
+eight CPML pytest cases, comprising 25 DENISE runs, take about 70 seconds in
+the documented WSL environment and remain in the mandatory quick suite.
 
 Each run writes `stdout.txt`, `stderr.txt`, and `run_metadata.json` into its
 pytest temporary directory. Metadata includes the absolute executed binary
