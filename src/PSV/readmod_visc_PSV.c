@@ -103,8 +103,6 @@ void readmod_visc_PSV(float  **  rho, float **  pi, float **  u, float ** taus, 
 			fread(&rhov, sizeof(float), 1, fp_rho);
 			fread(&qp, sizeof(float), 1, fp_qp);
 			fread(&qs, sizeof(float), 1, fp_qs);
-			qp = 30.0;
-			qs = 30.0;
 			
 				
 			/* only the PE which belongs to the current global gridpoint 

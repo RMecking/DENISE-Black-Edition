@@ -42,7 +42,10 @@ def _enable_viscoelasticity(directory: Path, frequencies_hz: tuple[float, ...]) 
         raise ValueError("At least one positive relaxation frequency is required")
     path = directory / "denise.inp"
     content = path.read_text(encoding="ascii")
-    content = content.replace("L =0", f"L ={len(frequencies_hz)}", 1)
+    # read_par.c consumes the first character of every non-comment record before
+    # calling fscanf. A leading space is therefore required for the one-letter L
+    # key; without it the parser silently leaves the global default L=0 in place.
+    content = content.replace("\nL =0\n", f"\n L ={len(frequencies_hz)}\n", 1)
     frequency_record = " ".join(str(value) for value in frequencies_hz)
     content = content.replace("FL =10.0", f"FL ={frequency_record}", 1)
     content = content.replace("homogeneous elastic", "homogeneous viscoelastic", 1)

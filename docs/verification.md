@@ -587,3 +587,51 @@ the defects remain. Inspect `sh_qs_200_repeatability_metrics.json`,
 `sh_q_sensitivity_metrics.json`, `psv_qp_sensitivity_metrics.json`,
 `psv_qs_sensitivity_metrics.json`, each case's `case.json`, and the standard run
 provenance files under the retained base directory.
+
+## M4.1 viscoelastic Q defect repairs
+
+M4.1 activates the existing viscoelastic implementations without changing
+their equations. In P/SV, `readmod_visc_PSV.c` now retains the Qp and Qs values
+read from the supplied model files instead of replacing both with `30.0`. In
+SH forward modelling, `FD_SH.c` selects the existing `sh_visc()` path when
+`L>0` and preserves the existing `sh()` path when `L=0`.
+
+The SH routing does not allocate the FWI data structure. `alloc_SH()` already
+owns the `pr`, `pp`, and `pq` memory variables for `L>0`, `dealloc_SH()` frees
+them, and the existing CPML allocation and exchange path is shared. Within
+`MODE=0`, `sh_visc()` does not use the FWI-only `Rxz`, `Ryz`, stored forward
+wavefields, gradients, or preconditioners. Consequently this repair makes no
+claim about and does not modify viscoelastic SH FWI.
+
+The test generator also accounts for a positional-parser peculiarity in
+`read_par.c`: it consumes the first character of a non-comment record before
+`fscanf`. Multi-character labels tolerate that behavior because the label is
+not validated, but the one-character `L` record does not. A leading space on
+the generated `L` record ensures DENISE actually receives `L>0`; without it,
+the parser silently retained the zero-initialized default and the nominal M4
+viscoelastic cases ran elastically.
+
+Before removing the three M4 markers, a focused run produced three
+`XPASS(strict)` failures with all original assertions intact. After marker
+removal, the accepted complete-seismogram relative-L2 sensitivities are:
+
+```text
+SH Qs=200 versus Qs=20:       0.23835335436049154
+P/SV Qp=200 versus Qp=20:     0.16035696010216646
+P/SV Qs=200 versus Qs=20:     0.2571877051507964
+```
+
+These values exceed the unchanged `1e-3` guard independently. They establish
+input sensitivity, not a complete validation of the rheology: no new assertion
+on amplitude ordering, high-Q convergence, distance dependence, dispersion,
+multiple relaxation mechanisms, viscoelastic MPI behavior, or FWI is added in
+M4.1.
+
+Run the repaired checks with:
+
+```bash
+python3 -m pytest tests -m 'not integration' -q
+python3 -m pytest tests/physics -v --require-denise
+```
+
+The mandatory physics run must contain no XFAIL, XPASS, or SKIP results.

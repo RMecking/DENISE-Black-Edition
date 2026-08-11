@@ -137,14 +137,6 @@ def test_sh_qs_200_repeatability(tmp_path, repository_root, denise_binary, mpiex
     assert repeat_correlation >= 1.0 - 1.0e-12
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=KnownViscoelasticQDefect,
-    reason=(
-        "Known defect: PHYSICS=SH, MODE=0, L>0 viscoelastic forward modelling "
-        "ignores Qs because the forward path uses the elastic stress update"
-    ),
-)
 def test_sh_mode0_qs_sensitivity(tmp_path, repository_root, denise_binary, mpiexec):
     base = ViscoelasticSHConfig()
     traces = {
@@ -177,11 +169,6 @@ def test_sh_mode0_qs_sensitivity(tmp_path, repository_root, denise_binary, mpiex
     _require_q_sensitivity(sensitivity_rel_l2, "SH MODE=0 Qs sensitivity")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=KnownViscoelasticQDefect,
-    reason="Known defect: readmod_visc_PSV.c overwrites input Qp with 30.0",
-)
 def test_psv_qp_input_sensitivity(tmp_path, repository_root, denise_binary, mpiexec):
     base = ViscoelasticPSVConfig()
     p_low = replace(base, qp=20.0, qs=100.0, source_type=2)
@@ -217,11 +204,6 @@ def test_psv_qp_input_sensitivity(tmp_path, repository_root, denise_binary, mpie
     _require_q_sensitivity(metrics["relative_l2"], "P/SV Qp sensitivity")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=KnownViscoelasticQDefect,
-    reason="Known defect: readmod_visc_PSV.c overwrites input Qs with 30.0",
-)
 def test_psv_qs_input_sensitivity(tmp_path, repository_root, denise_binary, mpiexec):
     base = ViscoelasticPSVConfig()
     vertical_receivers = tuple(
