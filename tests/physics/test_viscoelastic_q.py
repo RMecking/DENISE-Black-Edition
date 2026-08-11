@@ -26,6 +26,17 @@ from tests.utilities.seismogram import (
 pytestmark = pytest.mark.integration
 
 
+class KnownViscoelasticQDefect(AssertionError):
+    """Raised only for a confirmed lack of Q-input sensitivity."""
+
+
+def _require_q_sensitivity(sensitivity_rel_l2: float, comparison: str) -> None:
+    if sensitivity_rel_l2 < 1.0e-3:
+        raise KnownViscoelasticQDefect(
+            f"{comparison} relative L2 {sensitivity_rel_l2:.6g} is below 1e-3"
+        )
+
+
 def _run_sh(directory: Path, *, repository_root: Path, denise_binary: Path, mpiexec: str, config):
     generate_viscoelastic_sh_case(directory, config=config)
     result = run_denise(
@@ -128,6 +139,7 @@ def test_sh_qs_200_repeatability(tmp_path, repository_root, denise_binary, mpiex
 
 @pytest.mark.xfail(
     strict=True,
+    raises=KnownViscoelasticQDefect,
     reason=(
         "Known defect: PHYSICS=SH, MODE=0, L>0 viscoelastic forward modelling "
         "ignores Qs because the forward path uses the elastic stress update"
@@ -162,11 +174,12 @@ def test_sh_mode0_qs_sensitivity(tmp_path, repository_root, denise_binary, mpiex
     )
     qs_hashes = {model_hashes[label]["qs"] for label in ("20", "50", "200")}
     assert len(qs_hashes) == 3, "Qs input models must have distinct SHA-256 hashes"
-    assert sensitivity_rel_l2 >= 1.0e-3
+    _require_q_sensitivity(sensitivity_rel_l2, "SH MODE=0 Qs sensitivity")
 
 
 @pytest.mark.xfail(
     strict=True,
+    raises=KnownViscoelasticQDefect,
     reason="Known defect: readmod_visc_PSV.c overwrites input Qp with 30.0",
 )
 def test_psv_qp_input_sensitivity(tmp_path, repository_root, denise_binary, mpiexec):
@@ -201,11 +214,12 @@ def test_psv_qp_input_sensitivity(tmp_path, repository_root, denise_binary, mpie
         json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     assert metrics["model_sha256"]["low"]["qp"] != metrics["model_sha256"]["high"]["qp"]
-    assert metrics["relative_l2"] >= 1.0e-3
+    _require_q_sensitivity(metrics["relative_l2"], "P/SV Qp sensitivity")
 
 
 @pytest.mark.xfail(
     strict=True,
+    raises=KnownViscoelasticQDefect,
     reason="Known defect: readmod_visc_PSV.c overwrites input Qs with 30.0",
 )
 def test_psv_qs_input_sensitivity(tmp_path, repository_root, denise_binary, mpiexec):
@@ -247,4 +261,4 @@ def test_psv_qs_input_sensitivity(tmp_path, repository_root, denise_binary, mpie
         json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     assert metrics["model_sha256"]["low"]["qs"] != metrics["model_sha256"]["high"]["qs"]
-    assert metrics["relative_l2"] >= 1.0e-3
+    _require_q_sensitivity(metrics["relative_l2"], "P/SV Qs sensitivity")
