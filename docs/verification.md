@@ -791,3 +791,85 @@ MPIEXEC_FLAGS=--oversubscribe python3 -m pytest \
 
 The first command is intentionally red at this review stop because the failing
 physics assertion is preserved. Extended execution must wait for review.
+
+### M4.2 review rework: calibrated spectral estimator
+
+Independent review identified that the original phase estimator had not been
+validated for a broadband transient. Its 0.22 s fully Hann-weighted gate has an
+approximate zero-to-zero main-lobe width of 18.18 Hz, much broader than the
+6--14 Hz analysis band. It therefore convolves contributions from both sides
+of the 10 Hz reference frequency, where the theoretical dispersive phase
+changes sign.
+
+A pure-Python known-answer test now constructs elastic 10 Hz broadband Ricker
+traces at the same DT=0.5 ms and 400--800 m offsets as M4.2. For each receiver,
+the FFT is multiplied by the analytical transfer
+`exp((attenuation_slope(f)+i*phase_slope(f))*r)`, transformed back to time, and
+processed by the production transfer-spectrum, phase-unwrapping, and linear-fit
+pipeline. This calibration reproduced the short-Hann bias:
+
+| f (Hz) | imposed attenuation | recovered attenuation | relative error | imposed phase | recovered phase | phase relative error | phase absolute error |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 6 | -1.6531012e-4 | -2.2335312e-4 | 35.11% | -8.5406063e-5 | -4.4660129e-5 | 47.71% | 4.0745933e-5 |
+| 8 | -2.4189429e-4 | -2.6208256e-4 | 8.35% | -5.0777534e-5 | -1.9032633e-5 | 62.52% | 3.1744901e-5 |
+| 10 | -3.0792529e-4 | -3.0022988e-4 | 2.50% | 4.5281318e-6 | 1.3218570e-5 | 191.92% | 8.6904383e-6 |
+| 12 | -3.6153704e-4 | -3.3815986e-4 | 6.47% | 7.1683734e-5 | 5.2650912e-5 | 26.55% | 1.9032822e-5 |
+| 14 | -4.0394503e-4 | -3.7454979e-4 | 7.28% | 1.4476839e-4 | 9.9765459e-5 | 31.09% | 4.5002935e-5 |
+
+The replacement is a receiver-centred 0.40 s Tukey gate with alpha=0.2. Its
+0.32 s flat top contains the complete direct pulse while the tapered ends
+suppress truncation. Its approximate main-lobe width is 5.56 Hz. The same
+known-answer test then recovered all five attenuation and phase slopes within
+2.07% (the largest relative phase error occurs at 10 Hz where the expected
+slope is nearly zero):
+
+| f (Hz) | imposed attenuation | recovered attenuation | relative error | imposed phase | recovered phase | phase relative error | phase absolute error |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 6 | -1.6531012e-4 | -1.6512886e-4 | 0.110% | -8.5406063e-5 | -8.5647863e-5 | 0.283% | 2.4180030e-7 |
+| 8 | -2.4189429e-4 | -2.4209712e-4 | 0.084% | -5.0777534e-5 | -5.0741116e-5 | 0.072% | 3.6417720e-8 |
+| 10 | -3.0792529e-4 | -3.0778428e-4 | 0.046% | 4.5281318e-6 | 4.6217310e-6 | 2.067% | 9.3599243e-8 |
+| 12 | -3.6153704e-4 | -3.6156974e-4 | 0.009% | 7.1683734e-5 | 7.1526739e-5 | 0.219% | 1.5699541e-7 |
+| 14 | -4.0394503e-4 | -4.0404039e-4 | 0.024% | 1.4476839e-4 | 1.4491086e-4 | 0.098% | 1.4246974e-7 |
+
+The receiver aperture is 400 m. Continuous-theory phase accumulation across
+it is only -0.02031 rad at 8 Hz and +0.02867 rad at 12 Hz, compared with
+-0.03416 rad at 6 Hz and +0.05791 rad at 14 Hz. The calibrated gate works at
+all five frequencies, but 6 and 14 Hz were therefore predeclared as the revised
+mandatory phase pair before rerunning DENISE. The former 8/12 Hz results remain
+in the JSON as `old_hann_diagnostic`, and calibrated 8/12 Hz values remain
+available as diagnostics. The phase tolerance remains 20%.
+
+The discrete diagnostic uses DT=0.5 ms, DH=10 m, the FDORDER=8 Holberg 0.1%
+coefficients `(1.2257,-0.099537,0.018063,-0.0026274)`, the staggered spatial
+symbol, leapfrog temporal symbol, and the exact harmonic response of the
+trapezoidal memory recurrence. Continuous and discrete slopes are:
+
+| f (Hz) | continuous attenuation | discrete attenuation | continuous phase | discrete phase |
+|---:|---:|---:|---:|---:|
+| 6 | -1.6531012e-4 | -1.6540096e-4 | -8.5406063e-5 | -8.5448222e-5 |
+| 8 | -2.4189429e-4 | -2.4195329e-4 | -5.0777534e-5 | -5.0778426e-5 |
+| 10 | -3.0792529e-4 | -3.0789385e-4 | 4.5281318e-6 | 4.5505380e-6 |
+| 12 | -3.6153704e-4 | -3.6137185e-4 | 7.1683734e-5 | 7.1691318e-5 |
+| 14 | -4.0394503e-4 | -4.0362677e-4 | 1.4476839e-4 | 1.4471976e-4 |
+
+The largest phase-slope correction is 4.86e-8 rad/m, orders of magnitude below
+the original 8 Hz discrepancy of 3.74e-5 rad/m. Ordinary temporal/spatial FD
+dispersion therefore cannot explain the original failure.
+
+After calibration passed, the unchanged Qs=50 DENISE cases were rerun. The
+calibrated results are:
+
+| f (Hz) | observed attenuation | continuous theory | relative error | observed phase | continuous theory | relative error | R-squared phase |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 6 | -1.6482496e-4 | -1.6531012e-4 | 0.29% | -8.4301770e-5 | -8.5406063e-5 | 1.29% | 0.99999999 |
+| 8 | -2.4162393e-4 | -2.4189429e-4 | 0.11% | -5.1395515e-5 | -5.0777534e-5 | 1.22% | 0.99999967 |
+| 10 | -3.0822426e-4 | -3.0792529e-4 | 0.10% | 4.8804297e-6 | 4.5281318e-6 | 7.78% | 0.99999875 |
+| 12 | -3.6075679e-4 | -3.6153704e-4 | 0.22% | 7.1723699e-5 | 7.1683734e-5 | 0.06% | 1.00000000 |
+| 14 | -4.0393781e-4 | -4.0394503e-4 | 0.002% | 1.4429393e-4 | 1.4476839e-4 | 0.33% | 1.00000000 |
+
+Both mandatory phase frequencies pass the unchanged 20% criterion, the
+8/10/12 Hz attenuation checks pass the unchanged 15% criterion, and effective
+parameters, exact Qs=200 repeatability, and high-Q convergence remain green.
+The original failure is therefore attributed to the uncalibrated short-Hann
+measurement, not to DENISE rheology. Per the review stop, the L=3 experiment
+remains unexecuted pending independent review.
