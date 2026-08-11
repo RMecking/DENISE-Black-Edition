@@ -17,6 +17,11 @@ geometry helper maps each injected or sampled field to its physical position
 and collocates oblique `vx`/`vy` measurements before vector projection. SH
 free-surface propagation is not claimed because the current SH stepping path
 does not apply that boundary. See `docs/verification.md` for the review history.
+M4 adds homogeneous viscoelastic Q-input generators and two intentionally
+failing sensitivity guards. They demonstrate that the current SH timestep does
+not use its prepared viscoelastic stress update and that P/SV overwrites input
+Qp/Qs with hard-coded values. The M4 physics file must remain red until those
+solver defects are fixed in a separately reviewed milestone.
 
 See `docs/verification.md` for installation, commands, tolerances, generated
 artifacts, and failure inspection.

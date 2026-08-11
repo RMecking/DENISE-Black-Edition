@@ -468,3 +468,99 @@ provides fewer CPU slots than the four MPI ranks used by the small 2 x 2 case;
 this changes process placement only, not the DENISE model or decomposition.
 Missing dependencies, build failures, skipped integration tests, and physics
 assertion failures therefore fail the job.
+
+## M4 viscoelastic Q-input verification (review stop)
+
+M4 begins with input sensitivity rather than fitting an assumed constant-Q
+law. The generated homogeneous cases retain the established M0/M1 grids,
+sources, receivers, FD order, and CPML settings. They set `L=1`, `FL=10 Hz`
+and write native single-precision `.qs`, `.qp`, `.vs`, `.vp`, and `.rho`
+models. Each `case.json` records the numerical Q values, relaxation
+frequencies, MPI decomposition, and SHA-256 of every model file.
+
+### Implemented source semantics
+
+The following is a transcription of the existing implementation, not an
+assumption based on parameter names. A non-zero `L` selects the viscoelastic
+model reader and allocates `L` memory variables. For mechanism `l`, DENISE
+defines the stress-relaxation time and dimensionless timestep ratio as
+
+```text
+theta_l = 1 / (2*pi*FL[l])
+eta_l   = DT / theta_l
+```
+
+The readers map input quality factors to dimensionless relaxation strengths,
+not to `theta_l`:
+
+```text
+taus = 2 / Qs
+taup = 2 / Qp
+```
+
+The modulus-reference angular frequency is `omega_ref = 2*pi*FL[1]`. With
+`S = sum_l (omega_ref^2*theta_l^2)/(1+omega_ref^2*theta_l^2)`, the
+velocity-input P/SV path forms
+
+```text
+mu = rho*Vs^2 / (1 + S*taus)
+pi = rho*Vp^2 / (1 + S*taup)
+```
+
+and the SH path applies the analogous denominator to harmonically averaged
+`rho*Vs^2`. The stress coefficients contain `DT*(1+L*tau)`. Each memory
+variable uses trapezoidal factors `b=1/(1+eta/2)`, `c=1-eta/2` and coupling
+`modulus*eta*tau`. In SH the memory terms couple to the two shear derivatives.
+In P/SV, `r` couples to `vxy+vyx`; `p` and `q` couple to `vxx+vyy` plus their
+respective shear corrections. Each stress update adds half the old memory sum,
+advances the memory variables, then adds half the new sum.
+
+### Acceptance criteria
+
+Changing Q by a factor of ten must produce a complete-seismogram relative L2
+of at least `1e-3`. This is deliberately far above ASCII rounding noise and
+MPI roundoff. For SH, peak, whole-trace RMS, and 5--15 Hz spectral RMS at the
+600 m receiver must be ordered `Qs=20 < Qs=50 < Qs=200`. An identical-Q repeat
+must have relative L2 no greater than `1e-12` and correlation within `1e-12`
+of unity. For P/SV, direct-P `vx` compares `Qp=20` with `Qp=200` at fixed
+`Qs=100`; transverse-SV `vx` on the vertical receiver line compares `Qs=20`
+with `Qs=200` at fixed `Qp=100`.
+
+### Observed baseline and defects
+
+The SH Qs=20, 50, and 200 outputs were identical: relative L2 for Qs=200
+versus Qs=20 was `0.0`; peak amplitude was `0.1396774`, RMS
+`0.03474107875259459`, and 5--15 Hz spectral RMS `10.44032870046328` in all
+three runs. The Qs=200 repeat was exactly reproducible (relative L2 `0.0`,
+correlation `1.0`). Source inspection explains the failed sensitivity:
+`FD_SH.c` reads and prepares viscoelastic arrays when `L>0`, but `sh.c` calls
+`update_s_elastic_PML_SH` unconditionally in the forward timestep and never
+calls the available viscoelastic SH stress update.
+
+P/SV independently produced identical direct-P results for Qp=20 and 200 and
+identical transverse-SV results for Qs=20 and 200. Both complete-seismogram
+relative L2 values were `0.0`; correlations were unity to floating-point
+display precision and all recorded peak/RMS/spectral amplitude differences
+were zero. The differing Q model hashes in each generated `case.json` prove
+that materially different files were supplied. In `readmod_visc_PSV.c`, the
+values read from those files are overwritten by `qp = 30.0` and `qs = 30.0`
+before `taup` and `taus` are formed.
+
+Both failing sensitivity assertions are intentionally retained as executable
+regression tests. Per the M4 stop condition, no elastic/high-Q limit,
+distance-dependent attenuation, spectral phase/dispersion, multiple-mechanism,
+Qp/Qs-independence, or viscoelastic MPI acceptance result is claimed. Those
+checks must wait for separately authorized solver fixes and a rerun of M4.
+
+Run the review evidence with:
+
+```bash
+python3 -m pytest tests/test_attenuation.py -q
+python3 -m pytest tests/physics/test_viscoelastic_q.py --require-denise -vv \
+  --basetemp=/tmp/denise-m4
+```
+
+The second command is expected to fail twice until both existing solver
+defects are addressed. Inspect `sh_q_sensitivity_metrics.json`,
+`psv_q_sensitivity_metrics.json`, each case's `case.json`, and the standard
+run provenance files under the retained base directory.
