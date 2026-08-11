@@ -873,3 +873,133 @@ parameters, exact Qs=200 repeatability, and high-Q convergence remain green.
 The original failure is therefore attributed to the uncalibrated short-Hann
 measurement, not to DENISE rheology. Per the review stop, the L=3 experiment
 remains unexecuted pending independent review.
+
+## M4.2 L>1 follow-up: Qs-to-GSLS parameterization audit
+
+This diagnostic supersedes the arbitrary L=3 experiment with the recovered
+production-like L=4 parameterization
+`FL=(2.7105,12.2792,68.1930,265.2297) Hz`, optimized `tau=0.0386`, and target
+Qs approximately 30. No source, model-reader, parser, or solver equation is
+changed. The recovered `scripts/qapprox.m` and `scripts/qstd.m` were used as
+read-only historical references and remain outside the committed patch.
+
+### Independent qstd reference and historical curve
+
+The Python reference in `tests/utilities/qstd_reference.py` implements the
+recovered MATLAB expression independently of the complex-modulus code. With
+`theta_l=1/(2*pi*FL_l)`, it evaluates
+
+```text
+Q(omega) = [1 + sum_l omega^2*theta_l^2*tau/(1+omega^2*theta_l^2)]
+           / [sum_l omega*theta_l*tau/(1+omega^2*theta_l^2)].
+```
+
+For L=1, an independent L=3 set, and the historical L=4 set, qstd agrees with
+`Re(M*)/Im(M*)` from the existing generalized-Maxwell implementation within a
+relative tolerance of `2e-15` at 5, 8, 10, 20, 60, and 120 Hz.
+
+The historical optimized L=4 curve is:
+
+| f (Hz) | Q, optimized tau=0.0386 | Q, direct tau=2/30 | Q, compensating `.qs=2/0.0386` |
+|---:|---:|---:|---:|
+| 5 | 31.19376 | 18.51194 | 31.19376 |
+| 10 | 29.52250 | 17.71033 | 29.52250 |
+| 20 | 29.97808 | 18.17428 | 29.97808 |
+| 40 | 30.14829 | 18.44415 | 30.14829 |
+| 60 | 29.75869 | 18.30982 | 29.75869 |
+| 80 | 29.92265 | 18.48958 | 29.92265 |
+| 100 | 30.41250 | 18.85424 | 30.41250 |
+| 120 | 31.02579 | 19.28497 | 31.02579 |
+
+Dense 0.1 Hz sampling over 5--120 Hz gives:
+
+| case | tau | Q minimum (frequency) | Q maximum (frequency) | mean Q | RMS deviation from 30 | relative RMS |
+|---|---:|---:|---:|---:|---:|---:|
+| A: optimized GSLS | 0.0386 | 29.42008 (12.0 Hz) | 31.19376 (5.0 Hz) | 30.11691 | 0.39028 | 1.301% |
+| B: `.qs=30` reader mapping | 0.0666667 | 17.69007 (11.1 Hz) | 19.28497 (120 Hz) | 18.49196 | 11.51344 | 38.378% |
+| C: `.qs=51.81347` compensation | 0.0386 | 29.42008 (12.0 Hz) | 31.19376 (5.0 Hz) | 30.11691 | 0.39028 | 1.301% |
+
+Case B remains comparably flat (range 1.595) but is centred near Q=18.5 rather
+than Q=30. Flatness and absolute Q level are therefore distinct properties.
+
+### Source parameter-semantics audit
+
+The relevant paths are:
+
+| path | model origin | input and conversion | global TAU | L dependence |
+|---|---|---|---|---|
+| `src/SH/readmod_visc_SH.c:11,51-52,94` | external | reads `.qs` as "Qs-values" and sets `taus=2/qs` | not used | none in Q-to-tau mapping |
+| `src/PSV/readmod_visc_PSV.c:11,56-63,86-94,118-119` | external | reads `.qp/.qs` as Qp/Qs and sets `taup=2/qp`, `taus=2/qs` | not used | none in Q-to-tau mapping |
+| `src/models/model.c:17,41-42,75-76` and `hh.c`, `FLnodes_visc.c`, `model_grad_visc.c`, `TOAST_bench_mod1_DEN_visc.c` | internal | assigns global `TAU` directly to both `taus` and `taup` | used directly | no automatic target-Q fit |
+| `src/models/model_ainos_visc.c:50-54` and the P02/P20/plexiglas examples | internal | local variables named Qp/Qs are converted with `2/Q` | declared but not used for the conversion | none |
+| `src/SH/FD_SH.c:172`, `FD_grad_SH.c:271`, `FWI_SH_visc.c:316` | external SH forward/gradient/FWI | all call the same SH reader | not used | inherit reader mapping |
+| `src/PSV/FD_PSV.c:204-207`, `FWI_PSV.c:338-341`, `RTM_PSV.c:248-249` | external or internal P/SV | reader for `READMOD`, otherwise selected internal `model()` | path dependent | inherit selected mapping |
+
+Global `TAU` is declared in `include/globvar.h:12`, read positionally in
+`src/read_par.c:178`, and printed by `src/write_par.c:220`. For external models
+it does not override or rescale `.qs/.qp`. The preparation routines apply the
+expected L/FL-dependent reference-modulus normalization and use the resulting
+`taus/taup` in every mechanism, but contain no inverse mapping from physical
+target Q to optimized common tau. No missing L-dependent Q scaling was found.
+
+FWI naming reinforces the ambiguity: `src/read_par_inv.c:51,157-158` calls the
+inverted quantity Qs, while SH FWI stores and updates `ptaus`; the explicit
+comment in `src/SH/FD_grad_SH.c:229` states `tau_s = 2/Qs`. Thus SH, P/SV,
+forward, RTM, and FWI are internally consistent in using relaxation strength,
+but the external interface exposes the files as physical Qp/Qs.
+
+### Black-box L=4 results
+
+Before the DENISE runs, the calibrated 0.40 s Tukey estimator was tested with
+synthetic L=4 transfers for both tau values. Across 6--14 Hz its maximum
+attenuation error was 0.183% and maximum phase error 0.707%. The black-box gate
+was then fixed at 10% for recovered effective Q, retaining the accepted 15%
+attenuation and 20% phase-slope limits.
+
+Both runs reported effective `MODE=0`, `PHYSICS=5`, `L=4`, and runtime
+`FL=(2.710500,12.279200,68.193001,265.229706) Hz`. The final digits are the
+correct C Float32 representations printed to six decimals, not altered input
+frequencies. Case metadata records `.qs=30` and `.qs=51.8134715`; the two Qs
+model SHA-256 hashes differ. The source guard independently requires the SH
+reader statement `taus[jj][ii]=2.0/qs`.
+
+Nominal `.qs=30` (reader tau=0.0666667):
+
+| f (Hz) | attenuation observed/theory | phase observed/theory | Q observed | Q reader theory | Q historical | historical error |
+|---:|---:|---:|---:|---:|---:|---:|
+| 6 | -5.07378e-4 / -5.08275e-4 | 3.06817e-4 / 3.07212e-4 | 18.2594 | 18.2268 | 30.6271 | 40.38% |
+| 8 | -6.87812e-4 / -6.87426e-4 | 5.46596e-4 / 5.46892e-4 | 17.8587 | 17.8686 | 29.8916 | 40.26% |
+| 10 | -8.62244e-4 / -8.63122e-4 | 8.19560e-4 / 8.19205e-4 | 17.7282 | 17.7103 | 29.5225 | 39.95% |
+| 12 | -1.03177e-3 / -1.03258e-3 | 1.11457e-3 / 1.11624e-3 | 17.7149 | 17.7002 | 29.4201 | 39.79% |
+| 14 | -1.19538e-3 / -1.19553e-3 | 1.43094e-3 / 1.43111e-3 | 17.7842 | 17.7819 | 29.4847 | 39.68% |
+
+Compensating `.qs=2/0.0386=51.8134715` (reader tau=0.0386):
+
+| f (Hz) | attenuation observed/theory | phase observed/theory | Q observed | Q historical | relative Q error |
+|---:|---:|---:|---:|---:|---:|
+| 6 | -3.04087e-4 / -3.04751e-4 | 1.77187e-4 / 1.77319e-4 | 30.6942 | 30.6271 | 0.219% |
+| 8 | -4.15167e-4 / -4.14949e-4 | 3.18494e-4 / 3.18788e-4 | 29.8763 | 29.8916 | 0.051% |
+| 10 | -5.23369e-4 / -5.23780e-4 | 4.80724e-4 / 4.80445e-4 | 29.5454 | 29.5225 | 0.078% |
+| 12 | -6.28665e-4 / -6.29346e-4 | 6.56665e-4 / 6.57577e-4 | 29.4527 | 29.4201 | 0.111% |
+| 14 | -7.31294e-4 / -7.31294e-4 | 8.45605e-4 / 8.45998e-4 | 29.4849 | 29.4847 | 0.001% |
+
+Both cases match their current-reader attenuation, phase, and Q predictions.
+Only the compensating file reproduces the historical qstd target. This is
+strong evidence that propagation and memory-variable updates implement the
+declared GSLS response, while the external Qs-to-tau mapping uses the L=1-style
+`2/Qs` approximation for every L.
+
+### Classification and review stop
+
+The evidence supports **Outcome 2: parameterization inconsistency / likely
+defect**, not a propagation-kernel defect. External files, diagnostics, and FWI
+controls are named and described as physical Qp/Qs, but for L>1 the reader does
+not perform the optimized Q-target-to-common-tau mapping required by the
+recovered qapprox/qstd workflow. Internal model paths that accept global TAU
+already operate directly in relaxation-strength semantics.
+
+No reader fix or automatic conversion is attempted. A future design must
+define how a spatially varying target `Q(x,z)` maps to `tau(x,z)` for fixed
+global L and FL, including the optimization objective and frequency band. The
+generic L=3 experiment remains deselected. This is a mandatory independent
+scientific review point.

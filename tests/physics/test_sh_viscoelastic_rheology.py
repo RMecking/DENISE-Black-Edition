@@ -4,6 +4,7 @@ import cmath
 import hashlib
 import json
 import math
+import struct
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from tests.utilities.effective_parameters import (
     require_effective_parameters,
 )
 from tests.utilities.runner import RunResult, result_summary, run_denise
+from tests.utilities.qstd_reference import qstd_quality_factor
 from tests.utilities.seismogram import (
     absolute_peak_index_in_interval,
     all_finite,
@@ -64,6 +66,11 @@ SLOPE_R_SQUARED_MIN = 0.95
 LOG_AMPLITUDE_RESIDUAL_MAX = 0.02
 PHASE_RESIDUAL_MAX_RAD = 0.02
 EFFECTIVE_Q_RELATIVE_TOLERANCE = 0.20
+HISTORICAL_L4_RELAXATION_FREQUENCIES_HZ = (2.7105, 12.2792, 68.1930, 265.2297)
+HISTORICAL_L4_OPTIMIZED_TAU = 0.0386
+HISTORICAL_L4_TARGET_Q = 30.0
+HISTORICAL_L4_COMPENSATING_QS_FILE = 2.0 / HISTORICAL_L4_OPTIMIZED_TAU
+HISTORICAL_L4_Q_RELATIVE_TOLERANCE = 0.10
 
 
 BASE_CONFIG = HomogeneousSHConfig(
@@ -95,12 +102,23 @@ class M42Runs:
     q200_repeat: SHRun
 
 
+@dataclass(frozen=True)
+class HistoricalL4Runs:
+    root: Path
+    nominal_qs30: SHRun
+    compensating_qs: SHRun
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _float32_values(values: tuple[float, ...]) -> tuple[float, ...]:
+    return tuple(struct.unpack("f", struct.pack("f", value))[0] for value in values)
 
 
 def _viscoelastic_config(qs: float, frequencies_hz=(10.0,)) -> ViscoelasticSHConfig:
@@ -146,7 +164,7 @@ def _run_sh_case(
         effective,
         mode=0,
         physics=5,
-        relaxation_frequencies_hz=relaxation_frequencies_hz,
+        relaxation_frequencies_hz=_float32_values(relaxation_frequencies_hz),
     )
     metadata = json.loads(result.metadata_path.read_text(encoding="utf-8"))
     assert metadata["returncode"] == 0
@@ -190,6 +208,35 @@ def m42_runs(tmp_path_factory, repository_root, denise_binary, mpiexec) -> M42Ru
         relaxation_frequencies_hz=(10.0,),
     )
     return M42Runs(root, elastic, viscoelastic, repeat)
+
+
+@pytest.fixture(scope="module")
+def historical_l4_runs(
+    tmp_path_factory, repository_root, denise_binary, mpiexec
+) -> HistoricalL4Runs:
+    root = tmp_path_factory.mktemp("m42_historical_l4")
+    nominal = _run_sh_case(
+        root / "qs_30",
+        repository_root=repository_root,
+        denise_binary=denise_binary,
+        mpiexec=mpiexec,
+        config=_viscoelastic_config(
+            HISTORICAL_L4_TARGET_Q, HISTORICAL_L4_RELAXATION_FREQUENCIES_HZ
+        ),
+        relaxation_frequencies_hz=HISTORICAL_L4_RELAXATION_FREQUENCIES_HZ,
+    )
+    compensating = _run_sh_case(
+        root / "qs_compensating",
+        repository_root=repository_root,
+        denise_binary=denise_binary,
+        mpiexec=mpiexec,
+        config=_viscoelastic_config(
+            HISTORICAL_L4_COMPENSATING_QS_FILE,
+            HISTORICAL_L4_RELAXATION_FREQUENCIES_HZ,
+        ),
+        relaxation_frequencies_hz=HISTORICAL_L4_RELAXATION_FREQUENCIES_HZ,
+    )
+    return HistoricalL4Runs(root, nominal, compensating)
 
 
 def _direct_interval(config: HomogeneousSHConfig, offset_m: float) -> tuple[float, float]:
@@ -472,6 +519,108 @@ def test_m42_distance_attenuation_and_phase_match_l1_rheology(m42_runs):
         assert fit["r_squared"] >= SLOPE_R_SQUARED_MIN
         assert max(abs(value) for value in fit["residuals"]) <= PHASE_RESIDUAL_MAX_RAD
         assert _relative_error(fit["slope"], theory) <= PHASE_SLOPE_RELATIVE_TOLERANCE
+
+
+def test_m42_historical_l4_external_qs_parameterization(
+    m42_runs, historical_l4_runs, repository_root
+):
+    frequencies = HISTORICAL_L4_RELAXATION_FREQUENCIES_HZ
+    for run in (
+        historical_l4_runs.nominal_qs30,
+        historical_l4_runs.compensating_qs,
+    ):
+        require_effective_parameters(
+            run.effective,
+            mode=0,
+            physics=5,
+            relaxation_frequencies_hz=_float32_values(frequencies),
+        )
+    assert historical_l4_runs.nominal_qs30.config.qs == HISTORICAL_L4_TARGET_Q
+    assert math.isclose(
+        historical_l4_runs.compensating_qs.config.qs,
+        HISTORICAL_L4_COMPENSATING_QS_FILE,
+        rel_tol=1.0e-15,
+    )
+    reader_source = (repository_root / "src" / "SH" / "readmod_visc_SH.c").read_text(
+        encoding="utf-8"
+    )
+    assert "taus[jj][ii]=2.0/qs;" in reader_source
+
+    metrics = {
+        "relaxation_frequencies_hz": list(frequencies),
+        "historical_optimized_tau": HISTORICAL_L4_OPTIMIZED_TAU,
+        "target_q": HISTORICAL_L4_TARGET_Q,
+        "reader_mapping_source": "src/SH/readmod_visc_SH.c: taus[jj][ii]=2.0/qs",
+        "runs": {},
+    }
+    for name, run in (
+        ("nominal_qs30", historical_l4_runs.nominal_qs30),
+        ("compensating_qs", historical_l4_runs.compensating_qs),
+    ):
+        reader_tau = 2.0 / run.config.qs
+        slopes = _slope_metrics(run, m42_runs.elastic)
+        rows = {}
+        for frequency in SPECTRAL_FREQUENCIES_HZ:
+            row = slopes[str(frequency)]
+            intended_q = qstd_quality_factor(
+                frequency_hz=frequency,
+                relaxation_frequencies_hz=frequencies,
+                tau=HISTORICAL_L4_OPTIMIZED_TAU,
+            )
+            reader_q = qstd_quality_factor(
+                frequency_hz=frequency,
+                relaxation_frequencies_hz=frequencies,
+                tau=reader_tau,
+            )
+            rows[str(frequency)] = row | {
+                "historical_intended_q": intended_q,
+                "current_reader_theoretical_q": reader_q,
+                "observed_vs_historical_q_relative_error": _relative_error(
+                    row["observed_effective_q"], intended_q
+                ),
+                "observed_vs_reader_q_relative_error": _relative_error(
+                    row["observed_effective_q"], reader_q
+                ),
+            }
+        metrics["runs"][name] = {
+            "qs_file_value": run.config.qs,
+            "reader_tau": reader_tau,
+            "effective_parameters": asdict(run.effective),
+            "model_sha256": run.model_sha256,
+            "frequencies": rows,
+        }
+    (historical_l4_runs.root / "historical_l4_parameterization.json").write_text(
+        json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+    nominal_rows = metrics["runs"]["nominal_qs30"]["frequencies"]
+    compensating_rows = metrics["runs"]["compensating_qs"]["frequencies"]
+    assert metrics["runs"]["nominal_qs30"]["reader_tau"] == 2.0 / 30.0
+    assert math.isclose(
+        metrics["runs"]["compensating_qs"]["reader_tau"],
+        HISTORICAL_L4_OPTIMIZED_TAU,
+        rel_tol=1.0e-15,
+    )
+    for row in nominal_rows.values():
+        assert row["observed_vs_reader_q_relative_error"] <= HISTORICAL_L4_Q_RELATIVE_TOLERANCE
+        assert row["observed_vs_historical_q_relative_error"] >= 0.25
+        assert _relative_error(
+            row["attenuation_fit"]["slope"],
+            row["theoretical_log_amplitude_slope_per_m"],
+        ) <= ATTENUATION_SLOPE_RELATIVE_TOLERANCE
+        assert _relative_error(
+            row["phase_fit"]["slope"], row["theoretical_phase_slope_rad_per_m"]
+        ) <= PHASE_SLOPE_RELATIVE_TOLERANCE
+    for row in compensating_rows.values():
+        assert row["observed_vs_reader_q_relative_error"] <= HISTORICAL_L4_Q_RELATIVE_TOLERANCE
+        assert row["observed_vs_historical_q_relative_error"] <= HISTORICAL_L4_Q_RELATIVE_TOLERANCE
+        assert _relative_error(
+            row["attenuation_fit"]["slope"],
+            row["theoretical_log_amplitude_slope_per_m"],
+        ) <= ATTENUATION_SLOPE_RELATIVE_TOLERANCE
+        assert _relative_error(
+            row["phase_fit"]["slope"], row["theoretical_phase_slope_rad_per_m"]
+        ) <= PHASE_SLOPE_RELATIVE_TOLERANCE
 
 
 @pytest.mark.extended
