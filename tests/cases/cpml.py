@@ -40,7 +40,7 @@ def _windows(
     )
 
 
-def normal_sh_pair(side: Literal["left", "right", "top", "bottom"]) -> CPMLPair:
+def normal_sh_pair(side: Literal["left", "right", "y_min", "y_max"]) -> CPMLPair:
     base = HomogeneousSHConfig(nx=120, ny=240, time_s=1.0)
     translation = (0.0, 0.0)
     if side == "right":
@@ -53,12 +53,12 @@ def normal_sh_pair(side: Literal["left", "right", "top", "bottom"]) -> CPMLPair:
                           receiver_x_m=(800.0,), receiver_y_m=1200.0)
         translation = (1200.0, 0.0)
         reference = replace(compact, nx=360, source_x_m=1900.0, receiver_x_m=(2000.0,))
-    elif side == "bottom":
+    elif side == "y_max":
         compact = replace(base, nx=240, ny=120, source_x_m=1200.0, source_y_m=500.0,
                           receiver_x_m=(1200.0,), receiver_y_m=400.0)
         translation = (0.0, 1200.0)
         reference = replace(compact, ny=360, source_y_m=1700.0, receiver_y_m=1600.0)
-    else:
+    else:  # y_min: DENISE's physical upper/free-surface side
         compact = replace(base, nx=240, ny=120, source_x_m=1200.0, source_y_m=700.0,
                           receiver_x_m=(1200.0,), receiver_y_m=800.0)
         translation = (0.0, 1200.0)

@@ -1,13 +1,28 @@
 from __future__ import annotations
 
 import math
+from array import array
 
 import pytest
 
 from tests.conftest import unavailable_dependency
 from tests.cases.homogeneous_psv import HomogeneousPSVConfig, generate_case as generate_psv_case
 from tests.cases.homogeneous_sh import HomogeneousSHConfig, generate_case
+from tests.cases.layered_psv import LayeredPSVConfig, generate_case as generate_layered_case
+from tests.utilities.elastic_analytics import (
+    free_surface_p_coefficients,
+    two_segment_ray,
+    zoeppritz_p_coefficients,
+)
 from tests.utilities.runner import executable_sha256
+from tests.utilities.staggered_grid import (
+    collocate_velocity_at_sxy,
+    denise_grid_index,
+    field_position,
+    input_coordinate_for_field_position,
+    input_field_position,
+    sxy_collocation_stencil,
+)
 from tests.utilities.seismogram import (
     absolute_peak_index_in_interval,
     absolute_peak_index_in_window,
@@ -21,6 +36,7 @@ from tests.utilities.seismogram import (
     relative_l2,
     ricker_wavelet,
     signal_energy,
+    time_interval,
     time_window,
 )
 
@@ -120,6 +136,12 @@ def test_time_window_energy_and_relative_amplitude():
     assert relative_amplitude_error(window, [-1.0, -2.0, -3.0]) == 0.0
 
 
+@pytest.mark.parametrize("start_s, stop_s", [(0.0, 0.3), (0.2, 0.6)])
+def test_time_interval_rejects_clipped_analysis_windows(start_s, stop_s):
+    with pytest.raises(ValueError, match="not fully contained"):
+        time_interval([1.0, 2.0, 3.0, 4.0, 5.0], start_s=start_s, stop_s=stop_s, dt_s=0.1)
+
+
 def test_absolute_peak_index_in_window_returns_global_index():
     trace = [0.0, 1.0, -4.0, 2.0, 9.0]
     assert absolute_peak_index_in_window(
@@ -141,10 +163,100 @@ def test_cpml_reflection_metric_has_known_ratio_and_decibels():
         compact,
         reference,
         dt_s=0.1,
-        direct_window_s=(0.05, 0.15),
+        direct_window_s=(0.1, 0.15),
         reflection_window_s=(0.25, 0.35),
     )
     assert metrics.direct_l2 == 2.0
     assert math.isclose(metrics.late_residual_l2, 0.2)
     assert math.isclose(metrics.reflection_ratio, 0.1)
     assert math.isclose(metrics.reflection_db, -20.0)
+
+
+def test_free_surface_plane_wave_solution_recovers_normal_incidence_polarity():
+    coefficients = free_surface_p_coefficients(
+        0.0, vp_m_s=3000.0, vs_m_s=1800.0, density_kg_m3=2000.0
+    )
+    assert math.isclose(coefficients["reflected_p_displacement"], -1.0)
+    assert abs(coefficients["reflected_sv_displacement"]) < 1.0e-12
+
+
+def test_zoeppritz_solver_matches_normal_incidence_impedance_formula():
+    coefficients = zoeppritz_p_coefficients(
+        0.0,
+        vp1_m_s=3000.0, vs1_m_s=1800.0, rho1_kg_m3=2000.0,
+        vp2_m_s=3600.0, vs2_m_s=2100.0, rho2_kg_m3=2300.0,
+    )
+    expected = (2300.0 * 3600.0 - 2000.0 * 3000.0) / (
+        2300.0 * 3600.0 + 2000.0 * 3000.0
+    )
+    assert math.isclose(coefficients["reflected_p_displacement"], expected)
+    assert abs(coefficients["reflected_sv_displacement"]) < 1.0e-12
+
+
+def test_two_segment_ray_obeys_snell_law():
+    ray = two_segment_ray(
+        (0.0, 600.0), (500.0, 900.0), boundary_y_m=5.0,
+        incident_velocity_m_s=3000.0, outgoing_velocity_m_s=1800.0,
+    )
+    outgoing_p = abs(500.0 - ray.boundary_x_m) / (
+        1800.0 * ray.outgoing_distance_m
+    )
+    assert math.isclose(ray.horizontal_slowness_s_m, outgoing_p, rel_tol=1.0e-10)
+
+
+def test_layered_generator_writes_declared_row_assignment(tmp_path):
+    config = LayeredPSVConfig(nx=2, ny=4, interface_upper_row=2)
+    generate_layered_case(tmp_path, config=config)
+    values = array("f")
+    values.frombytes((tmp_path / "model" / "layered.vp").read_bytes())
+    assert list(values) == [3000.0, 3000.0, 3600.0, 3600.0] * 2
+    assert config.interface_y_m == 20.0
+
+
+@pytest.mark.parametrize(
+    "field, expected",
+    [
+        ("material", (15.0, 25.0)),
+        ("sxx", (15.0, 25.0)),
+        ("syy", (15.0, 25.0)),
+        ("vx", (20.0, 25.0)),
+        ("vy", (15.0, 30.0)),
+        ("sxy", (20.0, 30.0)),
+    ],
+)
+def test_staggered_field_positions(field, expected):
+    assert field_position(2, 3, 10.0, field) == expected
+
+
+def test_input_coordinates_are_rounded_before_staggered_mapping():
+    assert denise_grid_index(24.9, 10.0) == 2
+    assert denise_grid_index(25.0, 10.0) == 3
+    assert input_field_position((20.0, 30.0), 10.0, "vx") == (20.0, 25.0)
+    assert input_field_position((20.0, 30.0), 10.0, "vy") == (15.0, 30.0)
+
+
+def test_inverse_field_coordinate_derives_equal_path_receiver_input():
+    assert input_coordinate_for_field_position(1705.0, 10.0, axis="y", field="vx") == 1710.0
+    assert input_coordinate_for_field_position(2180.0, 10.0, axis="y", field="vy") == 2180.0
+    with pytest.raises(ValueError, match="not representable"):
+        input_coordinate_for_field_position(1700.0, 10.0, axis="y", field="vx")
+
+
+def test_sxy_collocation_stencil_has_required_neighbors():
+    assert sxy_collocation_stencil((1400.0, 900.0), 10.0) == (
+        (1400.0, 900.0), (1400.0, 910.0), (1410.0, 900.0)
+    )
+
+
+def test_sxy_collocation_recovers_constant_fields():
+    assert collocate_velocity_at_sxy([2.0, 2.0], [2.0, 2.0], [-3.0, -3.0], [-3.0, -3.0]) == (
+        [2.0, 2.0], [-3.0, -3.0]
+    )
+
+
+def test_sxy_collocation_recovers_linear_fields_at_midpoint():
+    vx, vy = collocate_velocity_at_sxy(
+        [1.0, 3.0], [3.0, 5.0], [10.0, 14.0], [14.0, 18.0]
+    )
+    assert vx == [2.0, 4.0]
+    assert vy == [12.0, 16.0]

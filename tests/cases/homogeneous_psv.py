@@ -34,6 +34,7 @@ class HomogeneousPSVConfig:
     absorbing_width_gridpoints: int = 15
     damping_velocity_m_s: float = 3000.0
     pml_frequency_hz: float = 10.0
+    free_surface: bool = False
 
     @property
     def samples_per_trace(self) -> int:
@@ -126,7 +127,7 @@ def _parameter_lines(config: HomogeneousPSVConfig, nprocx: int, nprocy: int) -> 
         "L =0",
         "FL =10.0",
         "TAU =0.0",
-        "FREE_SURF =0",
+        f"FREE_SURF ={int(config.free_surface)}",
         f"FW ={config.absorbing_width_gridpoints}",
         f"DAMPING ={config.damping_velocity_m_s}",
         f"FPML ={config.pml_frequency_hz}",

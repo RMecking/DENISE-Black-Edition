@@ -124,7 +124,7 @@ def test_sh_cpml_normal_incidence_all_sides(
     tmp_path, repository_root, denise_binary, mpiexec
 ):
     metrics = {}
-    for side in ("left", "right", "top", "bottom"):
+    for side in ("left", "right", "y_min", "y_max"):
         pair = normal_sh_pair(side)
         result = _measure_pair(
             tmp_path / side, pair, repository_root=repository_root,
@@ -138,8 +138,8 @@ def test_sh_cpml_normal_incidence_all_sides(
         "left_right_difference_db": abs(
             metrics["left"]["reflection_db"] - metrics["right"]["reflection_db"]
         ),
-        "top_bottom_difference_db": abs(
-            metrics["top"]["reflection_db"] - metrics["bottom"]["reflection_db"]
+        "y_min_y_max_difference_db": abs(
+            metrics["y_min"]["reflection_db"] - metrics["y_max"]["reflection_db"]
         ),
         "tolerance_db": symmetry_tolerance_db,
     }
@@ -147,7 +147,7 @@ def test_sh_cpml_normal_incidence_all_sides(
         json.dumps(symmetry, indent=2) + "\n", encoding="utf-8"
     )
     assert symmetry["left_right_difference_db"] <= symmetry_tolerance_db
-    assert symmetry["top_bottom_difference_db"] <= symmetry_tolerance_db
+    assert symmetry["y_min_y_max_difference_db"] <= symmetry_tolerance_db
 
 
 @pytest.mark.parametrize("pair_factory", [oblique_sh_pair, corner_sh_pair], ids=["oblique", "corner"])
