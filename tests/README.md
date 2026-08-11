@@ -32,9 +32,15 @@ DENISE's own stdout echo to require effective `MODE=0`, `PHYSICS=5`, and exact
 and phase versus distance; and retain an exact repeat. The optional
 `extended` marker covers the first multiple-relaxation (`L>1`) experiment.
 Run mandatory physics with `-m 'not extended'`; run the additional experiment
-with `-m extended`. The first M4.2 mandatory evaluation currently preserves a
-phase-slope theory mismatch as a normal failing assertion, so it is a
-scientific review stop rather than an accepted green baseline.
+with `-m extended`. Review rework demonstrated with a broadband synthetic
+known-answer test that the original 0.22 s Hann gate biased the phase slopes.
+The production estimator now uses a receiver-centred 0.40 s Tukey gate with
+`alpha=0.2`; the old estimator remains in the run metrics as a diagnostic.
+Frequencies 6 and 14 Hz are the mandatory dispersion pair because their
+theoretical phase accumulation across the 400 m aperture is better conditioned
+than at 8/12 Hz. All five frequencies remain reported, and the quantitative
+phase tolerance remains 20%. The calibrated L=1 suite is green; `L>1` remains
+unexecuted pending independent review.
 
 See `docs/verification.md` for installation, commands, tolerances, generated
 artifacts, and failure inspection.

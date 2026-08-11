@@ -30,6 +30,8 @@ from tests.utilities.seismogram import (
     time_interval,
 )
 from tests.utilities.viscoelastic_rheology import (
+    approximate_main_lobe_width_hz,
+    discrete_rheology_prediction,
     effective_q_from_transfer_slopes,
     linear_fit,
     rheology_prediction,
@@ -50,8 +52,12 @@ HIGH_Q_DIRECT_RELATIVE_L2_MAX = 0.025
 HIGH_Q_CORRELATION_MIN = 0.999
 SPECTRAL_FREQUENCIES_HZ = (6.0, 8.0, 10.0, 12.0, 14.0)
 ATTENUATION_FREQUENCIES_HZ = (8.0, 10.0, 12.0)
-PHASE_FREQUENCIES_HZ = (8.0, 12.0)
+PHASE_FREQUENCIES_HZ = (6.0, 14.0)
+PHASE_DIAGNOSTIC_FREQUENCIES_HZ = (8.0, 12.0)
 DIRECT_WINDOW_HALF_WIDTH_S = 0.11
+SPECTRAL_WINDOW_HALF_WIDTH_S = 0.20
+SPECTRAL_WINDOW_KIND = "tukey"
+SPECTRAL_TUKEY_ALPHA = 0.2
 ATTENUATION_SLOPE_RELATIVE_TOLERANCE = 0.15
 PHASE_SLOPE_RELATIVE_TOLERANCE = 0.20
 SLOPE_R_SQUARED_MIN = 0.95
@@ -204,13 +210,19 @@ def _direct_windows(run: SHRun) -> list[list[float]]:
 
 
 def _frequency_transfer_by_receiver(
-    viscoelastic: SHRun, elastic: SHRun
+    viscoelastic: SHRun,
+    elastic: SHRun,
+    *,
+    half_width_s: float = SPECTRAL_WINDOW_HALF_WIDTH_S,
+    window_kind: str = SPECTRAL_WINDOW_KIND,
+    tukey_alpha: float = SPECTRAL_TUKEY_ALPHA,
 ) -> dict[float, list[complex]]:
     result = {frequency: [] for frequency in SPECTRAL_FREQUENCIES_HZ}
     for offset, visco_trace, elastic_trace in zip(
         elastic.config.receiver_offsets_m(), viscoelastic.traces, elastic.traces
     ):
-        start, stop = _direct_interval(elastic.config, offset)
+        center = 1.5 / elastic.config.source_frequency_hz + offset / elastic.config.vs_m_s
+        start, stop = center - half_width_s, center + half_width_s
         visco_window = time_interval(
             visco_trace, start_s=start, stop_s=stop, dt_s=elastic.config.dt_s
         )
@@ -222,6 +234,8 @@ def _frequency_transfer_by_receiver(
             elastic_window,
             dt_s=elastic.config.dt_s,
             frequencies_hz=SPECTRAL_FREQUENCIES_HZ,
+            window_kind=window_kind,
+            tukey_alpha=tukey_alpha,
         )
         assert tuple(sample.frequency_hz for sample in samples) == SPECTRAL_FREQUENCIES_HZ
         for sample in samples:
@@ -229,9 +243,23 @@ def _frequency_transfer_by_receiver(
     return result
 
 
-def _slope_metrics(viscoelastic: SHRun, elastic: SHRun) -> dict[str, dict[str, object]]:
+def _slope_metrics(
+    viscoelastic: SHRun,
+    elastic: SHRun,
+    *,
+    half_width_s: float = SPECTRAL_WINDOW_HALF_WIDTH_S,
+    window_kind: str = SPECTRAL_WINDOW_KIND,
+    tukey_alpha: float = SPECTRAL_TUKEY_ALPHA,
+) -> dict[str, dict[str, object]]:
     offsets = elastic.config.receiver_offsets_m()
-    transfer = _frequency_transfer_by_receiver(viscoelastic, elastic)
+    aperture_m = max(offsets) - min(offsets)
+    transfer = _frequency_transfer_by_receiver(
+        viscoelastic,
+        elastic,
+        half_width_s=half_width_s,
+        window_kind=window_kind,
+        tukey_alpha=tukey_alpha,
+    )
     metrics: dict[str, dict[str, object]] = {}
     qs = float(getattr(viscoelastic.config, "qs"))
     frequencies = tuple(getattr(viscoelastic.config, "relaxation_frequencies_hz"))
@@ -246,6 +274,15 @@ def _slope_metrics(viscoelastic: SHRun, elastic: SHRun) -> dict[str, dict[str, o
             density_kg_m3=elastic.config.density_kg_m3,
             qs_input=qs,
             relaxation_frequencies_hz=frequencies,
+        )
+        discrete_theory = discrete_rheology_prediction(
+            frequency_hz=frequency,
+            vs_m_s=elastic.config.vs_m_s,
+            density_kg_m3=elastic.config.density_kg_m3,
+            qs_input=qs,
+            relaxation_frequencies_hz=frequencies,
+            dt_s=elastic.config.dt_s,
+            dh_m=elastic.config.dh_m,
         )
         observed_q = effective_q_from_transfer_slopes(
             frequency_hz=frequency,
@@ -262,6 +299,22 @@ def _slope_metrics(viscoelastic: SHRun, elastic: SHRun) -> dict[str, dict[str, o
             "phase_fit": asdict(phase_fit),
             "theoretical_log_amplitude_slope_per_m": theory.log_amplitude_slope_per_m,
             "theoretical_phase_slope_rad_per_m": theory.phase_slope_rad_per_m,
+            "discrete_theoretical_log_amplitude_slope_per_m": (
+                discrete_theory.log_amplitude_slope_per_m
+            ),
+            "discrete_theoretical_phase_slope_rad_per_m": (
+                discrete_theory.phase_slope_rad_per_m
+            ),
+            "theoretical_phase_accumulation_across_aperture_rad": (
+                theory.phase_slope_rad_per_m * aperture_m
+            ),
+            "continuous_vs_discrete_attenuation_absolute_difference_per_m": abs(
+                theory.log_amplitude_slope_per_m
+                - discrete_theory.log_amplitude_slope_per_m
+            ),
+            "continuous_vs_discrete_phase_absolute_difference_rad_per_m": abs(
+                theory.phase_slope_rad_per_m - discrete_theory.phase_slope_rad_per_m
+            ),
             "observed_effective_q": observed_q,
             "theoretical_effective_q": theory.effective_q,
         }
@@ -357,9 +410,39 @@ def test_m42_high_q_converges_monotonically_to_elastic(m42_runs):
 
 def test_m42_distance_attenuation_and_phase_match_l1_rheology(m42_runs):
     run = m42_runs.viscoelastic[50.0]
+    old_hann_metrics = _slope_metrics(
+        run,
+        m42_runs.elastic,
+        half_width_s=DIRECT_WINDOW_HALF_WIDTH_S,
+        window_kind="hann",
+    )
     metrics = {
         "receiver_distances_m": run.config.receiver_offsets_m(),
-        "direct_window_half_width_s": DIRECT_WINDOW_HALF_WIDTH_S,
+        "receiver_aperture_m": (
+            max(run.config.receiver_offsets_m()) - min(run.config.receiver_offsets_m())
+        ),
+        "old_hann_diagnostic": {
+            "window_duration_s": 2.0 * DIRECT_WINDOW_HALF_WIDTH_S,
+            "approximate_main_lobe_width_hz": approximate_main_lobe_width_hz(
+                duration_s=2.0 * DIRECT_WINDOW_HALF_WIDTH_S, kind="hann"
+            ),
+            "frequencies": old_hann_metrics,
+        },
+        "calibrated_estimator": {
+            "window_kind": SPECTRAL_WINDOW_KIND,
+            "tukey_alpha": SPECTRAL_TUKEY_ALPHA,
+            "window_duration_s": 2.0 * SPECTRAL_WINDOW_HALF_WIDTH_S,
+            "approximate_main_lobe_width_hz": approximate_main_lobe_width_hz(
+                duration_s=2.0 * SPECTRAL_WINDOW_HALF_WIDTH_S,
+                kind=SPECTRAL_WINDOW_KIND,
+                tukey_alpha=SPECTRAL_TUKEY_ALPHA,
+            ),
+            "mandatory_phase_frequencies_hz": list(PHASE_FREQUENCIES_HZ),
+            "diagnostic_phase_frequencies_hz": list(
+                PHASE_DIAGNOSTIC_FREQUENCIES_HZ
+            ),
+            "phase_slope_relative_tolerance": PHASE_SLOPE_RELATIVE_TOLERANCE,
+        },
         "usable_frequency_range_hz": [min(SPECTRAL_FREQUENCIES_HZ), max(SPECTRAL_FREQUENCIES_HZ)],
         "frequencies": _slope_metrics(run, m42_runs.elastic),
     }
