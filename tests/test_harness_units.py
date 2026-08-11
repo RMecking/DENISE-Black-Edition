@@ -98,16 +98,14 @@ def test_missing_dependency_fails_in_verification_mode():
         unavailable_dependency("missing", required=True)
 
 
-def test_known_q_defect_xfails_only_accept_the_specific_exception():
+def test_repaired_q_guards_are_not_xfailed_and_keep_the_sensitivity_threshold():
     guards = (
         viscoelastic_q_tests.test_sh_mode0_qs_sensitivity,
         viscoelastic_q_tests.test_psv_qp_input_sensitivity,
         viscoelastic_q_tests.test_psv_qs_input_sensitivity,
     )
     for guard in guards:
-        marker = next(mark for mark in guard.pytestmark if mark.name == "xfail")
-        assert marker.kwargs["strict"] is True
-        assert marker.kwargs["raises"] is viscoelastic_q_tests.KnownViscoelasticQDefect
+        assert not any(mark.name == "xfail" for mark in getattr(guard, "pytestmark", ()))
 
     with pytest.raises(viscoelastic_q_tests.KnownViscoelasticQDefect):
         viscoelastic_q_tests._require_q_sensitivity(0.0, "test fixture")

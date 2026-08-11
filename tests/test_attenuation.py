@@ -44,7 +44,7 @@ def test_viscoelastic_generators_write_q_models_and_relaxation_parameters(tmp_pa
     )
     assert (sh_directory / "model" / "homogeneous.qs").stat().st_size == sh.nx * sh.ny * 4
     parameters = (sh_directory / "denise.inp").read_text(encoding="ascii")
-    assert "L =2" in parameters
+    assert "\n L =2\n" in parameters
     assert "FL =5.0 20.0" in parameters
     sh_metadata = json.loads((sh_directory / "case.json").read_text())
     assert sh_metadata["qs"] == 20.0

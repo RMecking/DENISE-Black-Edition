@@ -473,10 +473,50 @@ assertion failures therefore fail the job.
 
 M4 begins with input sensitivity rather than fitting an assumed constant-Q
 law. The generated homogeneous cases retain the established M0/M1 grids,
-sources, receivers, FD order, and CPML settings. They set `L=1`, `FL=10 Hz`
-and write native single-precision `.qs`, `.qp`, `.vs`, `.vp`, and `.rho`
-models. Each `case.json` records the numerical Q values, relaxation
+sources, receivers, FD order, and CPML settings. Their parameter files
+nominally contained `L =1` and `FL=10 Hz`, and they wrote native
+single-precision `.qs`, `.qp`, `.vs`, `.vp`, and `.rho` models. As documented
+in the erratum below, the positional parser did not actually assign that
+one-character `L` record, so the effective runtime value remained `L=0`.
+Each `case.json` records the requested numerical Q values, relaxation
 frequencies, MPI decomposition, and SHA-256 of every model file.
+
+### Retrospective correction: M4 erratum
+
+The original M4 interpretation overstated the black-box evidence. Although
+the generated parameter files visibly contained `L =1`, `read_par.c` consumes
+the first character of each non-comment positional record before calling
+`fscanf`. For multi-character labels this is hidden because the parsed label
+is not validated. For the one-character `L` label, however, `fscanf` could not
+perform the integer assignment and the zero-initialized global value remained
+`L=0`. The nominal M4 viscoelastic black-box runs therefore executed the
+elastic paths.
+
+Consequently, the identical Q=20, Q=50, and Q=200 seismograms observed in M4
+were not an isolated executable demonstration of either the SH forward-routing
+defect or the P/SV Q override. They showed that the nominal cases were
+Q-insensitive, but the unactivated viscoelastic path was a confounding cause.
+No statement below should be read as claiming that M4 dynamically isolated or
+exercised either old-code defect.
+
+Both defects were nevertheless real and independently established by source
+inspection:
+
+- For SH `MODE=0`, the `L>0` setup read and prepared viscoelastic material and
+  memory-variable data, but `FD_SH.c` still called `sh()`, whose timestep used
+  the elastic stress update rather than the available viscoelastic path.
+- `readmod_visc_PSV.c` read Qp and Qs from their model files and then replaced
+  both values with `30.0` before forming `taup` and `taus`.
+
+M4.1 corrects both layers of the problem. The compact verification generator
+uses a leading whitespace character so the existing positional parser really
+assigns `L>0`, while the two independently source-identified solver defects
+are repaired. The M4.1 runs are therefore the first runs in this verification
+history that execute these Q-sensitivity guards with the viscoelastic path
+actually active. Their non-zero relative-L2 values, reported below, confirm
+the repaired Q-sensitive state. The whitespace workaround remains local to
+the compact harness; `read_par.c` is unchanged, and general parser
+modernization is a separate future task.
 
 ### Implemented source semantics
 
@@ -527,27 +567,31 @@ correlation within `1e-12` of unity. For P/SV, direct-P `vx` compares `Qp=20`
 with `Qp=200` at fixed `Qs=100`; transverse-SV `vx` on the vertical receiver
 line compares `Qs=20` with `Qs=200` at fixed `Qp=100`.
 
-### Observed baseline and defects
+### Historical observations and source-inspected defects
 
 The SH Qs=20, 50, and 200 outputs were identical: relative L2 for Qs=200
 versus Qs=20 was `0.0`; peak amplitude was `0.1396774`, RMS
 `0.03474107875259459`, and 5--15 Hz spectral RMS `10.44032870046328` in all
 three runs. The Qs=200 repeat was exactly reproducible (relative L2 `0.0`,
-correlation `1.0`). Source inspection explains the failed sensitivity:
-`FD_SH.c` reads and prepares viscoelastic arrays when `L>0`, but `sh.c` calls
-`update_s_elastic_PML_SH` unconditionally in the forward timestep and never
-calls the available viscoelastic SH stress update. This finding is restricted
-to `PHYSICS=SH`, `MODE=0`, `L>0`. The separate `FWI_SH_visc()` path used by
-`MODE=1` was not tested, so M4 makes no claim about viscoelastic SH FWI.
+correlation `1.0`). Because the effective runtime value was `L=0`, these
+black-box results did not dynamically exercise or isolate the SH routing
+defect. Independently, source inspection found that `FD_SH.c` read and prepared
+viscoelastic arrays when `L>0` but still called `sh()`, whose forward timestep
+used `update_s_elastic_PML_SH` rather than the available viscoelastic stress
+update. This source finding is restricted to `PHYSICS=SH`, `MODE=0`, `L>0`.
+The separate `FWI_SH_visc()` path used by `MODE=1` was not tested, so M4 makes
+no claim about viscoelastic SH FWI.
 
 P/SV independently produced identical direct-P results for Qp=20 and 200 and
 identical transverse-SV results for Qs=20 and 200. Both complete-seismogram
 relative L2 values were `0.0`; correlations were unity to floating-point
 display precision and all recorded peak/RMS/spectral amplitude differences
 were zero. The differing Q model hashes in each generated `case.json` prove
-that materially different files were supplied. In `readmod_visc_PSV.c`, the
-values read from those files are overwritten by `qp = 30.0` and `qs = 30.0`
-before `taup` and `taus` are formed.
+that materially different files were supplied, but the effective `L=0` means
+these black-box results did not dynamically reach or isolate the P/SV Q
+override. Independently, source inspection showed that `readmod_visc_PSV.c`
+read the values from those files and then overwrote them with `qp = 30.0` and
+`qs = 30.0` before forming `taup` and `taus`.
 
 The three independent sensitivity assertions are retained as executable known-
 defect regressions using `pytest.mark.xfail(strict=True)`: SH MODE=0 Qs, P/SV
@@ -566,10 +610,13 @@ the corresponding marker is deliberately removed after review. The
 `--require-denise` harness continues to reject real integration-test skips;
 only declared xfails are exempt from that skip-to-failure conversion.
 
-Green M4 CI therefore means that all functioning M0--M3 tests and SH
-repeatability pass, while the three confirmed M4 defects still reproduce
-exactly as documented. It does not mean that the defects have been repaired.
-Per the M4 stop condition, no elastic/high-Q limit,
+Green M4 CI therefore meant that all functioning M0--M3 tests and SH
+repeatability passed and that the three declared known-defect guards reported
+`XFAIL`. In retrospect, those XFAIL results must not be described as dynamic
+reproduction or isolation of the two source-identified defects because the
+viscoelastic path was not active. They recorded the Q-insensitive nominal M4
+state under the then-current harness. Per the M4 stop condition, no
+elastic/high-Q limit,
 distance-dependent attenuation, spectral phase/dispersion, multiple-mechanism,
 Qp/Qs-independence, or viscoelastic MPI acceptance result is claimed. Those
 checks must wait for separately authorized solver fixes and a rerun of M4.
@@ -582,8 +629,58 @@ python3 -m pytest tests/physics/test_viscoelastic_q.py --require-denise -vv \
   --basetemp=/tmp/denise-m4
 ```
 
-The second command is expected to report one pass and three strict xfails while
-the defects remain. Inspect `sh_qs_200_repeatability_metrics.json`,
+For the historical M4 revision, the second command reported one pass and three
+strict xfails. That result is retained as history but, per the erratum, is not
+an isolated executable proof of the source-inspected defects. Inspect
+`sh_qs_200_repeatability_metrics.json`,
 `sh_q_sensitivity_metrics.json`, `psv_qp_sensitivity_metrics.json`,
 `psv_qs_sensitivity_metrics.json`, each case's `case.json`, and the standard run
 provenance files under the retained base directory.
+
+## M4.1 viscoelastic Q defect repairs
+
+M4.1 activates the existing viscoelastic implementations without changing
+their equations. In P/SV, `readmod_visc_PSV.c` now retains the Qp and Qs values
+read from the supplied model files instead of replacing both with `30.0`. In
+SH forward modelling, `FD_SH.c` selects the existing `sh_visc()` path when
+`L>0` and preserves the existing `sh()` path when `L=0`.
+
+The SH routing does not allocate the FWI data structure. `alloc_SH()` already
+owns the `pr`, `pp`, and `pq` memory variables for `L>0`, `dealloc_SH()` frees
+them, and the existing CPML allocation and exchange path is shared. Within
+`MODE=0`, `sh_visc()` does not use the FWI-only `Rxz`, `Ryz`, stored forward
+wavefields, gradients, or preconditioners. Consequently this repair makes no
+claim about and does not modify viscoelastic SH FWI.
+
+The test generator also accounts for a positional-parser peculiarity in
+`read_par.c`: it consumes the first character of a non-comment record before
+`fscanf`. Multi-character labels tolerate that behavior because the label is
+not validated, but the one-character `L` record does not. A leading space on
+the generated `L` record ensures DENISE actually receives `L>0`; without it,
+the parser silently retained the zero-initialized default and the nominal M4
+viscoelastic cases ran elastically.
+
+Before removing the three M4 markers, a focused run produced three
+`XPASS(strict)` failures with all original assertions intact. After marker
+removal, the accepted complete-seismogram relative-L2 sensitivities are:
+
+```text
+SH Qs=200 versus Qs=20:       0.23835335436049154
+P/SV Qp=200 versus Qp=20:     0.16035696010216646
+P/SV Qs=200 versus Qs=20:     0.2571877051507964
+```
+
+These values exceed the unchanged `1e-3` guard independently. They establish
+input sensitivity, not a complete validation of the rheology: no new assertion
+on amplitude ordering, high-Q convergence, distance dependence, dispersion,
+multiple relaxation mechanisms, viscoelastic MPI behavior, or FWI is added in
+M4.1.
+
+Run the repaired checks with:
+
+```bash
+python3 -m pytest tests -m 'not integration' -q
+python3 -m pytest tests/physics -v --require-denise
+```
+
+The mandatory physics run must contain no XFAIL, XPASS, or SKIP results.
