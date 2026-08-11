@@ -74,6 +74,7 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo):
         item.config.getoption("--require-denise")
         and item.get_closest_marker("integration") is not None
         and report.skipped
+        and not getattr(report, "wasxfail", None)
     ):
         report.outcome = "failed"
         report.longrepr = "DENISE integration tests may not skip in --require-denise mode"

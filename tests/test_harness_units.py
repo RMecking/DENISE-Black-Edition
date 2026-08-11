@@ -39,6 +39,7 @@ from tests.utilities.seismogram import (
     time_interval,
     time_window,
 )
+from tests.physics import test_viscoelastic_q as viscoelastic_q_tests
 
 
 def test_case_generator_writes_expected_native_model_and_inputs(tmp_path):
@@ -95,6 +96,24 @@ def test_missing_dependency_skips_in_development_mode():
 def test_missing_dependency_fails_in_verification_mode():
     with pytest.raises(pytest.fail.Exception):
         unavailable_dependency("missing", required=True)
+
+
+def test_known_q_defect_xfails_only_accept_the_specific_exception():
+    guards = (
+        viscoelastic_q_tests.test_sh_mode0_qs_sensitivity,
+        viscoelastic_q_tests.test_psv_qp_input_sensitivity,
+        viscoelastic_q_tests.test_psv_qs_input_sensitivity,
+    )
+    for guard in guards:
+        marker = next(mark for mark in guard.pytestmark if mark.name == "xfail")
+        assert marker.kwargs["strict"] is True
+        assert marker.kwargs["raises"] is viscoelastic_q_tests.KnownViscoelasticQDefect
+
+    with pytest.raises(viscoelastic_q_tests.KnownViscoelasticQDefect):
+        viscoelastic_q_tests._require_q_sensitivity(0.0, "test fixture")
+    viscoelastic_q_tests._require_q_sensitivity(1.0e-3, "test fixture")
+    assert not isinstance(AssertionError("unrelated"), viscoelastic_q_tests.KnownViscoelasticQDefect)
+    assert not isinstance(RuntimeError("unrelated"), viscoelastic_q_tests.KnownViscoelasticQDefect)
 
 
 def test_executable_hash_uses_sha256(tmp_path):

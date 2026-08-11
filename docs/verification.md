@@ -468,3 +468,122 @@ provides fewer CPU slots than the four MPI ranks used by the small 2 x 2 case;
 this changes process placement only, not the DENISE model or decomposition.
 Missing dependencies, build failures, skipped integration tests, and physics
 assertion failures therefore fail the job.
+
+## M4 viscoelastic Q-input verification (review stop)
+
+M4 begins with input sensitivity rather than fitting an assumed constant-Q
+law. The generated homogeneous cases retain the established M0/M1 grids,
+sources, receivers, FD order, and CPML settings. They set `L=1`, `FL=10 Hz`
+and write native single-precision `.qs`, `.qp`, `.vs`, `.vp`, and `.rho`
+models. Each `case.json` records the numerical Q values, relaxation
+frequencies, MPI decomposition, and SHA-256 of every model file.
+
+### Implemented source semantics
+
+The following is a transcription of the existing implementation, not an
+assumption based on parameter names. A non-zero `L` selects the viscoelastic
+model reader and allocates `L` memory variables. For mechanism `l`, DENISE
+defines the stress-relaxation time and dimensionless timestep ratio as
+
+```text
+theta_l = 1 / (2*pi*FL[l])
+eta_l   = DT / theta_l
+```
+
+The readers map input quality factors to dimensionless relaxation strengths,
+not to `theta_l`:
+
+```text
+taus = 2 / Qs
+taup = 2 / Qp
+```
+
+The modulus-reference angular frequency is `omega_ref = 2*pi*FL[1]`. With
+`S = sum_l (omega_ref^2*theta_l^2)/(1+omega_ref^2*theta_l^2)`, the
+velocity-input P/SV path forms
+
+```text
+mu = rho*Vs^2 / (1 + S*taus)
+pi = rho*Vp^2 / (1 + S*taup)
+```
+
+and the SH path applies the analogous denominator to harmonically averaged
+`rho*Vs^2`. The stress coefficients contain `DT*(1+L*tau)`. Each memory
+variable uses trapezoidal factors `b=1/(1+eta/2)`, `c=1-eta/2` and coupling
+`modulus*eta*tau`. In SH the memory terms couple to the two shear derivatives.
+In P/SV, `r` couples to `vxy+vyx`; `p` and `q` couple to `vxx+vyy` plus their
+respective shear corrections. Each stress update adds half the old memory sum,
+advances the memory variables, then adds half the new sum.
+
+### Acceptance criteria
+
+Changing Q by a factor of ten must produce a complete-seismogram relative L2
+of at least `1e-3`. This is deliberately far above ASCII rounding noise and
+MPI roundoff. For SH, peak, whole-trace RMS, and 5--15 Hz spectral RMS at the
+600 m receiver are retained as diagnostics; their physical ordering is not an
+M4 defect-guard assertion and will be validated only after the solver repair.
+An identical-Q repeat must have relative L2 no greater than `1e-12` and
+correlation within `1e-12` of unity. For P/SV, direct-P `vx` compares `Qp=20`
+with `Qp=200` at fixed `Qs=100`; transverse-SV `vx` on the vertical receiver
+line compares `Qs=20` with `Qs=200` at fixed `Qp=100`.
+
+### Observed baseline and defects
+
+The SH Qs=20, 50, and 200 outputs were identical: relative L2 for Qs=200
+versus Qs=20 was `0.0`; peak amplitude was `0.1396774`, RMS
+`0.03474107875259459`, and 5--15 Hz spectral RMS `10.44032870046328` in all
+three runs. The Qs=200 repeat was exactly reproducible (relative L2 `0.0`,
+correlation `1.0`). Source inspection explains the failed sensitivity:
+`FD_SH.c` reads and prepares viscoelastic arrays when `L>0`, but `sh.c` calls
+`update_s_elastic_PML_SH` unconditionally in the forward timestep and never
+calls the available viscoelastic SH stress update. This finding is restricted
+to `PHYSICS=SH`, `MODE=0`, `L>0`. The separate `FWI_SH_visc()` path used by
+`MODE=1` was not tested, so M4 makes no claim about viscoelastic SH FWI.
+
+P/SV independently produced identical direct-P results for Qp=20 and 200 and
+identical transverse-SV results for Qs=20 and 200. Both complete-seismogram
+relative L2 values were `0.0`; correlations were unity to floating-point
+display precision and all recorded peak/RMS/spectral amplitude differences
+were zero. The differing Q model hashes in each generated `case.json` prove
+that materially different files were supplied. In `readmod_visc_PSV.c`, the
+values read from those files are overwritten by `qp = 30.0` and `qs = 30.0`
+before `taup` and `taus` are formed.
+
+The three independent sensitivity assertions are retained as executable known-
+defect regressions using `pytest.mark.xfail(strict=True)`: SH MODE=0 Qs, P/SV
+Qp, and P/SV Qs. The SH Qs=200 repeatability check is a separate normal passing
+test. Each marker also specifies `raises=KnownViscoelasticQDefect`. Program
+health, output, shape, finite-sample, model-hash, and other ordinary assertions
+therefore remain normal failures; only relative L2 below the unchanged `1e-3`
+threshold raises the accepted defect exception. A pure-Python harness test
+checks all three marker configurations and verifies that unrelated
+`AssertionError` and runtime errors are not instances of that exception.
+
+With each defect still present, the dedicated exception is reported as
+`XFAIL`, so mandatory CI remains green. A repair, intentional or accidental,
+raises no defect exception and produces `XPASS(strict)`, making CI red until
+the corresponding marker is deliberately removed after review. The
+`--require-denise` harness continues to reject real integration-test skips;
+only declared xfails are exempt from that skip-to-failure conversion.
+
+Green M4 CI therefore means that all functioning M0--M3 tests and SH
+repeatability pass, while the three confirmed M4 defects still reproduce
+exactly as documented. It does not mean that the defects have been repaired.
+Per the M4 stop condition, no elastic/high-Q limit,
+distance-dependent attenuation, spectral phase/dispersion, multiple-mechanism,
+Qp/Qs-independence, or viscoelastic MPI acceptance result is claimed. Those
+checks must wait for separately authorized solver fixes and a rerun of M4.
+
+Run the review evidence with:
+
+```bash
+python3 -m pytest tests/test_attenuation.py -q
+python3 -m pytest tests/physics/test_viscoelastic_q.py --require-denise -vv \
+  --basetemp=/tmp/denise-m4
+```
+
+The second command is expected to report one pass and three strict xfails while
+the defects remain. Inspect `sh_qs_200_repeatability_metrics.json`,
+`sh_q_sensitivity_metrics.json`, `psv_qp_sensitivity_metrics.json`,
+`psv_qs_sensitivity_metrics.json`, each case's `case.json`, and the standard run
+provenance files under the retained base directory.
