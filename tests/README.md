@@ -26,6 +26,16 @@ failures, and insufficient Q sensitivity are normal failures. The SH result
 does not cover the separate viscoelastic FWI path. Mandatory mode still rejects
 every integration-test skip.
 
+M4.2 adds quantitative SH-only rheology verification. Mandatory cases parse
+DENISE's own stdout echo to require effective `MODE=0`, `PHYSICS=5`, and exact
+`L`/`FL`; test elastic/high-Q convergence; fit transfer-function attenuation
+and phase versus distance; and retain an exact repeat. The optional
+`extended` marker covers the first multiple-relaxation (`L>1`) experiment.
+Run mandatory physics with `-m 'not extended'`; run the additional experiment
+with `-m extended`. The first M4.2 mandatory evaluation currently preserves a
+phase-slope theory mismatch as a normal failing assertion, so it is a
+scientific review stop rather than an accepted green baseline.
+
 See `docs/verification.md` for installation, commands, tolerances, generated
 artifacts, and failure inspection.
 

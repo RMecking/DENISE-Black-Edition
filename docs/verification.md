@@ -684,3 +684,110 @@ python3 -m pytest tests/physics -v --require-denise
 ```
 
 The mandatory physics run must contain no XFAIL, XPASS, or SKIP results.
+
+## M4.2 quantitative SH rheology verification (failing review stop)
+
+M4.2 does not change any constitutive equation. It adds an independent parser
+for DENISE's stdout parameter echo and requires every M4.2 SH run to report the
+requested effective `MODE`, `PHYSICS`, `L`, and every `FL` value. The initial
+mandatory runs confirmed `MODE=0`, `PHYSICS=5`; the elastic reference reported
+`L=0` with no frequencies, and Qs=50, 200, and 1000 plus the Qs=200 repeat each
+reported `L=1`, `FL=(10 Hz)`. This verifies runtime values rather than merely
+the generated input text. The legacy leading-whitespace compatibility for `L`
+is retained and `read_par.c` remains unchanged.
+
+### Implemented SH rheology
+
+For input `tau=2/Qs` and mechanism times
+`theta_l=1/(2*pi*FL_l)`, the code first normalizes the shear modulus supplied
+as `mu_ref=rho*Vs^2` at `omega_ref=2*pi*FL_1`:
+
+```text
+S_ref = sum_l (omega_ref*theta_l)^2 / (1+(omega_ref*theta_l)^2)
+mu_R  = mu_ref / (1 + tau*S_ref)
+```
+
+The corresponding continuous generalized-Maxwell modulus transcribed from the
+stress and memory-variable updates is
+
+```text
+mu*(omega) = mu_R * [1 + tau * sum_l i*omega*theta_l/(1+i*omega*theta_l)]
+Q_eff(omega) = Re(mu*) / Im(mu*)
+```
+
+Thus the input Qs is not an ideal frequency-independent Q. For `L=1` at its
+reference frequency, this implementation gives `Q_eff=Qs+1`. The discrete
+memory update uses
+
+```text
+b_l = 1/(1+DT/(2*theta_l))
+c_l = 1-DT/(2*theta_l)
+R_l[n+1] = b_l * (c_l*R_l[n] - mu_R*(DT/theta_l)*tau*strain_rate[n])
+```
+
+and the stress increment uses half the old and half the new memory sum. For the
+continuous comparison, `k(omega)=omega*sqrt(rho/mu*)`; the predicted slopes are
+`d log|H|/dr=Im(k)` and `d arg(H)/dr=-(Re(k)-omega/Vs)` under the transform
+convention used by the harness.
+
+### Predeclared criteria and geometry
+
+The homogeneous case uses Vs=2000 m/s, density=2000 kg/m3, DH=10 m,
+DT=0.5 ms, FD order 8, a 10 Hz Ricker source, and receivers at 400, 500,
+600, 700, and 800 m offset. Hann-tapered direct windows have half-width
+0.11 s. Frequencies 6--14 Hz are diagnostic; 8, 10, and 12 Hz are the
+mandatory attenuation band, while 8 and 12 Hz are the mandatory phase checks.
+Before executing the cases, the test fixed 15% attenuation-slope and 20%
+phase-slope relative tolerances, minimum R-squared 0.95, maximum log-amplitude
+residual 0.02, and maximum phase residual 0.02 rad. Qs=1000 must have direct
+relative L2 no greater than 0.025 and correlation at least 0.999. Complete and
+direct errors must decrease strictly for Qs=50, 200, and 1000.
+
+### Observed mandatory results
+
+Effective parameters and the exact Qs=200 repeat passed; repeat relative L2 is
+0.0 and correlation is 1.0000000000000002. High-Q convergence also passed:
+
+| Qs | complete relative L2 | direct relative L2 | direct correlation | far peak shift (s) |
+|---:|---:|---:|---:|---:|
+| 50 | 0.2206403506 | 0.2206519456 | 0.9957438019 | -0.0015 |
+| 200 | 0.0535405683 | 0.0535073574 | 0.9997144746 | -0.0005 |
+| 1000 | 0.0107910885 | 0.0106103968 | 0.9999883611 | 0.0 |
+
+Distance attenuation is strictly increasing at every evaluated receiver and
+the mandatory attenuation slopes pass their predeclared comparison:
+
+| f (Hz) | observed dlog-amplitude/dr (1/m) | theory (1/m) | relative error | R-squared |
+|---:|---:|---:|---:|---:|
+| 8 | -2.7100371e-4 | -2.4189429e-4 | 12.03% | 0.99999978 |
+| 10 | -3.0718816e-4 | -3.0792529e-4 | 0.24% | 0.99999998 |
+| 12 | -3.4272501e-4 | -3.6153704e-4 | 5.20% | 0.99999946 |
+
+The additional viscoelastic phase shift is monotonic with distance and has the
+theoretical sign with high fit quality, but the quantitative phase-slope gate
+fails:
+
+| f (Hz) | observed phase slope (rad/m) | theory (rad/m) | relative error | R-squared |
+|---:|---:|---:|---:|---:|
+| 8 | -1.3358138e-5 | -5.0777534e-5 | **73.69% FAIL** | 0.99772719 |
+| 12 | 5.5830878e-5 | 7.1683734e-5 | **22.11% FAIL** | 0.99977533 |
+
+The mandatory result is therefore two passing tests and one failing test. Per
+the M4.2 stop rule, neither the solver nor the 20% tolerance was changed. The
+failure may represent an analytical-model mismatch, discrete/staggered FD or
+source/receiver phase effects, or a constitutive discrepancy; M4.2 does not
+choose among those explanations without independent review. The `L=3`,
+`FL=(5,10,20 Hz)` extended experiment was deliberately not run after the
+mandatory failure, so no L=1 versus L>1 result is claimed.
+
+Mandatory and extended commands are respectively:
+
+```bash
+MPIEXEC_FLAGS=--oversubscribe python3 -m pytest tests/physics \
+  -m 'not extended' -v --require-denise
+MPIEXEC_FLAGS=--oversubscribe python3 -m pytest \
+  tests/physics/test_sh_viscoelastic_rheology.py -m extended -v --require-denise
+```
+
+The first command is intentionally red at this review stop because the failing
+physics assertion is preserved. Extended execution must wait for review.
