@@ -552,12 +552,19 @@ before `taup` and `taus` are formed.
 The three independent sensitivity assertions are retained as executable known-
 defect regressions using `pytest.mark.xfail(strict=True)`: SH MODE=0 Qs, P/SV
 Qp, and P/SV Qs. The SH Qs=200 repeatability check is a separate normal passing
-test. With each defect still present, its assertion fails internally and is
-reported as `XFAIL`, so mandatory CI remains green. A repair, intentional or
-accidental, produces `XPASS(strict)` and makes CI red until the corresponding
-marker is deliberately removed after review. The `--require-denise` harness
-continues to reject real integration-test skips; only declared xfails are
-exempt from that skip-to-failure conversion.
+test. Each marker also specifies `raises=KnownViscoelasticQDefect`. Program
+health, output, shape, finite-sample, model-hash, and other ordinary assertions
+therefore remain normal failures; only relative L2 below the unchanged `1e-3`
+threshold raises the accepted defect exception. A pure-Python harness test
+checks all three marker configurations and verifies that unrelated
+`AssertionError` and runtime errors are not instances of that exception.
+
+With each defect still present, the dedicated exception is reported as
+`XFAIL`, so mandatory CI remains green. A repair, intentional or accidental,
+raises no defect exception and produces `XPASS(strict)`, making CI red until
+the corresponding marker is deliberately removed after review. The
+`--require-denise` harness continues to reject real integration-test skips;
+only declared xfails are exempt from that skip-to-failure conversion.
 
 Green M4 CI therefore means that all functioning M0--M3 tests and SH
 repeatability pass, while the three confirmed M4 defects still reproduce
