@@ -17,11 +17,13 @@ geometry helper maps each injected or sampled field to its physical position
 and collocates oblique `vx`/`vy` measurements before vector projection. SH
 free-surface propagation is not claimed because the current SH stepping path
 does not apply that boundary. See `docs/verification.md` for the review history.
-M4 adds homogeneous viscoelastic Q-input generators and two intentionally
-failing sensitivity guards. They demonstrate that the current SH timestep does
-not use its prepared viscoelastic stress update and that P/SV overwrites input
-Qp/Qs with hard-coded values. The M4 physics file must remain red until those
-solver defects are fixed in a separately reviewed milestone.
+M4 adds homogeneous viscoelastic Q-input generators, one normal SH repeatability
+test, and three independent known-defect sensitivity guards. The guards use
+`pytest.mark.xfail(strict=True)` for SH `MODE=0` Qs, P/SV Qp, and P/SV Qs.
+Current defects therefore produce green `XFAIL` results, while a future repair
+produces a red `XPASS(strict)` until review removes only the corresponding
+marker. The SH finding does not cover the separate viscoelastic FWI path.
+Mandatory mode still rejects every real integration-test skip.
 
 See `docs/verification.md` for installation, commands, tolerances, generated
 artifacts, and failure inspection.

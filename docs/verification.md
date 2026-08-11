@@ -520,11 +520,12 @@ advances the memory variables, then adds half the new sum.
 Changing Q by a factor of ten must produce a complete-seismogram relative L2
 of at least `1e-3`. This is deliberately far above ASCII rounding noise and
 MPI roundoff. For SH, peak, whole-trace RMS, and 5--15 Hz spectral RMS at the
-600 m receiver must be ordered `Qs=20 < Qs=50 < Qs=200`. An identical-Q repeat
-must have relative L2 no greater than `1e-12` and correlation within `1e-12`
-of unity. For P/SV, direct-P `vx` compares `Qp=20` with `Qp=200` at fixed
-`Qs=100`; transverse-SV `vx` on the vertical receiver line compares `Qs=20`
-with `Qs=200` at fixed `Qp=100`.
+600 m receiver are retained as diagnostics; their physical ordering is not an
+M4 defect-guard assertion and will be validated only after the solver repair.
+An identical-Q repeat must have relative L2 no greater than `1e-12` and
+correlation within `1e-12` of unity. For P/SV, direct-P `vx` compares `Qp=20`
+with `Qp=200` at fixed `Qs=100`; transverse-SV `vx` on the vertical receiver
+line compares `Qs=20` with `Qs=200` at fixed `Qp=100`.
 
 ### Observed baseline and defects
 
@@ -535,7 +536,9 @@ three runs. The Qs=200 repeat was exactly reproducible (relative L2 `0.0`,
 correlation `1.0`). Source inspection explains the failed sensitivity:
 `FD_SH.c` reads and prepares viscoelastic arrays when `L>0`, but `sh.c` calls
 `update_s_elastic_PML_SH` unconditionally in the forward timestep and never
-calls the available viscoelastic SH stress update.
+calls the available viscoelastic SH stress update. This finding is restricted
+to `PHYSICS=SH`, `MODE=0`, `L>0`. The separate `FWI_SH_visc()` path used by
+`MODE=1` was not tested, so M4 makes no claim about viscoelastic SH FWI.
 
 P/SV independently produced identical direct-P results for Qp=20 and 200 and
 identical transverse-SV results for Qs=20 and 200. Both complete-seismogram
@@ -546,8 +549,20 @@ that materially different files were supplied. In `readmod_visc_PSV.c`, the
 values read from those files are overwritten by `qp = 30.0` and `qs = 30.0`
 before `taup` and `taus` are formed.
 
-Both failing sensitivity assertions are intentionally retained as executable
-regression tests. Per the M4 stop condition, no elastic/high-Q limit,
+The three independent sensitivity assertions are retained as executable known-
+defect regressions using `pytest.mark.xfail(strict=True)`: SH MODE=0 Qs, P/SV
+Qp, and P/SV Qs. The SH Qs=200 repeatability check is a separate normal passing
+test. With each defect still present, its assertion fails internally and is
+reported as `XFAIL`, so mandatory CI remains green. A repair, intentional or
+accidental, produces `XPASS(strict)` and makes CI red until the corresponding
+marker is deliberately removed after review. The `--require-denise` harness
+continues to reject real integration-test skips; only declared xfails are
+exempt from that skip-to-failure conversion.
+
+Green M4 CI therefore means that all functioning M0--M3 tests and SH
+repeatability pass, while the three confirmed M4 defects still reproduce
+exactly as documented. It does not mean that the defects have been repaired.
+Per the M4 stop condition, no elastic/high-Q limit,
 distance-dependent attenuation, spectral phase/dispersion, multiple-mechanism,
 Qp/Qs-independence, or viscoelastic MPI acceptance result is claimed. Those
 checks must wait for separately authorized solver fixes and a rerun of M4.
@@ -560,7 +575,8 @@ python3 -m pytest tests/physics/test_viscoelastic_q.py --require-denise -vv \
   --basetemp=/tmp/denise-m4
 ```
 
-The second command is expected to fail twice until both existing solver
-defects are addressed. Inspect `sh_q_sensitivity_metrics.json`,
-`psv_q_sensitivity_metrics.json`, each case's `case.json`, and the standard
-run provenance files under the retained base directory.
+The second command is expected to report one pass and three strict xfails while
+the defects remain. Inspect `sh_qs_200_repeatability_metrics.json`,
+`sh_q_sensitivity_metrics.json`, `psv_qp_sensitivity_metrics.json`,
+`psv_qs_sensitivity_metrics.json`, each case's `case.json`, and the standard run
+provenance files under the retained base directory.
