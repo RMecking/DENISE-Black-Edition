@@ -1072,14 +1072,18 @@ and is not overloaded with physical-Q semantics.
 
 The readers initialize `ptaus/ptaup` according to the selected external-input
 mode for forward-model initialization. Source inspection shows that the legacy
-SH attenuation-inversion path copies, differentiates, scales, updates, bounds,
-and writes the internal `ptaus` field directly. P/SV likewise stores internal
-`ptaus/ptaup` material fields. Names such as `INV_QS_ITER`, `QSLOWERLIM`, and
-`QSUPPERLIM` do not establish physical-Q optimization semantics, and no
-Q-to-tau chain rule is applied.
+SH viscoelastic FWI contains attenuation-gradient and optimization
+infrastructure operating on internal `ptaus` fields. That is not an end-to-end
+verification: the reviewed material-update routine does not establish a
+complete `ptaus` update, bounds, and output path, so the current SH attenuation
+model-update path appears incomplete. P/SV attenuation inversion is likewise
+unverified. Names such as `INV_QS_ITER`, `QSLOWERLIM`, and `QSUPPERLIM` must
+not be interpreted as evidence of a production-ready physical-Q inversion,
+and no Q-to-tau chain rule is applied.
 
 Attenuation/Q inversion is therefore an **explicitly deferred, currently
-unverified legacy capability**. The M4--M4.2.1 harness verifies forward
+unverified legacy capability that currently appears incomplete**. The
+M4--M4.2.1 harness verifies forward
 viscoelastic propagation and external Q-to-initial-tau parameterization only;
 it has not dynamically verified attenuation gradients, optimization updates,
 bounds, recovered models, or convergence for SH or P/SV FWI. M4.2.1 neither
@@ -1089,6 +1093,7 @@ mode 1 provides a physically consistent Q inversion.
 When `Q_PARAMETERIZATION_MODE=1` is combined with viscoelastic FWI and the
 workflow schedules Qs inversion within `ITERMAX`, DENISE now emits a rank-zero
 runtime warning that physical-Q conversion applies only to the initial tau
-fields and that the legacy inversion has no Q-to-tau chain rule. A separate,
-independently designed and verified FWI parameter-semantics milestone is
-required before physical-Q attenuation inversion can be considered supported.
+fields, that attenuation/Q inversion is unverified and appears incomplete, and
+that no Q-to-tau chain rule is present. A separate, independently designed and
+verified FWI parameter-semantics milestone is required before physical-Q
+attenuation inversion can be considered supported.

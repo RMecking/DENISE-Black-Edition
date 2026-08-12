@@ -43,7 +43,8 @@ if(MYID==0){
    if ((Q_PARAMETERIZATION_MODE == Q_PARAMETERIZATION_PHYSICAL) &&
        (MODE == 1) && (L > 0) && (INV_QS_ITER <= ITERMAX)) {
      warning(" Q_PARAMETERIZATION_MODE=1 only maps physical Q input to the initial tau fields. ");
-     warning(" Attenuation/Q inversion is an unverified legacy tau-field capability; no Q-to-tau chain rule is applied. ");
+     warning(" Attenuation/Q inversion is unverified and appears incomplete; it is not production-ready physical-Q inversion. ");
+     warning(" No Q-to-tau chain rule is applied. ");
    }
 
    printf("=========================================== \n");
