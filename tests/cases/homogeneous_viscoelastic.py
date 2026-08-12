@@ -14,6 +14,10 @@ from tests.cases.homogeneous_sh import HomogeneousSHConfig, generate_case as gen
 class ViscoelasticSHConfig(HomogeneousSHConfig):
     qs: float = 50.0
     relaxation_frequencies_hz: tuple[float, ...] = (10.0,)
+    q_parameterization_mode: int = 0
+    q_approx_fmin_hz: float = 0.0
+    q_approx_fmax_hz: float = 0.0
+    q_approx_df_hz: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -21,6 +25,10 @@ class ViscoelasticPSVConfig(HomogeneousPSVConfig):
     qp: float = 50.0
     qs: float = 50.0
     relaxation_frequencies_hz: tuple[float, ...] = (10.0,)
+    q_parameterization_mode: int = 0
+    q_approx_fmin_hz: float = 0.0
+    q_approx_fmax_hz: float = 0.0
+    q_approx_df_hz: float = 0.0
 
 
 def _write_constant_float_model(path: Path, value: float, count: int) -> None:
@@ -37,7 +45,8 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _enable_viscoelasticity(directory: Path, frequencies_hz: tuple[float, ...]) -> None:
+def _enable_viscoelasticity(directory: Path, config) -> None:
+    frequencies_hz = config.relaxation_frequencies_hz
     if not frequencies_hz or any(value <= 0.0 for value in frequencies_hz):
         raise ValueError("At least one positive relaxation frequency is required")
     path = directory / "denise.inp"
@@ -49,6 +58,25 @@ def _enable_viscoelasticity(directory: Path, frequencies_hz: tuple[float, ...]) 
     frequency_record = " ".join(str(value) for value in frequencies_hz)
     content = content.replace("FL =10.0", f"FL ={frequency_record}", 1)
     content = content.replace("homogeneous elastic", "homogeneous viscoelastic", 1)
+    if config.q_parameterization_mode not in (0, 1):
+        raise ValueError("Q parameterization mode must be 0 (legacy) or 1 (physical-Q)")
+    if config.q_parameterization_mode == 1:
+        if not (
+            config.q_approx_fmin_hz > 0.0
+            and config.q_approx_fmax_hz >= config.q_approx_fmin_hz
+            and config.q_approx_df_hz > 0.0
+        ):
+            raise ValueError("Physical-Q mode requires a valid explicit approximation band")
+        content += (
+            "# optional positional parameter 116\n"
+            "Q_PARAMETERIZATION_MODE =1\n"
+            "# optional positional parameter 117\n"
+            f"Q_APPROX_FMIN ={config.q_approx_fmin_hz}\n"
+            "# optional positional parameter 118\n"
+            f"Q_APPROX_FMAX ={config.q_approx_fmax_hz}\n"
+            "# optional positional parameter 119\n"
+            f"Q_APPROX_DF ={config.q_approx_df_hz}\n"
+        )
     path.write_text(content, encoding="ascii")
 
 
@@ -78,7 +106,7 @@ def generate_viscoelastic_sh_case(
     generate_elastic_sh(directory, config=config, nprocx=nprocx, nprocy=nprocy)
     model = directory / "model" / "homogeneous"
     _write_constant_float_model(model.with_suffix(".qs"), config.qs, config.nx * config.ny)
-    _enable_viscoelasticity(directory, config.relaxation_frequencies_hz)
+    _enable_viscoelasticity(directory, config)
     _write_metadata(directory, config, nprocx, nprocy, ("vs", "rho", "qs"))
     return config
 
@@ -97,6 +125,6 @@ def generate_viscoelastic_psv_case(
     cell_count = config.nx * config.ny
     _write_constant_float_model(model.with_suffix(".qp"), config.qp, cell_count)
     _write_constant_float_model(model.with_suffix(".qs"), config.qs, cell_count)
-    _enable_viscoelasticity(directory, config.relaxation_frequencies_hz)
+    _enable_viscoelasticity(directory, config)
     _write_metadata(directory, config, nprocx, nprocy, ("vp", "vs", "rho", "qp", "qs"))
     return config

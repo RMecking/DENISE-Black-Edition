@@ -51,6 +51,7 @@ def complex_shear_modulus(
     reference_shear_modulus_pa: float,
     qs_input: float,
     relaxation_frequencies_hz: Sequence[float],
+    tau_override: float | None = None,
 ) -> complex:
     """Continuous generalized-Maxwell modulus represented by DENISE SH coefficients."""
     if frequency_hz <= 0.0 or reference_shear_modulus_pa <= 0.0 or qs_input <= 0.0:
@@ -58,7 +59,9 @@ def complex_shear_modulus(
     if not relaxation_frequencies_hz or any(value <= 0.0 for value in relaxation_frequencies_hz):
         raise ValueError("At least one positive relaxation frequency is required")
 
-    tau = 2.0 / qs_input
+    tau = 2.0 / qs_input if tau_override is None else tau_override
+    if tau <= 0.0:
+        raise ValueError("GSLS tau must be positive")
     theta = [1.0 / (2.0 * math.pi * value) for value in relaxation_frequencies_hz]
     omega_reference = 2.0 * math.pi * relaxation_frequencies_hz[0]
     reference_sum = sum(
@@ -80,6 +83,7 @@ def rheology_prediction(
     density_kg_m3: float,
     qs_input: float,
     relaxation_frequencies_hz: Sequence[float],
+    tau_override: float | None = None,
 ) -> RheologyPrediction:
     reference_modulus = density_kg_m3 * vs_m_s * vs_m_s
     modulus = complex_shear_modulus(
@@ -87,6 +91,7 @@ def rheology_prediction(
         reference_shear_modulus_pa=reference_modulus,
         qs_input=qs_input,
         relaxation_frequencies_hz=relaxation_frequencies_hz,
+        tau_override=tau_override,
     )
     effective_q = modulus.real / modulus.imag
     omega = 2.0 * math.pi * frequency_hz
@@ -111,6 +116,7 @@ def discrete_rheology_prediction(
     dt_s: float,
     dh_m: float,
     fd_coefficients: Sequence[float] = HOLBERG_FD8_01_PERCENT,
+    tau_override: float | None = None,
 ) -> RheologyPrediction:
     """Predict the 1-D staggered-grid dispersion of DENISE's SH update.
 
@@ -129,7 +135,9 @@ def discrete_rheology_prediction(
     ):
         raise ValueError("Frequency, material values, DT, DH and FD coefficients must be positive")
     reference_modulus = density_kg_m3 * vs_m_s * vs_m_s
-    tau = 2.0 / qs_input
+    tau = 2.0 / qs_input if tau_override is None else tau_override
+    if tau <= 0.0:
+        raise ValueError("GSLS tau must be positive")
     theta = [1.0 / (2.0 * math.pi * value) for value in relaxation_frequencies_hz]
     if not theta:
         raise ValueError("At least one relaxation frequency is required")

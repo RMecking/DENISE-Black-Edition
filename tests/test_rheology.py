@@ -7,14 +7,21 @@ import struct
 
 import pytest
 
+from tests.cases.homogeneous_viscoelastic import (
+    ViscoelasticSHConfig,
+    generate_viscoelastic_sh_case,
+)
 from tests.utilities.effective_parameters import (
     EffectiveDeniseParameters,
     parse_effective_parameters,
     require_effective_parameters,
 )
 from tests.utilities.qstd_reference import (
+    linear_frequency_samples,
+    numerical_target_q_to_tau,
     qstd_quality_factor,
     quality_factor_band_statistics,
+    target_q_to_tau,
 )
 from tests.utilities.viscoelastic_rheology import (
     approximate_main_lobe_width_hz,
@@ -283,6 +290,189 @@ def test_discrete_fd_rheology_is_negligibly_different_from_continuous():
 
 HISTORICAL_L4_FREQUENCIES_HZ = (2.7105, 12.2792, 68.1930, 265.2297)
 HISTORICAL_L4_TAU = 0.0386
+HISTORICAL_QAPPROX_FMIN_HZ = 5.0
+HISTORICAL_QAPPROX_FMAX_HZ = 120.0
+HISTORICAL_QAPPROX_DF_HZ = 5.0
+
+
+@pytest.mark.parametrize("target_q", (20.0, 30.0, 50.0, 100.0, 200.0))
+def test_analytical_target_q_mapping_matches_original_objective(target_q):
+    analytical = target_q_to_tau(
+        target_q=target_q,
+        relaxation_frequencies_hz=HISTORICAL_L4_FREQUENCIES_HZ,
+        fmin_hz=HISTORICAL_QAPPROX_FMIN_HZ,
+        fmax_hz=HISTORICAL_QAPPROX_FMAX_HZ,
+        df_hz=HISTORICAL_QAPPROX_DF_HZ,
+    )
+    numerical = numerical_target_q_to_tau(
+        target_q=target_q,
+        relaxation_frequencies_hz=HISTORICAL_L4_FREQUENCIES_HZ,
+        fmin_hz=HISTORICAL_QAPPROX_FMIN_HZ,
+        fmax_hz=HISTORICAL_QAPPROX_FMAX_HZ,
+        df_hz=HISTORICAL_QAPPROX_DF_HZ,
+    )
+    frequencies = linear_frequency_samples(
+        fmin_hz=HISTORICAL_QAPPROX_FMIN_HZ,
+        fmax_hz=HISTORICAL_QAPPROX_FMAX_HZ,
+        df_hz=HISTORICAL_QAPPROX_DF_HZ,
+    )
+    values = tuple(
+        qstd_quality_factor(
+            frequency_hz=frequency,
+            relaxation_frequencies_hz=HISTORICAL_L4_FREQUENCIES_HZ,
+            tau=analytical,
+        )
+        for frequency in frequencies
+    )
+    statistics = quality_factor_band_statistics(
+        frequencies_hz=frequencies, quality_factors=values, target_q=target_q
+    )
+    print(
+        "TARGET_Q_MAPPING="
+        + json.dumps(
+            {
+                "target_q": target_q,
+                "analytical_tau": analytical,
+                "numerical_tau": numerical,
+                **statistics.__dict__,
+            },
+            sort_keys=True,
+        )
+    )
+    # The independent scalar search works in log(tau); 1e-8 is far below any
+    # single-precision reader effect while still checking the original objective.
+    assert math.isclose(analytical, numerical, rel_tol=1.0e-8)
+    assert statistics.relative_rms_deviation < 0.04
+
+
+def test_historical_l4_tau_is_recovered_by_fixed_fl_mapping():
+    calculated = target_q_to_tau(
+        target_q=30.0,
+        relaxation_frequencies_hz=HISTORICAL_L4_FREQUENCIES_HZ,
+        fmin_hz=HISTORICAL_QAPPROX_FMIN_HZ,
+        fmax_hz=HISTORICAL_QAPPROX_FMAX_HZ,
+        df_hz=HISTORICAL_QAPPROX_DF_HZ,
+    )
+    print(
+        "HISTORICAL_TAU_RECOVERY="
+        + json.dumps(
+            {
+                "calculated_tau": calculated,
+                "historical_tau": HISTORICAL_L4_TAU,
+                "absolute_difference": calculated - HISTORICAL_L4_TAU,
+            },
+            sort_keys=True,
+        )
+    )
+    # The fixed-FL fit over the explicitly accepted 5--120 Hz band is close to,
+    # but is not the same optimization as, the recovered joint FL/tau fit.
+    assert abs(calculated - HISTORICAL_L4_TAU) < 3.0e-4
+
+
+def test_target_q_mapping_is_positive_and_monotonic():
+    taus = [
+        target_q_to_tau(
+            target_q=target_q,
+            relaxation_frequencies_hz=HISTORICAL_L4_FREQUENCIES_HZ,
+            fmin_hz=5.0,
+            fmax_hz=120.0,
+            df_hz=5.0,
+        )
+        for target_q in range(10, 501, 5)
+    ]
+    assert all(math.isfinite(tau) and tau > 0.0 for tau in taus)
+    assert all(left > right for left, right in zip(taus, taus[1:]))
+
+
+def test_l1_mapping_is_close_to_but_not_assumed_equal_to_two_over_q():
+    ratios = []
+    for target_q in (20.0, 30.0, 50.0, 100.0, 200.0):
+        tau = target_q_to_tau(
+            target_q=target_q,
+            relaxation_frequencies_hz=(10.0,),
+            fmin_hz=5.0,
+            fmax_hz=20.0,
+            df_hz=1.0,
+        )
+        ratios.append(tau / (2.0 / target_q))
+    # Over this finite band the nonzero A/B intercept shifts the optimum above
+    # the familiar high-Q 2/Q approximation; the shift shrinks with Q.
+    assert all(1.10 < ratio < 1.20 for ratio in ratios)
+    assert all(left > right for left, right in zip(ratios, ratios[1:]))
+
+
+def test_physical_q_case_appends_explicit_optional_parser_records(tmp_path):
+    legacy_directory = tmp_path / "legacy"
+    physical_directory = tmp_path / "physical"
+    generate_viscoelastic_sh_case(
+        legacy_directory, config=ViscoelasticSHConfig(qs=30.0)
+    )
+    generate_viscoelastic_sh_case(
+        physical_directory,
+        config=ViscoelasticSHConfig(
+            qs=30.0,
+            relaxation_frequencies_hz=HISTORICAL_L4_FREQUENCIES_HZ,
+            q_parameterization_mode=1,
+            q_approx_fmin_hz=5.0,
+            q_approx_fmax_hz=120.0,
+            q_approx_df_hz=5.0,
+        ),
+    )
+    legacy = (legacy_directory / "denise.inp").read_text(encoding="ascii")
+    physical = (physical_directory / "denise.inp").read_text(encoding="ascii")
+    assert "Q_PARAMETERIZATION_MODE" not in legacy
+    assert "Q_PARAMETERIZATION_MODE =1" in physical
+    assert "Q_APPROX_FMIN =5.0" in physical
+    assert "Q_APPROX_FMAX =120.0" in physical
+    assert "Q_APPROX_DF =5.0" in physical
+
+
+def test_effective_parameter_echo_distinguishes_physical_q_mode():
+    effective = parse_effective_parameters(
+        """
+ MODE=0: forward
+ PHYSICS=5: SH
+ Number of relaxation mechanisms (L): 4
+ The L relaxation frequencies are at:
+ 2.710500 12.279200 68.193001 265.229706 Hz
+ Q parameterization mode: 1 (physical-Q)
+ Q approximation fmin: 5.000000 Hz
+ Q approximation fmax: 100.000000 Hz
+ Q approximation df: 5.000000 Hz (linear, equally weighted)
+"""
+    )
+    require_effective_parameters(
+        effective,
+        mode=0,
+        physics=5,
+        relaxation_frequencies_hz=(2.7105, 12.2792, 68.193001, 265.229706),
+        q_parameterization_mode=1,
+        q_approx_fmin_hz=5.0,
+        q_approx_fmax_hz=100.0,
+        q_approx_df_hz=5.0,
+    )
+
+
+def test_q_conversion_is_shared_by_sh_and_psv_readers(repository_root):
+    sh_reader = (repository_root / "src" / "SH" / "readmod_visc_SH.c").read_text()
+    psv_reader = (repository_root / "src" / "PSV" / "readmod_visc_PSV.c").read_text()
+    implementation = (repository_root / "src" / "q_parameterization.c").read_text()
+    assert sh_reader.count("q_to_tau(") == 1
+    assert psv_reader.count("q_to_tau(") == 2
+    assert "float q_to_tau(" in implementation
+    assert "2.0 / (double)target_q" in implementation
+
+
+def test_physical_q_fwi_warning_is_limited_to_active_attenuation_inversion(repository_root):
+    source = (repository_root / "src" / "read_par_inv.c").read_text()
+    assert "Q_PARAMETERIZATION_MODE == Q_PARAMETERIZATION_PHYSICAL" in source
+    assert "MODE == 1" in source
+    assert "L > 0" in source
+    assert "INV_QS_ITER <= ITERMAX" in source
+    assert "only maps physical Q input to the initial tau fields" in source
+    assert "Attenuation/Q inversion is unverified and appears incomplete" in source
+    assert "not production-ready physical-Q inversion" in source
+    assert "No Q-to-tau chain rule is applied" in source
 
 
 def test_qstd_reference_reproduces_recovered_matlab_expression():

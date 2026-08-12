@@ -12,6 +12,8 @@ void readmod_visc_SH(float  **  rho, float **  u, float ** taus, float * eta){
 
 	extern float DT, *FL;
 	extern int L;
+	extern int Q_PARAMETERIZATION_MODE;
+	extern float Q_APPROX_FMIN, Q_APPROX_FMAX, Q_APPROX_DF;
 	extern int NX, NY, NXG, NYG,  POS[3], MYID, INVMAT1;
 	extern char  MFILE[STRING_SIZE];	
 	extern FILE *FP;
@@ -19,6 +21,7 @@ void readmod_visc_SH(float  **  rho, float **  u, float ** taus, float * eta){
 		
 	/* local variables */
 	float rhov, muv, vs, qs, *pts;
+	struct q_tau_mapping q_mapping;
 	int i, j, ii, jj, l;
 	FILE *fp_vs, *fp_rho, *fp_qs;
 	char filename[STRING_SIZE];
@@ -30,6 +33,8 @@ void readmod_visc_SH(float  **  rho, float **  u, float ** taus, float * eta){
 		pts[l]=1.0/(2.0*PI*FL[l]);
 		eta[l]=DT/pts[l];
 	}
+	init_q_tau_mapping(&q_mapping, Q_PARAMETERIZATION_MODE, L, FL,
+	                   Q_APPROX_FMIN, Q_APPROX_FMAX, Q_APPROX_DF);
 
 
 	   fprintf(FP,"\n...reading model information from model-files...\n");
@@ -91,7 +96,7 @@ void readmod_visc_SH(float  **  rho, float **  u, float ** taus, float * eta){
                                 
 				u[jj][ii]=vs;
                                 rho[jj][ii]=rhov;
-				taus[jj][ii]=2.0/qs;
+				taus[jj][ii]=q_to_tau(qs, &q_mapping);
 				
 				}
 			}

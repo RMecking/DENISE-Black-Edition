@@ -14,6 +14,8 @@ void write_par(FILE *fp){
 	extern int   NX, NY, NT, QUELLART, FDORDER, MAXRELERROR;
 	extern int  SNAP, SNAP_FORMAT, SNAP_SHOT, L, SRCREC, TAPER;
 	extern float DH, TIME, DT, TS, *FL, TAU, DAMPING, FPML, npower, k_max_PML;
+	extern int Q_PARAMETERIZATION_MODE;
+	extern float Q_APPROX_FMIN, Q_APPROX_FMAX, Q_APPROX_DF;
 	extern int SEISMO, NDT, SEIS_FORMAT, FREE_SURF, FW;
 	extern int  READMOD, READREC, BOUNDARY;
 	extern float TSNAP1, TSNAP2, TSNAPINC, REFREC[4];
@@ -218,6 +220,15 @@ void write_par(FILE *fp){
 	for (l=1;l<=L;l++) fprintf(fp,"\t%f",FL[l]);
 	fprintf(fp," Hz\n");
 	fprintf(fp," Value for tau is : %f\n",TAU);
+	fprintf(fp," Q parameterization mode: %d (%s)\n",Q_PARAMETERIZATION_MODE,
+	        Q_PARAMETERIZATION_MODE == Q_PARAMETERIZATION_PHYSICAL ? "physical-Q" : "legacy-2/Q");
+	if (Q_PARAMETERIZATION_MODE == Q_PARAMETERIZATION_PHYSICAL) {
+		fprintf(fp," Q approximation fmin: %f Hz\n",Q_APPROX_FMIN);
+		fprintf(fp," Q approximation fmax: %f Hz\n",Q_APPROX_FMAX);
+		fprintf(fp," Q approximation df: %f Hz (linear, equally weighted)\n",Q_APPROX_DF);
+	} else {
+		fprintf(fp," Q approximation band: not used in legacy mode\n");
+	}
 
 
 	if (SNAP){

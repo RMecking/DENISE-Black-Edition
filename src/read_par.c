@@ -84,6 +84,8 @@ extern char DFILE[STRING_SIZE];
 extern int BACK_DENSITY;
 
 extern int WRITE_STF, WRITEMOD;
+extern int Q_PARAMETERIZATION_MODE;
+extern float Q_APPROX_FMIN, Q_APPROX_FMAX, Q_APPROX_DF;
 
 /* definition of local variables */
 char s[120];
@@ -442,6 +444,18 @@ int  c=0, lineno=0, l;
 	 case 115 :
 	   fscanf(fp_in,"%s =%i",s,&RTM_SHOT);
 	    break;   
+	 case 116 :
+	   fscanf(fp_in,"%s =%i",s,&Q_PARAMETERIZATION_MODE);
+	    break;
+	 case 117 :
+	   fscanf(fp_in,"%s =%f",s,&Q_APPROX_FMIN);
+	    break;
+	 case 118 :
+	   fscanf(fp_in,"%s =%f",s,&Q_APPROX_FMAX);
+	    break;
+	 case 119 :
+	   fscanf(fp_in,"%s =%f",s,&Q_APPROX_DF);
+	    break;
 	 default:
 	    break;
 	 }

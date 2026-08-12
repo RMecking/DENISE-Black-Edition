@@ -16,6 +16,10 @@ class EffectiveDeniseParameters:
     physics: int
     relaxation_mechanisms: int
     relaxation_frequencies_hz: tuple[float, ...]
+    q_parameterization_mode: int = 0
+    q_approx_fmin_hz: float | None = None
+    q_approx_fmax_hz: float | None = None
+    q_approx_df_hz: float | None = None
 
 
 def parse_effective_parameters(output: str) -> EffectiveDeniseParameters:
@@ -44,7 +48,23 @@ def parse_effective_parameters(output: str) -> EffectiveDeniseParameters:
         raise ValueError(
             f"DENISE reports L={mechanisms} but echoes {len(frequencies)} FL values"
         )
-    return EffectiveDeniseParameters(mode, physics, mechanisms, frequencies)
+    q_mode_match = re.search(r"Q parameterization mode:\s*(\d+)", output)
+    q_mode = int(q_mode_match.group(1)) if q_mode_match is not None else 0
+
+    def optional_float(label: str) -> float | None:
+        match = re.search(rf"{label}:\s*({_FLOAT})", output)
+        return float(match.group(1)) if match is not None else None
+
+    return EffectiveDeniseParameters(
+        mode,
+        physics,
+        mechanisms,
+        frequencies,
+        q_mode,
+        optional_float("Q approximation fmin"),
+        optional_float("Q approximation fmax"),
+        optional_float("Q approximation df"),
+    )
 
 
 def read_effective_parameters(path: Path) -> EffectiveDeniseParameters:
@@ -58,6 +78,10 @@ def require_effective_parameters(
     physics: int,
     relaxation_frequencies_hz: Sequence[float],
     absolute_frequency_tolerance_hz: float = 5.0e-7,
+    q_parameterization_mode: int = 0,
+    q_approx_fmin_hz: float | None = None,
+    q_approx_fmax_hz: float | None = None,
+    q_approx_df_hz: float | None = None,
 ) -> None:
     expected_frequencies = tuple(float(value) for value in relaxation_frequencies_hz)
     assert actual.mode == mode, f"effective MODE={actual.mode}, expected {mode}"
@@ -72,3 +96,15 @@ def require_effective_parameters(
         assert math.isclose(
             observed, expected, rel_tol=0.0, abs_tol=absolute_frequency_tolerance_hz
         ), f"effective FL[{index}]={observed}, expected {expected}"
+    assert actual.q_parameterization_mode == q_parameterization_mode
+    for label, observed, expected in (
+        ("Q_APPROX_FMIN", actual.q_approx_fmin_hz, q_approx_fmin_hz),
+        ("Q_APPROX_FMAX", actual.q_approx_fmax_hz, q_approx_fmax_hz),
+        ("Q_APPROX_DF", actual.q_approx_df_hz, q_approx_df_hz),
+    ):
+        if expected is None:
+            assert observed is None, f"effective {label}={observed}, expected not active"
+        else:
+            assert observed is not None and math.isclose(observed, expected, abs_tol=5.0e-7), (
+                f"effective {label}={observed}, expected {expected}"
+            )
