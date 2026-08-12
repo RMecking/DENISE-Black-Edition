@@ -463,6 +463,17 @@ def test_q_conversion_is_shared_by_sh_and_psv_readers(repository_root):
     assert "2.0 / (double)target_q" in implementation
 
 
+def test_physical_q_fwi_warning_is_limited_to_active_attenuation_inversion(repository_root):
+    source = (repository_root / "src" / "read_par_inv.c").read_text()
+    assert "Q_PARAMETERIZATION_MODE == Q_PARAMETERIZATION_PHYSICAL" in source
+    assert "MODE == 1" in source
+    assert "L > 0" in source
+    assert "INV_QS_ITER <= ITERMAX" in source
+    assert "only maps physical Q input to the initial tau fields" in source
+    assert "unverified legacy tau-field capability" in source
+    assert "no Q-to-tau chain rule is applied" in source
+
+
 def test_qstd_reference_reproduces_recovered_matlab_expression():
     frequency = 17.0
     relaxation_frequencies = (3.0, 13.0, 70.0)

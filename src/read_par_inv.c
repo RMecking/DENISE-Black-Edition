@@ -16,6 +16,7 @@ void read_par_inv(FILE *fp,int nstage,int stagemax){
 extern int MYID;
 extern int SPATFILTER, SPAT_FILT_SIZE, SPAT_FILT_1, SPAT_FILT_ITER, NORMALIZE;
 extern int INV_RHO_ITER, INV_VP_ITER, INV_VS_ITER, INV_QS_ITER, ENV;
+extern int Q_PARAMETERIZATION_MODE, L, MODE, ITERMAX;
 extern int TIME_FILT, ORDER, EPRECOND;
 extern int LNORM, OFFSET_MUTE;
 extern int INV_STF, N_ORDER;
@@ -38,6 +39,12 @@ fscanf(fp,"%f%i%f%f%i%i%f%f%f%i%i%i%i%i%f%f%i%i%i%i%f%f%i%i%f%f%f%i%f%i",&PRO,&T
 fclose(fp);
 
 if(MYID==0){
+
+   if ((Q_PARAMETERIZATION_MODE == Q_PARAMETERIZATION_PHYSICAL) &&
+       (MODE == 1) && (L > 0) && (INV_QS_ITER <= ITERMAX)) {
+     warning(" Q_PARAMETERIZATION_MODE=1 only maps physical Q input to the initial tau fields. ");
+     warning(" Attenuation/Q inversion is an unverified legacy tau-field capability; no Q-to-tau chain rule is applied. ");
+   }
 
    printf("=========================================== \n");
    printf("       FWI-stage %d of %d \n",nstage,stagemax);

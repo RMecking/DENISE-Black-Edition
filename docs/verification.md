@@ -1071,10 +1071,24 @@ and is not overloaded with physical-Q semantics.
 ### FWI semantic boundary
 
 The readers initialize `ptaus/ptaup` according to the selected external-input
-mode. Existing SH FWI nevertheless copies, differentiates, scales, updates,
-bounds, and writes the internal `ptaus` field directly. Names such as
-`INV_QS_ITER`, `QSLOWERLIM`, and `QSUPPERLIM` do not change that mathematical
-fact; no Q-to-tau chain rule is applied. P/SV stores the same internal tau
-material fields. M4.2.1 does not redesign these gradients or claim physical-Q
-inversion. A separate FWI parameter-semantics milestone is required before
-physical-Q inversion can be considered consistent end to end.
+mode for forward-model initialization. Source inspection shows that the legacy
+SH attenuation-inversion path copies, differentiates, scales, updates, bounds,
+and writes the internal `ptaus` field directly. P/SV likewise stores internal
+`ptaus/ptaup` material fields. Names such as `INV_QS_ITER`, `QSLOWERLIM`, and
+`QSUPPERLIM` do not establish physical-Q optimization semantics, and no
+Q-to-tau chain rule is applied.
+
+Attenuation/Q inversion is therefore an **explicitly deferred, currently
+unverified legacy capability**. The M4--M4.2.1 harness verifies forward
+viscoelastic propagation and external Q-to-initial-tau parameterization only;
+it has not dynamically verified attenuation gradients, optimization updates,
+bounds, recovered models, or convergence for SH or P/SV FWI. M4.2.1 neither
+implements nor repairs attenuation inversion and makes no claim that mode 0 or
+mode 1 provides a physically consistent Q inversion.
+
+When `Q_PARAMETERIZATION_MODE=1` is combined with viscoelastic FWI and the
+workflow schedules Qs inversion within `ITERMAX`, DENISE now emits a rank-zero
+runtime warning that physical-Q conversion applies only to the initial tau
+fields and that the legacy inversion has no Q-to-tau chain rule. A separate,
+independently designed and verified FWI parameter-semantics milestone is
+required before physical-Q attenuation inversion can be considered supported.
