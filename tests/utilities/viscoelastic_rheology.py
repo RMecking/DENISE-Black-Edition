@@ -76,6 +76,24 @@ def complex_shear_modulus(
     return relaxed_modulus * (1.0 + tau * mechanisms)
 
 
+def complex_p_wave_modulus(
+    *,
+    frequency_hz: float,
+    reference_p_wave_modulus_pa: float,
+    qp_input: float,
+    relaxation_frequencies_hz: Sequence[float],
+    tau_override: float | None = None,
+) -> complex:
+    """DENISE P/SV P-wave modulus ``M=lambda+2*mu`` for a pure P mode."""
+    return complex_shear_modulus(
+        frequency_hz=frequency_hz,
+        reference_shear_modulus_pa=reference_p_wave_modulus_pa,
+        qs_input=qp_input,
+        relaxation_frequencies_hz=relaxation_frequencies_hz,
+        tau_override=tau_override,
+    )
+
+
 def rheology_prediction(
     *,
     frequency_hz: float,
@@ -359,6 +377,7 @@ def synthetic_rheology_pair(
     density_kg_m3: float,
     qs_input: float,
     relaxation_frequencies_hz: Sequence[float],
+    tau_override: float | None = None,
 ) -> tuple[list[float], list[float]]:
     """Return elastic and analytically filtered broadband Ricker traces."""
     sample_count = round(time_s / dt_s)
@@ -387,6 +406,7 @@ def synthetic_rheology_pair(
                 density_kg_m3=density_kg_m3,
                 qs_input=qs_input,
                 relaxation_frequencies_hz=relaxation_frequencies_hz,
+                tau_override=tau_override,
             )
             transfer = cmath.exp(
                 complex(

@@ -1097,3 +1097,123 @@ fields, that attenuation/Q inversion is unverified and appears incomplete, and
 that no Q-to-tau chain rule is present. A separate, independently designed and
 verified FWI parameter-semantics milestone is required before physical-Q
 attenuation inversion can be considered supported.
+
+## M4.3: quantitative P/SV viscoelastic rheology verification
+
+M4.3 extends the calibrated forward-rheology test to homogeneous P/SV
+propagation. It uses physical-Q mode 1, four mechanisms at
+`FL=(2.7105,12.2792,68.1930,265.2297) Hz`, and the explicit equally weighted
+approximation grid 5:5:120 Hz. It verifies forward propagation only. **M4.3
+does not verify attenuation inversion.**
+
+### Constitutive interpretation
+
+The source audit covered `readmod_visc_PSV.c`, `prepare_update_s_visc_PSV.c`,
+`update_s_visc_PML_PSV.c`, `psv.c`, `av_tau.c`, and their direct material
+inputs. The external reader maps physical `Qp` to `taup` and physical `Qs` to
+`taus`. For velocity input (`INVMAT1=1`) the preparation step forms
+
+```text
+mu_relaxed = rho Vs^2 / (1 + A taus)
+M_relaxed  = rho Vp^2 / (1 + A taup),       M = lambda + 2 mu.
+```
+
+The `f`, `fipjp`, `d`, and `dip` coefficients use `mu`/`taus`, whereas `g` and
+`e` use `M`/`taup`. The stress update applies the former to shear/deviatoric
+strain and the latter to volumetric strain. Consequently DENISE's `Qp` is the
+quality factor of the P-wave modulus M for a homogeneous pure P mode, and
+`Qs` is the quality factor of the shear modulus. `av_tau.c` averages `taus` to
+the native `sxy` position; it does not mix `taup` into the shear response.
+Ideal plane P and SV modes therefore have zero constitutive cross-sensitivity.
+Finite point-source near fields may still create a small measured cross-effect.
+
+For either pure mode, the independent reference uses
+
+```text
+C*(omega) = C_relaxed [1 + tau sum_l i omega theta_l/(1+i omega theta_l)]
+k*(omega) = omega sqrt(rho/C*(omega))
+attenuation slope = Im(k)
+phase slope relative to elastic = -(Re(k)-omega/v).
+```
+
+The mandatory oracle includes DENISE's time discretization and eighth-order
+Holberg spatial symbol rather than attributing predictable FD dispersion to
+the rheology. A source-level Python guard locks the Qp/taup and Qs/taus mapping
+and the relevant coefficient use so that later constitutive changes cannot
+silently invalidate this interpretation.
+
+### Geometry and estimator
+
+Both cases use a 300 by 180 grid, `DH=10 m`, `DT=0.4 ms`, `TIME=0.9 s`,
+`Vp=3000 m/s`, `Vs=1800 m/s`, `rho=2000 kg/m3`, FD order 8, 15-point CPML,
+and a 10 Hz source. Boundaries and CPML are outside the direct-arrival gate.
+
+The P case uses explosive source type 1 and radial `vx`. The input source is
+(900,900) m; its native `sxx` position is (895,895) m. Input receivers
+(1300--1700,900) m are sampled at native `vx` positions (1300--1700,895) m,
+giving offsets 405--805 m. The SV case uses vertical-force source type 3 and
+transverse `vy`. Its native source is (895,900) m and native receiver positions
+are (1295--1695,900) m, giving offsets 400--800 m. Axis alignment makes the
+longitudinal/transverse projection unambiguous; raw components are never
+treated as collocated vector pairs.
+
+Each Q=50 trace is divided spectrally by its elastic counterpart in a
+receiver-centred 0.18 s Tukey gate (`alpha=0.2`). Linear fits of log amplitude
+and unwrapped phase versus native offset are evaluated at 8, 10, 12, and 14 Hz.
+Synthetic known-answer traces with the same source, offsets, sampling, window,
+and frequencies recover attenuation and phase slopes within 5% for both modes.
+The largest synthetic errors were 3.59% attenuation and 3.76% phase.
+
+The black-box limits are 10% attenuation, 12% phase, and R-squared at least
+0.98. These retain margin over the calibrated 5% estimator gate for finite
+windowing, staggered sampling, and FD error, while tightening the earlier M4.2
+15%/20% upper bounds. Relative phase error is quantitative only when predicted
+phase accumulation across the 400 m aperture is at least 0.07 rad. The P 8 Hz
+accumulation is only 0.0497 rad, so its phase value remains machine-readable
+diagnostic evidence but is not an assertion; its attenuation remains asserted.
+This condition is based on measurement conditioning, not the observed error.
+
+### Quantitative results
+
+P uses `(Qp,Qs)=(50,1000)` (`taup=0.0224965`, `taus=0.00107174`):
+
+| Hz | attenuation theory/observed (1/m) | relative error | R2 | phase theory/observed (rad/m) | relative error | R2 | phase guard |
+|---:|---:|---:|---:|---:|---:|---:|:---:|
+| 8 | -1.65292e-4 / -1.80668e-4 | 9.30% | 0.999996 | 1.24325e-4 / 1.46346e-4 | 17.71% | 0.999993 | diagnostic |
+| 10 | -2.09278e-4 / -2.21282e-4 | 5.74% | 0.999999 | 1.88029e-4 / 1.98832e-4 | 5.75% | 0.999999 | mandatory |
+| 12 | -2.52072e-4 / -2.55334e-4 | 1.29% | 0.999998 | 2.57998e-4 / 2.53432e-4 | 1.77% | 0.999999 | mandatory |
+| 14 | -2.93487e-4 / -2.87820e-4 | 1.93% | 0.999999 | 3.32555e-4 / 3.17468e-4 | 4.54% | 0.999998 | mandatory |
+
+SV uses `(Qp,Qs)=(1000,50)` (`taup=0.00107174`, `taus=0.0224965`):
+
+| Hz | attenuation theory/observed (1/m) | relative error | R2 | phase theory/observed (rad/m) | relative error | R2 |
+|---:|---:|---:|---:|---:|---:|
+| 8 | -2.75346e-4 / -2.99799e-4 | 8.88% | 0.999772 | 2.07101e-4 / 2.22412e-4 | 7.39% | 0.998406 |
+| 10 | -3.48555e-4 / -3.57843e-4 | 2.66% | 0.999394 | 3.13162e-4 / 3.00739e-4 | 3.97% | 0.999644 |
+| 12 | -4.19773e-4 / -4.15926e-4 | 0.92% | 0.999188 | 4.29639e-4 / 3.97466e-4 | 7.49% | 0.999956 |
+| 14 | -4.88715e-4 / -4.74867e-4 | 2.83% | 0.999442 | 5.53771e-4 / 5.18950e-4 | 6.29% | 0.999365 |
+
+Changing only Qs from 1000 to 50 in the P case changes the direct gate by
+relative L2 `7.49e-7` (correlation `0.99999999999972`). Changing only Qp from
+1000 to 50 in the SV case gives relative L2 `0.003486` (correlation
+`0.9999941`). Both are below the predeclared 0.5% finite-source cross limit and
+consistent with zero plane-wave constitutive coupling plus small near-field
+content. The negative controls compare Q=50 with elastic and give relative L2
+0.2682 (P) and 0.3655 (SV), demonstrating useful sensitivity.
+
+High-Q convergence is monotonic. Relative L2 to elastic for Q=50, 200, and
+1000 is respectively `0.26819, 0.06295, 0.01238` for P and
+`0.36549, 0.08555, 0.01679` for SV. Repeating each Q=50 run is bitwise exact.
+Selected mandatory MPI checks compare P 2x1 and SV 1x2 with 1x1: effective
+parameters are equal, relative L2 is 0.0, and normalized correlation is 1.0.
+The complementary 1x2/2x1 and 2x2 matrix is marked `extended` to keep the
+mandatory job bounded.
+
+Machine-readable JSON in the pytest temporary directory records every fit and
+residual, native geometry, Q/tau values, L/FL/band, source definition, and the
+existing executable/git/MPI provenance. Run only M4.3 with:
+
+```bash
+python3 -m pytest tests/physics/test_psv_viscoelastic_rheology.py \
+  --require-denise -m 'integration and not extended' -v
+```

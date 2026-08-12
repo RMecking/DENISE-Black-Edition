@@ -4,6 +4,7 @@ import cmath
 import json
 import math
 import struct
+from pathlib import Path
 
 import pytest
 
@@ -25,6 +26,7 @@ from tests.utilities.qstd_reference import (
 )
 from tests.utilities.viscoelastic_rheology import (
     approximate_main_lobe_width_hz,
+    complex_p_wave_modulus,
     complex_shear_modulus,
     discrete_rheology_prediction,
     effective_q_from_transfer_slopes,
@@ -615,3 +617,120 @@ def test_calibrated_estimator_recovers_historical_l4_transfer(tau):
     for row in report.values():
         assert row["attenuation_relative_error"] <= 0.05
         assert row["phase_relative_error"] <= 0.05
+
+
+@pytest.mark.parametrize(
+    ("mode", "velocity_m_s"), (("P", 3000.0), ("SV", 1800.0))
+)
+def test_m43_psv_mode_constitutive_reference_and_estimator(mode, velocity_m_s):
+    target_q = 50.0
+    frequencies = HISTORICAL_L4_FREQUENCIES_HZ
+    tau = target_q_to_tau(
+        target_q=target_q,
+        relaxation_frequencies_hz=frequencies,
+        fmin_hz=5.0,
+        fmax_hz=120.0,
+        df_hz=5.0,
+    )
+    reference_modulus = 2000.0 * velocity_m_s * velocity_m_s
+    modulus_function = complex_p_wave_modulus if mode == "P" else complex_shear_modulus
+    modulus_keywords = (
+        {"reference_p_wave_modulus_pa": reference_modulus, "qp_input": target_q}
+        if mode == "P"
+        else {"reference_shear_modulus_pa": reference_modulus, "qs_input": target_q}
+    )
+    modulus = modulus_function(
+        frequency_hz=10.0,
+        relaxation_frequencies_hz=frequencies,
+        tau_override=tau,
+        **modulus_keywords,
+    )
+    prediction = rheology_prediction(
+        frequency_hz=10.0,
+        vs_m_s=velocity_m_s,
+        density_kg_m3=2000.0,
+        qs_input=target_q,
+        relaxation_frequencies_hz=frequencies,
+        tau_override=tau,
+    )
+    assert modulus == prediction.complex_modulus_pa
+
+    evaluated_frequencies = (8.0, 10.0, 12.0, 14.0)
+    transfers = {frequency: [] for frequency in evaluated_frequencies}
+    for offset in CALIBRATION_OFFSETS_M:
+        center = 0.15 + offset / velocity_m_s
+        elastic, viscoelastic = synthetic_rheology_pair(
+            dt_s=0.0004,
+            time_s=0.9,
+            pulse_center_s=center,
+            source_frequency_hz=10.0,
+            distance_m=offset,
+            vs_m_s=velocity_m_s,
+            density_kg_m3=2000.0,
+            qs_input=target_q,
+            relaxation_frequencies_hz=frequencies,
+            tau_override=tau,
+        )
+        start, stop = center - 0.09, center + 0.09
+        samples = transfer_spectrum(
+            time_interval(viscoelastic, start_s=start, stop_s=stop, dt_s=0.0004),
+            time_interval(elastic, start_s=start, stop_s=stop, dt_s=0.0004),
+            dt_s=0.0004,
+            frequencies_hz=evaluated_frequencies,
+            window_kind="tukey",
+            tukey_alpha=0.2,
+        )
+        for sample in samples:
+            transfers[sample.frequency_hz].append(sample.value)
+
+    report = {}
+    for frequency, values in transfers.items():
+        attenuation = linear_fit(
+            CALIBRATION_OFFSETS_M, [math.log(abs(value)) for value in values]
+        )
+        phase = linear_fit(
+            CALIBRATION_OFFSETS_M,
+            unwrap_phase([cmath.phase(value) for value in values]),
+        )
+        theory = rheology_prediction(
+            frequency_hz=frequency,
+            vs_m_s=velocity_m_s,
+            density_kg_m3=2000.0,
+            qs_input=target_q,
+            relaxation_frequencies_hz=frequencies,
+            tau_override=tau,
+        )
+        report[str(frequency)] = {
+            "attenuation_relative_error": abs(
+                attenuation.slope - theory.log_amplitude_slope_per_m
+            ) / abs(theory.log_amplitude_slope_per_m),
+            "phase_relative_error": abs(
+                phase.slope - theory.phase_slope_rad_per_m
+            ) / abs(theory.phase_slope_rad_per_m),
+            "attenuation_r_squared": attenuation.r_squared,
+            "phase_r_squared": phase.r_squared,
+        }
+    print(f"M43_{mode}_ESTIMATOR_CALIBRATION=" + json.dumps(report, sort_keys=True))
+    assert max(row["attenuation_relative_error"] for row in report.values()) <= 0.05
+    assert max(row["phase_relative_error"] for row in report.values()) <= 0.05
+
+
+def test_m43_psv_constitutive_source_audit():
+    """Lock the source-level Qp/Qs interpretation used by the M4.3 oracle."""
+    repository = Path(__file__).resolve().parents[1]
+    reader = (repository / "src/PSV/readmod_visc_PSV.c").read_text(encoding="utf-8")
+    preparation = (repository / "src/PSV/prepare_update_s_visc_PSV.c").read_text(
+        encoding="utf-8"
+    )
+    update = (repository / "src/PSV/update_s_visc_PML_PSV.c").read_text(
+        encoding="utf-8"
+    )
+
+    assert "taus[jj][ii]=q_to_tau(qs, &q_mapping);" in reader
+    assert "taup[jj][ii]=q_to_tau(qp, &q_mapping);" in reader
+    assert "mu=(pu[j][i]*pu[j][i]*prho[j][i])/(1.0+sumu*ptaus[j][i]);" in preparation
+    assert "pi=(ppi[j][i]*ppi[j][i]*prho[j][i])/(1.0+sumpi*ptaup[j][i]);" in preparation
+    assert "f[j][i] = mu*DT*(1.0+L*ptaus[j][i]);" in preparation
+    assert "g[j][i] = pi*DT*(1.0+L*ptaup[j][i]);" in preparation
+    assert "sxy[j][i] += (fipjp[j][i]*(vxy+vyx))" in update
+    assert "sxx[j][i] += (g[j][i]*(vxx+vyy))-(2.0*f[j][i]*vyy)" in update
