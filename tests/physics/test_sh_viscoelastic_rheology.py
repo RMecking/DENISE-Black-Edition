@@ -22,7 +22,7 @@ from tests.utilities.effective_parameters import (
     require_effective_parameters,
 )
 from tests.utilities.runner import RunResult, result_summary, run_denise
-from tests.utilities.qstd_reference import qstd_quality_factor
+from tests.utilities.qstd_reference import qstd_quality_factor, target_q_to_tau
 from tests.utilities.seismogram import (
     absolute_peak_index_in_interval,
     all_finite,
@@ -107,6 +107,7 @@ class HistoricalL4Runs:
     root: Path
     nominal_qs30: SHRun
     compensating_qs: SHRun
+    physical_qs30: SHRun
 
 
 def _sha256(path: Path) -> str:
@@ -126,6 +127,18 @@ def _viscoelastic_config(qs: float, frequencies_hz=(10.0,)) -> ViscoelasticSHCon
         **asdict(BASE_CONFIG),
         qs=qs,
         relaxation_frequencies_hz=tuple(frequencies_hz),
+    )
+
+
+def _physical_q_config(qs: float, frequencies_hz) -> ViscoelasticSHConfig:
+    return ViscoelasticSHConfig(
+        **asdict(BASE_CONFIG),
+        qs=qs,
+        relaxation_frequencies_hz=tuple(frequencies_hz),
+        q_parameterization_mode=1,
+        q_approx_fmin_hz=5.0,
+        q_approx_fmax_hz=120.0,
+        q_approx_df_hz=5.0,
     )
 
 
@@ -165,6 +178,10 @@ def _run_sh_case(
         mode=0,
         physics=5,
         relaxation_frequencies_hz=_float32_values(relaxation_frequencies_hz),
+        q_parameterization_mode=int(getattr(config, "q_parameterization_mode", 0)),
+        q_approx_fmin_hz=(getattr(config, "q_approx_fmin_hz", None) or None),
+        q_approx_fmax_hz=(getattr(config, "q_approx_fmax_hz", None) or None),
+        q_approx_df_hz=(getattr(config, "q_approx_df_hz", None) or None),
     )
     metadata = json.loads(result.metadata_path.read_text(encoding="utf-8"))
     assert metadata["returncode"] == 0
@@ -236,7 +253,17 @@ def historical_l4_runs(
         ),
         relaxation_frequencies_hz=HISTORICAL_L4_RELAXATION_FREQUENCIES_HZ,
     )
-    return HistoricalL4Runs(root, nominal, compensating)
+    physical = _run_sh_case(
+        root / "physical_qs_30",
+        repository_root=repository_root,
+        denise_binary=denise_binary,
+        mpiexec=mpiexec,
+        config=_physical_q_config(
+            HISTORICAL_L4_TARGET_Q, HISTORICAL_L4_RELAXATION_FREQUENCIES_HZ
+        ),
+        relaxation_frequencies_hz=HISTORICAL_L4_RELAXATION_FREQUENCIES_HZ,
+    )
+    return HistoricalL4Runs(root, nominal, compensating, physical)
 
 
 def _direct_interval(config: HomogeneousSHConfig, offset_m: float) -> tuple[float, float]:
@@ -310,6 +337,15 @@ def _slope_metrics(
     metrics: dict[str, dict[str, object]] = {}
     qs = float(getattr(viscoelastic.config, "qs"))
     frequencies = tuple(getattr(viscoelastic.config, "relaxation_frequencies_hz"))
+    tau_override = None
+    if int(getattr(viscoelastic.config, "q_parameterization_mode", 0)) == 1:
+        tau_override = target_q_to_tau(
+            target_q=qs,
+            relaxation_frequencies_hz=frequencies,
+            fmin_hz=float(getattr(viscoelastic.config, "q_approx_fmin_hz")),
+            fmax_hz=float(getattr(viscoelastic.config, "q_approx_fmax_hz")),
+            df_hz=float(getattr(viscoelastic.config, "q_approx_df_hz")),
+        )
     for frequency in SPECTRAL_FREQUENCIES_HZ:
         values = transfer[frequency]
         amplitude_fit = linear_fit(offsets, [math_log_abs(value) for value in values])
@@ -321,6 +357,7 @@ def _slope_metrics(
             density_kg_m3=elastic.config.density_kg_m3,
             qs_input=qs,
             relaxation_frequencies_hz=frequencies,
+            tau_override=tau_override,
         )
         discrete_theory = discrete_rheology_prediction(
             frequency_hz=frequency,
@@ -330,6 +367,7 @@ def _slope_metrics(
             relaxation_frequencies_hz=frequencies,
             dt_s=elastic.config.dt_s,
             dh_m=elastic.config.dh_m,
+            tau_override=tau_override,
         )
         observed_q = effective_q_from_transfer_slopes(
             frequency_hz=frequency,
@@ -528,12 +566,17 @@ def test_m42_historical_l4_external_qs_parameterization(
     for run in (
         historical_l4_runs.nominal_qs30,
         historical_l4_runs.compensating_qs,
+        historical_l4_runs.physical_qs30,
     ):
         require_effective_parameters(
             run.effective,
             mode=0,
             physics=5,
             relaxation_frequencies_hz=_float32_values(frequencies),
+            q_parameterization_mode=run.config.q_parameterization_mode,
+            q_approx_fmin_hz=run.config.q_approx_fmin_hz or None,
+            q_approx_fmax_hz=run.config.q_approx_fmax_hz or None,
+            q_approx_df_hz=run.config.q_approx_df_hz or None,
         )
     assert historical_l4_runs.nominal_qs30.config.qs == HISTORICAL_L4_TARGET_Q
     assert math.isclose(
@@ -544,20 +587,35 @@ def test_m42_historical_l4_external_qs_parameterization(
     reader_source = (repository_root / "src" / "SH" / "readmod_visc_SH.c").read_text(
         encoding="utf-8"
     )
-    assert "taus[jj][ii]=2.0/qs;" in reader_source
+    psv_reader_source = (repository_root / "src" / "PSV" / "readmod_visc_PSV.c").read_text(
+        encoding="utf-8"
+    )
+    assert "taus[jj][ii]=q_to_tau(qs, &q_mapping);" in reader_source
+    assert "taus[jj][ii]=q_to_tau(qs, &q_mapping);" in psv_reader_source
+    assert "taup[jj][ii]=q_to_tau(qp, &q_mapping);" in psv_reader_source
 
     metrics = {
         "relaxation_frequencies_hz": list(frequencies),
         "historical_optimized_tau": HISTORICAL_L4_OPTIMIZED_TAU,
         "target_q": HISTORICAL_L4_TARGET_Q,
-        "reader_mapping_source": "src/SH/readmod_visc_SH.c: taus[jj][ii]=2.0/qs",
+        "reader_mapping_source": "shared q_to_tau used by SH and P/SV external readers",
         "runs": {},
     }
     for name, run in (
         ("nominal_qs30", historical_l4_runs.nominal_qs30),
         ("compensating_qs", historical_l4_runs.compensating_qs),
+        ("physical_qs30", historical_l4_runs.physical_qs30),
     ):
-        reader_tau = 2.0 / run.config.qs
+        if run.config.q_parameterization_mode == 1:
+            reader_tau = target_q_to_tau(
+                target_q=run.config.qs,
+                relaxation_frequencies_hz=frequencies,
+                fmin_hz=run.config.q_approx_fmin_hz,
+                fmax_hz=run.config.q_approx_fmax_hz,
+                df_hz=run.config.q_approx_df_hz,
+            )
+        else:
+            reader_tau = 2.0 / run.config.qs
         slopes = _slope_metrics(run, m42_runs.elastic)
         rows = {}
         for frequency in SPECTRAL_FREQUENCIES_HZ:
@@ -585,6 +643,7 @@ def test_m42_historical_l4_external_qs_parameterization(
         metrics["runs"][name] = {
             "qs_file_value": run.config.qs,
             "reader_tau": reader_tau,
+            "q_parameterization_mode": run.config.q_parameterization_mode,
             "effective_parameters": asdict(run.effective),
             "model_sha256": run.model_sha256,
             "frequencies": rows,
@@ -595,12 +654,14 @@ def test_m42_historical_l4_external_qs_parameterization(
 
     nominal_rows = metrics["runs"]["nominal_qs30"]["frequencies"]
     compensating_rows = metrics["runs"]["compensating_qs"]["frequencies"]
+    physical_rows = metrics["runs"]["physical_qs30"]["frequencies"]
     assert metrics["runs"]["nominal_qs30"]["reader_tau"] == 2.0 / 30.0
     assert math.isclose(
         metrics["runs"]["compensating_qs"]["reader_tau"],
         HISTORICAL_L4_OPTIMIZED_TAU,
         rel_tol=1.0e-15,
     )
+    assert abs(metrics["runs"]["physical_qs30"]["reader_tau"] - 0.0386) < 3.0e-4
     for row in nominal_rows.values():
         assert row["observed_vs_reader_q_relative_error"] <= HISTORICAL_L4_Q_RELATIVE_TOLERANCE
         assert row["observed_vs_historical_q_relative_error"] >= 0.25
@@ -621,6 +682,34 @@ def test_m42_historical_l4_external_qs_parameterization(
         assert _relative_error(
             row["phase_fit"]["slope"], row["theoretical_phase_slope_rad_per_m"]
         ) <= PHASE_SLOPE_RELATIVE_TOLERANCE
+    for row in physical_rows.values():
+        assert row["observed_vs_reader_q_relative_error"] <= HISTORICAL_L4_Q_RELATIVE_TOLERANCE
+        assert row["observed_vs_historical_q_relative_error"] <= HISTORICAL_L4_Q_RELATIVE_TOLERANCE
+        assert _relative_error(
+            row["attenuation_fit"]["slope"],
+            row["theoretical_log_amplitude_slope_per_m"],
+        ) <= ATTENUATION_SLOPE_RELATIVE_TOLERANCE
+        assert _relative_error(
+            row["phase_fit"]["slope"], row["theoretical_phase_slope_rad_per_m"]
+        ) <= PHASE_SLOPE_RELATIVE_TOLERANCE
+
+    equivalence_l2 = relative_l2(
+        historical_l4_runs.physical_qs30.traces,
+        historical_l4_runs.compensating_qs.traces,
+    )
+    equivalence_correlation = normalized_correlation(
+        historical_l4_runs.physical_qs30.traces,
+        historical_l4_runs.compensating_qs.traces,
+    )
+    metrics["physical_vs_compensating_equivalence"] = {
+        "relative_l2": equivalence_l2,
+        "normalized_correlation": equivalence_correlation,
+    }
+    (historical_l4_runs.root / "historical_l4_parameterization.json").write_text(
+        json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    assert equivalence_l2 <= 0.005
+    assert equivalence_correlation >= 0.999
 
 
 @pytest.mark.extended

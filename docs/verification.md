@@ -998,8 +998,83 @@ not perform the optimized Q-target-to-common-tau mapping required by the
 recovered qapprox/qstd workflow. Internal model paths that accept global TAU
 already operate directly in relaxation-strength semantics.
 
-No reader fix or automatic conversion is attempted. A future design must
-define how a spatially varying target `Q(x,z)` maps to `tau(x,z)` for fixed
-global L and FL, including the optimization objective and frequency band. The
-generic L=3 experiment remains deselected. This is a mandatory independent
-scientific review point.
+That classification was the M4.2 review stop. M4.2.1, documented below, adds
+the separately reviewed opt-in repair while preserving the audit as historical
+evidence. The generic L=3 experiment remains deselected.
+
+## M4.2.1: explicit physical-Q parameterization
+
+M4.2.1 resolves the accepted M4.2 input defect without silently changing old
+projects. Existing 115-record parameter files select mode 0 by default and
+retain the historical external-reader mapping `taus=2/Qs`, `taup=2/Qp`.
+Physical-Q semantics are opt-in through four optional positional records after
+`RTM_SHOT`:
+
+```text
+Q_PARAMETERIZATION_MODE =1
+Q_APPROX_FMIN =5.0
+Q_APPROX_FMAX =120.0
+Q_APPROX_DF =5.0
+```
+
+Mode 1 interprets `.qp/.qs` as requested physical quality factors. `FL` and
+`L` define the global GSLS shape. The approximation grid is explicit, linear,
+inclusive, equally weighted, and deterministic. This reproduces the historical
+`qapprox.m` sampling `fmin:df:fmax`; it is not inferred from the source,
+timestep, Nyquist frequency, or FL extrema. DENISE echoes the mode, band,
+sampling interval, L, and FL at runtime.
+
+For each sampled angular frequency, define
+
+```text
+A_i = sum_l (omega_i theta_l)^2 / (1 + (omega_i theta_l)^2)
+B_i = sum_l (omega_i theta_l)   / (1 + (omega_i theta_l)^2)
+a_i = 1/B_i
+b_i = A_i/B_i
+```
+
+Then `Q_i=a_i/tau+b_i`. With `y=1/tau`, minimizing the recovered unweighted
+qstd residual `sum_i (a_i*y+b_i-Qtarget)^2` gives
+
+```text
+y = sum_i a_i (Qtarget-b_i) / sum_i a_i^2
+tau = 1/y.
+```
+
+The C implementation precomputes the affine coefficients of `y(Q)` once per
+reader call. Per-cell conversion needs no optimizer or allocation. One
+implementation in `src/q_parameterization.c` is shared by the external SH and
+P/SV readers. Propagation, memory-variable, CPML, FWI-gradient, and RTM kernels
+are unchanged.
+
+For historical `FL=(2.7105,12.2792,68.1930,265.2297) Hz`, Q=30, and the
+accepted M4.2 band sampled as 5:5:120 Hz, the fixed-FL conversion gives
+`tau=0.0388444710`, only `0.0002444710` above the recovered joint-fit value
+0.0386. Independent scalar minimization of the original qstd residual agrees
+with the analytical result within relative `1e-8`. Tests also cover targets
+20, 30, 50, 100, and 200, positivity, monotonic decreasing tau with increasing
+Q, and the finite-band L=1 relationship to the approximate `2/Q` rule.
+
+The mandatory L=4 black-box comparison uses:
+
+```text
+legacy .qs=30             -> tau=0.0666667 -> effective Q about 18
+legacy .qs=51.8134715     -> tau=0.0386    -> effective Q about 30
+physical-Q .qs=30         -> tau=0.0388445 -> effective Q about 30
+```
+
+Changing from mode 0 to mode 1 changes attenuation and dispersion for L>1 and
+is therefore intentionally not backward-compatible unless explicitly selected.
+Global `TAU` retains its historical use by internal direct-tau model generators
+and is not overloaded with physical-Q semantics.
+
+### FWI semantic boundary
+
+The readers initialize `ptaus/ptaup` according to the selected external-input
+mode. Existing SH FWI nevertheless copies, differentiates, scales, updates,
+bounds, and writes the internal `ptaus` field directly. Names such as
+`INV_QS_ITER`, `QSLOWERLIM`, and `QSUPPERLIM` do not change that mathematical
+fact; no Q-to-tau chain rule is applied. P/SV stores the same internal tau
+material fields. M4.2.1 does not redesign these gradients or claim physical-Q
+inversion. A separate FWI parameter-semantics milestone is required before
+physical-Q inversion can be considered consistent end to end.

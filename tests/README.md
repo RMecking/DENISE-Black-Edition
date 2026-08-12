@@ -42,15 +42,19 @@ than at 8/12 Hz. All five frequencies remain reported, and the quantitative
 phase tolerance remains 20%. The calibrated L=1 suite is green; the generic
 L=3 experiment remains unexecuted pending independent review.
 
-The M4.2 L>1 follow-up supersedes the arbitrary generic L=3 case with a
+The M4.2 L>1 follow-up superseded the arbitrary generic L=3 case with a
 historical production-like L=4 audit using `FL=(2.7105,12.2792,68.1930,
 265.2297) Hz` and optimized `tau=0.0386`. Pure-Python tests independently
 reproduce the recovered MATLAB `qstd.m` definition and cross-check it against
 the complex-modulus implementation. The mandatory black-box diagnostic
 compares nominal `.qs=30` with the compensating `.qs=2/0.0386`. It preserves a
-confirmed external-Q parameterization inconsistency as review evidence; it does
-not alter the model readers or solver. The former generic L=3 case remains
-marked `extended` and unexecuted.
+confirmed external-Q parameterization inconsistency as review evidence. M4.2.1
+repairs that interface with an explicit, backward-compatible mode: mode 0 is
+the default legacy `tau=2/Q` mapping, while mode 1 converts physical `.qp/.qs`
+targets to a shared GSLS strength for fixed global `L`/`FL` and an explicit
+linear, equally weighted approximation grid. The historical three-way L=4
+comparison is mandatory. The former generic L=3 case remains `extended` and
+unexecuted.
 
 See `docs/verification.md` for installation, commands, tolerances, generated
 artifacts, and failure inspection.

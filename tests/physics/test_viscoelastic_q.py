@@ -13,6 +13,7 @@ from tests.cases.homogeneous_viscoelastic import (
     generate_viscoelastic_sh_case,
 )
 from tests.utilities.attenuation import peak_absolute, root_mean_square, spectral_band_rms
+from tests.utilities.effective_parameters import read_effective_parameters, require_effective_parameters
 from tests.utilities.physics_run import run_psv_case
 from tests.utilities.runner import result_summary, run_denise
 from tests.utilities.seismogram import (
@@ -244,3 +245,35 @@ def test_psv_qs_input_sensitivity(tmp_path, repository_root, denise_binary, mpie
     )
     assert metrics["model_sha256"]["low"]["qs"] != metrics["model_sha256"]["high"]["qs"]
     _require_q_sensitivity(metrics["relative_l2"], "P/SV Qs sensitivity")
+
+
+def test_psv_physical_q_reader_smoke(tmp_path, repository_root, denise_binary, mpiexec):
+    directory = tmp_path / "psv_physical_q"
+    frequencies = (2.7105, 12.2792, 68.1930, 265.2297)
+    config = ViscoelasticPSVConfig(
+        qp=30.0,
+        qs=30.0,
+        relaxation_frequencies_hz=frequencies,
+        q_parameterization_mode=1,
+        q_approx_fmin_hz=5.0,
+        q_approx_fmax_hz=120.0,
+        q_approx_df_hz=5.0,
+    )
+    vx, vy = _run_psv(
+        directory,
+        repository_root=repository_root,
+        denise_binary=denise_binary,
+        mpiexec=mpiexec,
+        config=config,
+    )
+    assert all_finite(vx) and all_finite(vy)
+    require_effective_parameters(
+        read_effective_parameters(directory / "stdout.txt"),
+        mode=0,
+        physics=1,
+        relaxation_frequencies_hz=(2.7105, 12.2792, 68.193001, 265.229706),
+        q_parameterization_mode=1,
+        q_approx_fmin_hz=5.0,
+        q_approx_fmax_hz=120.0,
+        q_approx_df_hz=5.0,
+    )

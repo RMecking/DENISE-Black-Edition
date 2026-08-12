@@ -25,6 +25,22 @@
 #define STRING_SIZE2 256
 #define REQUEST_COUNT 4
 
+#define Q_PARAMETERIZATION_LEGACY 0
+#define Q_PARAMETERIZATION_PHYSICAL 1
+
+/* Precomputed fixed-FL least-squares map from physical target Q to 1/tau. */
+struct q_tau_mapping {
+   int mode;
+   int sample_count;
+   double inverse_tau_per_q;
+   double inverse_tau_offset;
+};
+
+void init_q_tau_mapping(struct q_tau_mapping *mapping, int mode, int mechanisms,
+                        const float *relaxation_frequencies_hz,
+                        float fmin_hz, float fmax_hz, float df_hz);
+float q_to_tau(float target_q, const struct q_tau_mapping *mapping);
+
 /* ---------------------------------- */
 /* declaration of PSV data-structures */
 /* ---------------------------------- */
