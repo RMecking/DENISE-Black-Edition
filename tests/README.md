@@ -56,6 +56,22 @@ linear, equally weighted approximation grid. The historical three-way L=4
 comparison is mandatory. The former generic L=3 case remains `extended` and
 unexecuted.
 
+M4.3 adds quantitative homogeneous P/SV forward-rheology verification in
+physical-Q mode 1. Explosive/radial P and vertical-force/transverse SV cases
+use native staggered-grid coordinates at five offsets. The calibrated Tukey
+transfer estimator checks attenuation at 8--14 Hz and well-conditioned phase
+bins against the discrete GSLS/FD oracle, with separate Qp/Qs cross controls,
+Q=50/200/1000 convergence, exact repeats, and selected P 2x1/SV 1x2 MPI
+comparisons. The complementary MPI matrix is `extended`. M4.3 verifies forward
+P/SV viscoelastic propagation; it does not verify attenuation inversion.
+
+Run the focused mandatory M4.3 cases with:
+
+```bash
+python3 -m pytest tests/physics/test_psv_viscoelastic_rheology.py \
+  --require-denise -m 'integration and not extended' -v
+```
+
 See `docs/verification.md` for installation, commands, tolerances, generated
 artifacts, and failure inspection.
 
