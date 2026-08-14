@@ -41,6 +41,8 @@ void alloc_fwiSH(struct fwiSH *fwiSH){
 	(*fwiSH).waveconv_u = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
 	(*fwiSH).waveconv_mu = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
 	(*fwiSH).waveconv_u_shot = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
+	(*fwiSH).waveconv_u_x_shot = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
+	(*fwiSH).waveconv_u_y_shot = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
 
 	if(L){
 	   (*fwiSH).gradg_ts = matrix(-nd+1,NY+nd,-nd+1,NX+nd);

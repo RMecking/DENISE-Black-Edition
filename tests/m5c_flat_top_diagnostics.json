@@ -1,0 +1,121 @@
+{
+  "git_sha": "47f3ab93ae7b27433980dafeb77646c9f5a6940a",
+  "binary_path": "/mnt/d/Softwareprojekte/DENISE-Black-Edition/bin/denise",
+  "binary_sha256": "1407ccd7f37246f99d9fd405f3665b081e061dde9df0c13cecbec5eb1321aa3c",
+  "prediction_recorded_before_runs": "A broad plateau should make local and neighbor-backprojected directional products more alike, moving K closer to one than the M5b sigma=70 m Gaussian.",
+  "m5b_correction": {
+    "form1": "g_prod * DTINV / (rho * Vs^6), applied pointwise",
+    "form2": "g_prod * DTINV / (DT * rho^2 * Vs^2), applied pointwise"
+  },
+  "configuration": {
+    "nx": 96,
+    "ny": 80,
+    "dh_m": 10.0,
+    "time_s": 0.4,
+    "dt_s": 0.0004,
+    "dtinv": 1,
+    "vs_m_s": 2300.0,
+    "density_kg_m3": 1800.0,
+    "target_fraction": 0.02,
+    "source_x_m": 260.0,
+    "source_y_m": 400.0,
+    "source_frequency_hz": 12.0,
+    "receiver_x_m": [
+      420.0,
+      500.0,
+      580.0,
+      660.0,
+      740.0
+    ],
+    "receiver_y_m": 400.0,
+    "anomaly_x_m": 520.0,
+    "anomaly_y_m": 400.0,
+    "anomaly_sigma_m": 70.0,
+    "background_contrast_fraction": 0.0,
+    "fd_order": 8,
+    "absorbing_width_gridpoints": 12,
+    "direction_normalization": "delta_Vs=Vs_background*p; max_abs_p_equals_1"
+  },
+  "rows": [
+    {
+      "direction": "flat_top",
+      "description": {
+        "family": "flat_top",
+        "half_width_m": [
+          120.0,
+          100.0
+        ],
+        "taper_m": 80.0
+      },
+      "grad_form": 1,
+      "g_dot_p_raw": -3.514964919131476e+20,
+      "g_dot_p_vs_minus_6_only": -2.3744005206274514,
+      "g_dot_p_m5b_corrected": -0.0013191114003485841,
+      "d_fd_plateau": -0.001331373945237368,
+      "k_residual_fd_over_corrected_gradient": 1.009296064673191,
+      "epsilons": [
+        {
+          "epsilon_fraction": 0.015,
+          "j_plus": 2.4177448165300547e-06,
+          "j_minus": 4.3392414749421887e-05,
+          "d_fd": -0.0013658223310963945,
+          "relative_to_previous": null
+        },
+        {
+          "epsilon_fraction": 0.0075,
+          "j_plus": 6.297223637113611e-07,
+          "j_minus": 2.0703996643328025e-05,
+          "d_fd": -0.0013382849519744443,
+          "relative_to_previous": 0.020161757861906503
+        },
+        {
+          "epsilon_fraction": 0.00375,
+          "j_plus": 2.610759986380849e-06,
+          "j_minus": 1.259606457566111e-05,
+          "d_fd": -0.001331373945237368,
+          "relative_to_previous": 0.005164077147307128
+        }
+      ]
+    },
+    {
+      "direction": "flat_top",
+      "description": {
+        "family": "flat_top",
+        "half_width_m": [
+          120.0,
+          100.0
+        ],
+        "taper_m": 80.0
+      },
+      "grad_form": 2,
+      "g_dot_p_raw": -69463109304.62057,
+      "g_dot_p_vs_minus_6_only": null,
+      "g_dot_p_m5b_corrected": -10.131961846341305,
+      "d_fd_plateau": -10.203739438605886,
+      "k_residual_fd_over_corrected_gradient": 1.0070842738408554,
+      "epsilons": [
+        {
+          "epsilon_fraction": 0.015,
+          "j_plus": 0.016272207773113615,
+          "j_minus": 0.32876481598561424,
+          "d_fd": -10.416420273750022,
+          "relative_to_previous": null
+        },
+        {
+          "epsilon_fraction": 0.0075,
+          "j_plus": 0.005590728656046991,
+          "j_minus": 0.1592877196642129,
+          "d_fd": -10.246466067211061,
+          "relative_to_previous": 0.01631598976159354
+        },
+        {
+          "epsilon_fraction": 0.00375,
+          "j_plus": 0.021608101924137882,
+          "j_minus": 0.09813614771368202,
+          "d_fd": -10.203739438605886,
+          "relative_to_previous": 0.004169889240340268
+        }
+      ]
+    }
+  ]
+}

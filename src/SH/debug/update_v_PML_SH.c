@@ -14,7 +14,7 @@
 void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
 	float **  vz, float **  vzp1, float **  vzm1, float **  utty,float ** sxz, float ** syz,
 	float  **rho, float **rhoi, float **  srcpos_loc, float ** signals, int nsrc, float ** absorb_coeff,
-	float *hc, int infoout,int sw, float * K_x, float * a_x, float * b_x, float * K_x_half, float * a_x_half, 
+	float *hc, int infoout,int sw, int exact_elastic_sh_adjoint, float * K_x, float * a_x, float * b_x, float * K_x_half, float * a_x_half,
 	float * b_x_half, float * K_y, float * a_y, float * b_y, float * K_y_half, float * a_y_half, 
 	float * b_y_half, float ** psi_sxz_x, float ** psi_syz_y){
 

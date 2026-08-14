@@ -1,0 +1,186 @@
+diff --git a/src/SH/sh.c b/src/SH/sh.c
+index 46a1b80..44147f3 100644
+--- a/src/SH/sh.c
++++ b/src/SH/sh.c
+@@ -14,6 +14,14 @@
+ 
+ #include "fd.h"
+ 
++#if defined(M5_SH_GRAD_X_ONLY)
++#define M5_SH_GRAD_CORRELATION ((*fwiSH).forward_prop_sxz[imat] * (*waveSH).psxz[j][i])
++#elif defined(M5_SH_GRAD_Y_ONLY)
++#define M5_SH_GRAD_CORRELATION ((*fwiSH).forward_prop_syz[imat] * (*waveSH).psyz[j][i])
++#else
++#define M5_SH_GRAD_CORRELATION (((*fwiSH).forward_prop_syz[imat] * (*waveSH).psyz[j][i]) + ((*fwiSH).forward_prop_sxz[imat] * (*waveSH).psxz[j][i]))
++#endif
++
+ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matSH, struct fwiSH *fwiSH, struct mpiPSV *mpiPSV, 
+          struct seisSH *seisSH, struct seisSHfwi *seisSHfwi, struct acq *acq, float *hc, int ishot, int nshots, int nsrc_loc, 
+          int ns, int ntr, float **Ws, float **Wr, int hin, int *DTINV_help, int mode, MPI_Request * req_send, MPI_Request * req_rec){
+@@ -123,6 +131,37 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
+ 	      exchange_v_SH((*waveSH).pvz, (*mpiPSV).bufferlef_to_rig, (*mpiPSV).bufferrig_to_lef, (*mpiPSV).buffertop_to_bot, (*mpiPSV).bufferbot_to_top, req_send, req_rec);
+ 		                                                       
+                                                                                     	
++#ifdef M5_SH_RHO_B_INTEGRATED
++	if((mode==1)&&(GRAD_FORM==1)){
++	    for (i=1;i<=NX;i++){
++		for (j=1;j<=NY;j++){
++		    (*waveSH).pvzp1[j][i] += (*waveSH).pvz[j][i] * DT;
++		}
++	    }
++	}
++#endif
++
++#if defined(M5_SH_GRAD_PRE_STRESS)
++	if((mode==1)&&(DTINV_help[NT-nt+1]==1)){
++	    imat=((NXNYI*(NTDTINV)) - hin*NXNYI)+1;
++	    for (i=1;i<=NX;i=i+IDXI){
++		for (j=1;j<=NY;j=j+IDYI){
++		    if((GRAD_FORM==1)||(GRAD_FORM==2)){
++			if(INVMAT1==1){
++			    muss = (*matSH).prho[j][i] * (*matSH).pu[j][i] * (*matSH).pu[j][i];
++			}
++			if(INVMAT1==3){
++			    muss = (*matSH).pu[j][i];
++			}
++			if(muss>0.0){
++			    (*fwiSH).waveconv_u_shot[j][i] += M5_SH_GRAD_CORRELATION;
++			}
++		    }
++		    imat++;
++		}
++	    }
++	}
++#endif
+ 
+               /* stress update */
+ 	      update_s_elastic_PML_SH(1, NX, 1, NY, (*waveSH).pvz, (*waveSH).uz, (*waveSH).uzx, (*waveSH).psyz, (*waveSH).psxz, (*matSH).pujp, (*matSH).puip, (*matSH).prho, hc,infoout,
+@@ -208,7 +247,21 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
+ 			for (j=1;j<=NY;j=j+IDYI){ 
+ 		                 
+ 				 /* Density gradient */                  
++			#if defined(M5_SH_RHO_B_INTEGRATED)
++#ifdef M5_SH_EXACT_RECEIVER_METRIC
++				(*fwiSH).waveconv_rho_shot[j][i] += (*waveSH).pvzp1[j][i] * (*fwiSH).forward_prop_rho_z[imat];
++#else
++				(*fwiSH).waveconv_rho_shot[j][i] += ((*waveSH).pvzp1[j][i] * (*fwiSH).forward_prop_rho_z[imat]) / (*matSH).prho[j][i];
++#endif
++			#elif defined(M5_SH_RHO_B_VELOCITY)
++#ifdef M5_SH_EXACT_RECEIVER_METRIC
++				(*fwiSH).waveconv_rho_shot[j][i] += (*waveSH).pvz[j][i] * (*fwiSH).forward_prop_rho_z[imat];
++#else
++				(*fwiSH).waveconv_rho_shot[j][i] += ((*waveSH).pvz[j][i] * (*fwiSH).forward_prop_rho_z[imat]) / (*matSH).prho[j][i];
++#endif
++			#else
+ 			   	(*fwiSH).waveconv_rho_shot[j][i] += (*waveSH).pvzp1[j][i] * (*fwiSH).forward_prop_rho_z[imat];
++			#endif
+ 			
+ 				/* Vs-gradient (stress-displacement formulation) */
+ 		                if(GRAD_FORM==1){			
+@@ -222,7 +275,9 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
+ 				    }  
+ 
+ 				    if(muss>0.0){			
+-				         (*fwiSH).waveconv_u_shot[j][i] += ((*fwiSH).forward_prop_syz[imat] * (*waveSH).psyz[j][i]) + ((*fwiSH).forward_prop_sxz[imat] * (*waveSH).psxz[j][i]);
++#if !defined(M5_SH_GRAD_PRE_STRESS)
++				         (*fwiSH).waveconv_u_shot[j][i] += M5_SH_GRAD_CORRELATION;
++#endif
+ 				    } 		                  
+ 		                }
+ 				
+@@ -238,7 +293,9 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
+ 				    }  
+ 
+ 				    if(muss>0.0){			
+-				         (*fwiSH).waveconv_u_shot[j][i] += ((*fwiSH).forward_prop_syz[imat] * (*waveSH).psyz[j][i]) + ((*fwiSH).forward_prop_sxz[imat] * (*waveSH).psxz[j][i]);
++#if !defined(M5_SH_GRAD_PRE_STRESS)
++				         (*fwiSH).waveconv_u_shot[j][i] += M5_SH_GRAD_CORRELATION;
++#endif
+ 				    } 		                  
+ 		                }			
+ 						                                                                                                     
+diff --git a/src/SH/update_v_PML_SH.c b/src/SH/update_v_PML_SH.c
+index 79fbb7f..576397a 100644
+--- a/src/SH/update_v_PML_SH.c
++++ b/src/SH/update_v_PML_SH.c
+@@ -96,7 +96,9 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  	}
+ 					
+ 					if(sw==1){					
+-						vzp1[j][i] += vz[j][i] * DT;					
++#ifndef M5_SH_RHO_B_INTEGRATED
++						vzp1[j][i] += vz[j][i] * DT;
++#endif
+                                  	}
+ 
+                            	}
+@@ -180,7 +182,9 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  	}
+ 					
+ 					if(sw==1){					
+-						vzp1[j][i] += vz[j][i] * DT;					
++#ifndef M5_SH_RHO_B_INTEGRATED
++						vzp1[j][i] += vz[j][i] * DT;
++#endif
+                                  	}
+ 
+                            	}
+@@ -266,7 +270,9 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  	}
+ 					
+ 					if(sw==1){					
+-						vzp1[j][i] += vz[j][i] * DT;					
++#ifndef M5_SH_RHO_B_INTEGRATED
++						vzp1[j][i] += vz[j][i] * DT;
++#endif
+                                  	}
+ 
+                            	}
+@@ -355,7 +361,9 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  	}
+ 					
+ 					if(sw==1){					
+-						vzp1[j][i] += vz[j][i] * DT;					
++#ifndef M5_SH_RHO_B_INTEGRATED
++						vzp1[j][i] += vz[j][i] * DT;
++#endif
+                                  	}
+ 
+                            	}
+@@ -445,7 +453,9 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  	}
+ 					
+ 					if(sw==1){					
+-						vzp1[j][i] += vz[j][i] * DT;					
++#ifndef M5_SH_RHO_B_INTEGRATED
++						vzp1[j][i] += vz[j][i] * DT;
++#endif
+                                  	}
+ 
+                            	}
+@@ -538,7 +548,9 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  	}
+ 					
+ 					if(sw==1){					
+-						vzp1[j][i] += vz[j][i] * DT;					
++#ifndef M5_SH_RHO_B_INTEGRATED
++						vzp1[j][i] += vz[j][i] * DT;
++#endif
+                                  	}
+ 
+                            	}
+@@ -589,7 +601,13 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+ 		j=(int)srcpos_loc[2][l];
+ 		    
+                 if((GRAD_FORM==1)||(GRAD_FORM==2)){
+-		    if(QUELLTYPB==1){vz[j][i] += signals[l][nt];}  /* single force in z */
++		    if(QUELLTYPB==1){
++#ifdef M5_SH_EXACT_RECEIVER_METRIC
++			vz[j][i] += rhoi[j][i] * signals[l][nt];
++#else
++			vz[j][i] += signals[l][nt];
++#endif
++		    }  /* single force in z */
+                 }
+             }
+ 	}                         

@@ -24,6 +24,13 @@ void ass_gradSH(struct fwiSH *fwiSH, struct matSH *matSH, int iter){
 
 	for (i=1;i<=NX;i=i+IDX){
    		for (j=1;j<=NY;j=j+IDY){
+			if(INVMAT1==1){
+			    /* Exact elastic shot assembly already produced dJ/dVs. */
+			    if(iter<INV_VS_ITER){
+				(*fwiSH).waveconv_u[j][i] = 0.0;
+			    }
+			    continue;
+			}
 		 
       			/* calculate mu gradient */ 
       			(*fwiSH).waveconv_mu[j][i] = - DT * (*fwiSH).waveconv_u[j][i];
@@ -66,6 +73,13 @@ void ass_gradSH(struct fwiSH *fwiSH, struct matSH *matSH, int iter){
 	/* ------------------------------ */
 	for (i=1;i<=NX;i=i+IDX){
     		for (j=1;j<=NY;j=j+IDY){
+			if(INVMAT1==1){
+			    /* Exact elastic shot assembly already produced total dJ/drho. */
+			    if(iter<INV_RHO_ITER){
+				(*fwiSH).waveconv_rho[j][i] = 0.0;
+			    }
+			    continue;
+			}
 
        			/* calculate density gradient rho' */
        			(*fwiSH).waveconv_rho_s[j][i]= - DT * (*fwiSH).waveconv_rho[j][i];

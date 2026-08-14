@@ -1,0 +1,69 @@
+diff --git a/src/SH/sh.c b/src/SH/sh.c
+index 46a1b80..fb156f3 100644
+--- a/src/SH/sh.c
++++ b/src/SH/sh.c
+@@ -14,6 +14,14 @@
+ 
+ #include "fd.h"
+ 
++#if defined(M5_SH_GRAD_X_ONLY)
++#define M5_SH_GRAD_CORRELATION ((*fwiSH).forward_prop_sxz[imat] * (*waveSH).psxz[j][i])
++#elif defined(M5_SH_GRAD_Y_ONLY)
++#define M5_SH_GRAD_CORRELATION ((*fwiSH).forward_prop_syz[imat] * (*waveSH).psyz[j][i])
++#else
++#define M5_SH_GRAD_CORRELATION (((*fwiSH).forward_prop_syz[imat] * (*waveSH).psyz[j][i]) + ((*fwiSH).forward_prop_sxz[imat] * (*waveSH).psxz[j][i]))
++#endif
++
+ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matSH, struct fwiSH *fwiSH, struct mpiPSV *mpiPSV, 
+          struct seisSH *seisSH, struct seisSHfwi *seisSHfwi, struct acq *acq, float *hc, int ishot, int nshots, int nsrc_loc, 
+          int ns, int ntr, float **Ws, float **Wr, int hin, int *DTINV_help, int mode, MPI_Request * req_send, MPI_Request * req_rec){
+@@ -123,5 +131,27 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
+ 	      exchange_v_SH((*waveSH).pvz, (*mpiPSV).bufferlef_to_rig, (*mpiPSV).bufferrig_to_lef, (*mpiPSV).buffertop_to_bot, (*mpiPSV).bufferbot_to_top, req_send, req_rec);
+ 		                                                       
+                                                                                     	
++
++#if defined(M5_SH_GRAD_PRE_STRESS)
++	if((mode==1)&&(DTINV_help[NT-nt+1]==1)){
++	    imat=((NXNYI*(NTDTINV)) - hin*NXNYI)+1;
++	    for (i=1;i<=NX;i=i+IDXI){
++		for (j=1;j<=NY;j=j+IDYI){
++		    if((GRAD_FORM==1)||(GRAD_FORM==2)){
++			if(INVMAT1==1){
++			    muss = (*matSH).prho[j][i] * (*matSH).pu[j][i] * (*matSH).pu[j][i];
++			}
++			if(INVMAT1==3){
++			    muss = (*matSH).pu[j][i];
++			}
++			if(muss>0.0){
++			    (*fwiSH).waveconv_u_shot[j][i] += M5_SH_GRAD_CORRELATION;
++			}
++		    }
++		    imat++;
++		}
++	    }
++	}
++#endif
+ 
+               /* stress update */
+@@ -222,7 +251,9 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
+ 				    }  
+ 
+ 				    if(muss>0.0){			
+-				         (*fwiSH).waveconv_u_shot[j][i] += ((*fwiSH).forward_prop_syz[imat] * (*waveSH).psyz[j][i]) + ((*fwiSH).forward_prop_sxz[imat] * (*waveSH).psxz[j][i]);
++#if !defined(M5_SH_GRAD_PRE_STRESS)
++				         (*fwiSH).waveconv_u_shot[j][i] += M5_SH_GRAD_CORRELATION;
++#endif
+ 				    } 		                  
+ 		                }
+ 				
+@@ -238,7 +269,9 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
+ 				    }  
+ 
+ 				    if(muss>0.0){			
+-				         (*fwiSH).waveconv_u_shot[j][i] += ((*fwiSH).forward_prop_syz[imat] * (*waveSH).psyz[j][i]) + ((*fwiSH).forward_prop_sxz[imat] * (*waveSH).psxz[j][i]);
++#if !defined(M5_SH_GRAD_PRE_STRESS)
++				         (*fwiSH).waveconv_u_shot[j][i] += M5_SH_GRAD_CORRELATION;
++#endif
+ 				    } 		                  
+ 		                }			
+ 						                                                                                                     

@@ -198,6 +198,7 @@ DENISE += ac.c \
 
 # add SH source files
 DENISE += alloc_fwiSH.c \
+	  assemble_gradSH_exact.c \
 	  alloc_matSH.c \
 	  alloc_seisSH.c \
 	  alloc_seisSHfull.c \

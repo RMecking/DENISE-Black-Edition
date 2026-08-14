@@ -161,6 +161,7 @@ struct fwiSH{
    float  ** Vs0, ** Rho0, ** Taus0;
    float  ** waveconv_mu, **waveconv_rho, **waveconv_ts, **waveconv_rho_s, **waveconv_u,  **waveconv_ts_s;
    float  ** waveconv_u_shot, **waveconv_rho_shot, **waveconv_ts_shot;
+   float  ** waveconv_u_x_shot, **waveconv_u_y_shot;
    float  ** gradg_rho, ** gradp_rho, ** gradg_u, ** gradp_u, ** gradg_ts, ** gradp_ts;
    float   * forward_prop_z, *forward_prop_rho_z, *forward_prop_sxz, *forward_prop_syz;
    float  ** forward_prop_rxz, **forward_prop_ryz, ***Rxz, ***Ryz, ***rxzt, ***ryzt;
@@ -558,6 +559,10 @@ void alloc_SH(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML);
 
 void ass_gradSH(struct fwiSH *fwiSH, struct matSH *matSH, int iter);
 
+void assemble_gradSH_exact(struct fwiSH *fwiSH, struct matSH *matSH,
+                           struct mpiPSV *mpiPSV, MPI_Request *req_send,
+                           MPI_Request *req_rec);
+
 void ass_gradSH_visc(struct fwiSH *fwiSH, struct matSH *matSH, int iter);
 
 void apply_inv_hessSH(struct fwiSH *fwiSH, struct matSH *matSH, int nshots);
@@ -712,7 +717,7 @@ void update_s_visc_PML_SH(int nx1, int nx2, int ny1, int ny2,
 void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
 	float **  vz, float **  vzp1, float **  vzm1, float **  utty,float ** sxz, float ** syz,
 	float  **rho, float **rhoi, float **  srcpos_loc, float ** signals, int nsrc, float ** absorb_coeff,
-	float *hc, int infoout,int sw, float * K_x, float * a_x, float * b_x, float * K_x_half, float * a_x_half, 
+	float *hc, int infoout,int sw, int exact_elastic_sh_adjoint, float * K_x, float * a_x, float * b_x, float * K_x_half, float * a_x_half,
 	float * b_x_half, float * K_y, float * a_y, float * b_y, float * K_y_half, float * a_y_half, 
 	float * b_y_half, float ** psi_sxz_x, float ** psi_syz_y);
 
@@ -1013,5 +1018,3 @@ void free_f3tensor(float ***t, int nrl, int nrh, int ncl, int nch, int ndl,
 int ndh);
 void zero(float *A, int u_max);
 void normalize_data(float **data, int ntr, int ns);
-
-
