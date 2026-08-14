@@ -1,0 +1,113 @@
+{
+  "git_sha": "47f3ab93ae7b27433980dafeb77646c9f5a6940a",
+  "binary_path": "/mnt/d/Softwareprojekte/DENISE-Black-Edition/bin/denise",
+  "binary_sha256": "1407ccd7f37246f99d9fd405f3665b081e061dde9df0c13cecbec5eb1321aa3c",
+  "prediction_recorded_before_runs": "If the exact harmonic-mean Jacobian is missing, a smooth 20% total Vs contrast should change K relative to the homogeneous sigma=80 m result, with a larger mismatch expected as neighboring derivative weights depart from one half.",
+  "m5b_correction": {
+    "form1": "g_prod * DTINV / (rho * Vs^6), applied pointwise",
+    "form2": "g_prod * DTINV / (DT * rho^2 * Vs^2), applied pointwise"
+  },
+  "configuration": {
+    "nx": 96,
+    "ny": 80,
+    "dh_m": 10.0,
+    "time_s": 0.4,
+    "dt_s": 0.0004,
+    "dtinv": 1,
+    "vs_m_s": 2300.0,
+    "density_kg_m3": 1800.0,
+    "target_fraction": 0.02,
+    "source_x_m": 260.0,
+    "source_y_m": 400.0,
+    "source_frequency_hz": 12.0,
+    "receiver_x_m": [
+      420.0,
+      500.0,
+      580.0,
+      660.0,
+      740.0
+    ],
+    "receiver_y_m": 400.0,
+    "anomaly_x_m": 520.0,
+    "anomaly_y_m": 400.0,
+    "anomaly_sigma_m": 70.0,
+    "background_contrast_fraction": 0.2,
+    "fd_order": 8,
+    "absorbing_width_gridpoints": 12,
+    "direction_normalization": "delta_Vs=Vs_background*p; max_abs_p_equals_1"
+  },
+  "rows": [
+    {
+      "direction": "heterogeneous_gaussian_sigma_80m",
+      "description": {
+        "family": "gaussian",
+        "sigma_m": 80.0
+      },
+      "grad_form": 1,
+      "g_dot_p_raw": -1.942866448977828e+20,
+      "g_dot_p_vs_minus_6_only": -1.3709678480570486,
+      "g_dot_p_m5b_corrected": -0.0007616488044761381,
+      "d_fd_plateau": -0.0007740166302916018,
+      "k_residual_fd_over_corrected_gradient": 1.0162382265195968,
+      "epsilons": [
+        {
+          "epsilon_fraction": 0.015,
+          "j_plus": 1.213148339733367e-07,
+          "j_minus": 2.3690126677301192e-05,
+          "d_fd": -0.0007856270614442619,
+          "relative_to_previous": null
+        },
+        {
+          "epsilon_fraction": 0.0075,
+          "j_plus": 2.0598840984714917e-06,
+          "j_minus": 1.3704957488619866e-05,
+          "d_fd": -0.0007763382260098916,
+          "relative_to_previous": 0.011823466744251577
+        },
+        {
+          "epsilon_fraction": 0.00375,
+          "j_plus": 3.974262323149701e-06,
+          "j_minus": 9.779387050336714e-06,
+          "d_fd": -0.0007740166302916018,
+          "relative_to_previous": 0.0029904436500853542
+        }
+      ]
+    },
+    {
+      "direction": "heterogeneous_gaussian_sigma_80m",
+      "description": {
+        "family": "gaussian",
+        "sigma_m": 80.0
+      },
+      "grad_form": 2,
+      "g_dot_p_raw": -40758439519.76194,
+      "g_dot_p_vs_minus_6_only": null,
+      "g_dot_p_m5b_corrected": -6.076353486192657,
+      "d_fd_plateau": -6.13527342790887,
+      "k_residual_fd_over_corrected_gradient": 1.009696595474588,
+      "epsilons": [
+        {
+          "epsilon_fraction": 0.015,
+          "j_plus": 0.0010205013996233369,
+          "j_minus": 0.18783325547985194,
+          "d_fd": -6.227091802674287,
+          "relative_to_previous": null
+        },
+        {
+          "epsilon_fraction": 0.0075,
+          "j_plus": 0.016531194058244696,
+          "j_minus": 0.10883583438817931,
+          "d_fd": -6.153642688662308,
+          "relative_to_previous": 0.011795090925178775
+        },
+        {
+          "epsilon_fraction": 0.00375,
+          "j_plus": 0.03174041257488992,
+          "j_minus": 0.07775496328420645,
+          "d_fd": -6.13527342790887,
+          "relative_to_previous": 0.002985103569188773
+        }
+      ]
+    }
+  ]
+}

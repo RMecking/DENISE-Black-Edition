@@ -11,10 +11,13 @@ permissions:
 jobs:
   verification:
     runs-on: ubuntu-22.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          # Provenance regression tests intentionally inspect historical commits.
+          fetch-depth: 0
 
       - name: Install build and test dependencies
         run: |

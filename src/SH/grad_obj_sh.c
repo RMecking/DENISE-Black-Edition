@@ -63,6 +63,8 @@ double grad_obj_sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct 
 	/*initialize gradient matrices for each shot with zeros*/
 	init_grad((*fwiSH).waveconv_u_shot);
 	init_grad((*fwiSH).waveconv_rho_shot);
+	init_grad((*fwiSH).waveconv_u_x_shot);
+	init_grad((*fwiSH).waveconv_u_y_shot);
 
 	if((EPRECOND==1)||(EPRECOND==3)){
 	   init_grad(Ws);
@@ -192,6 +194,10 @@ double grad_obj_sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct 
 		                            
 	/* solve adjoint problem */	  
         sh(waveSH,waveSH_PML,matSH,fwiSH,mpiPSV,seisSH,seisSHfwi,acq,hc,ishot,nshots,nsrc_loc,ns,ntr,Ws,Wr,hin,DTINV_help,1,req_send,req_rec);
+
+	/* Produce physical cell-centred Vs/rho shot gradients before any
+	 * shot-wise energy weighting, tapering, or summation. */
+	assemble_gradSH_exact(fwiSH,matSH,mpiPSV,req_send,req_rec);
 
 	/* calculate gradients for normalized material parameters */
 	/*for(i=1;i<=NX;i=i+IDX){

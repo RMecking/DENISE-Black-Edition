@@ -1,0 +1,95 @@
+{
+  "base_git_sha": "47f3ab93ae7b27433980dafeb77646c9f5a6940a",
+  "historical_run_artifact_sha256": "2158077f157804abdad2e43dde5afe3f020e23aa5cf50e9751b7eb54ee6b80ad",
+  "historical_patch_sha256": "2fe1813671502191e316df36de3a325deabb4f1a7dfe32931397376f212e67e2",
+  "reconstructed_patch_sha256": "2ca7ed5246965889f8da3a90a49740b043ec0165b03ec31c3a115074a4f415eb",
+  "historical_patch_byte_match": false,
+  "byte_identical_to_historical_patch": false,
+  "reconstruction_status": "reconstructed after M5.0e; not original run patch",
+  "patch_applies_cleanly": true,
+  "semantic_patch_checks": {
+    "changed_files": [
+      "src/SH/sh.c"
+    ],
+    "component_selectors_present": true,
+    "pre_after_exchange_v": true,
+    "pre_before_update_s": true,
+    "post_correlations_retained_when_pre_undefined": true,
+    "removed_code_limited_to_two_replaced_correlation_statements": true,
+    "scope": "observability/correlation timing and component selection only"
+  },
+  "compiler": "mpicc",
+  "compiler_version": "gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0\nCopyright (C) 2021 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+  "build_flags": {
+    "post_xy": "-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon",
+    "post_x": "-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon -DM5_SH_GRAD_X_ONLY",
+    "post_y": "-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon -DM5_SH_GRAD_Y_ONLY",
+    "pre_xy": "-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon -DM5_SH_GRAD_PRE_STRESS",
+    "pre_x": "-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon -DM5_SH_GRAD_PRE_STRESS -DM5_SH_GRAD_X_ONLY",
+    "pre_y": "-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon -DM5_SH_GRAD_PRE_STRESS -DM5_SH_GRAD_Y_ONLY"
+  },
+  "build_reproducibility": {
+    "binary_build_reproducible": true,
+    "repeated_modes": {
+      "post_xy": {
+        "first_sha256": "1407ccd7f37246f99d9fd405f3665b081e061dde9df0c13cecbec5eb1321aa3c",
+        "second_sha256": "1407ccd7f37246f99d9fd405f3665b081e061dde9df0c13cecbec5eb1321aa3c",
+        "bit_identical": true
+      },
+      "pre_xy": {
+        "first_sha256": "d4c4cae9cede0f06e9040e6abf34bb59025dc35692502f9fbdc10c158161db52",
+        "second_sha256": "d4c4cae9cede0f06e9040e6abf34bb59025dc35692502f9fbdc10c158161db52",
+        "bit_identical": true
+      }
+    }
+  },
+  "historical_binary_hashes": {
+    "post_xy": "1407ccd7f37246f99d9fd405f3665b081e061dde9df0c13cecbec5eb1321aa3c",
+    "post_x": "4645f722b35ed946cb59e5a52ddc61cd8a92a2847b4c8919b2ef72786a58f5ad",
+    "post_y": "49a5235118945196a248ddf74926817bf36efcee29d5095ebf44c14655be2e2a",
+    "pre_xy": "d4c4cae9cede0f06e9040e6abf34bb59025dc35692502f9fbdc10c158161db52",
+    "pre_x": "377e299e17c7baa59a30b823c9fa64ebe21498d753c28af42d803f41ecc19b5c",
+    "pre_y": "1798fa51f579e2678b3fce3bfccd882eccb56aff36549d2284b2649019aaa041"
+  },
+  "reproduced_binary_hashes": {
+    "post_xy": "1407ccd7f37246f99d9fd405f3665b081e061dde9df0c13cecbec5eb1321aa3c",
+    "post_x": "4645f722b35ed946cb59e5a52ddc61cd8a92a2847b4c8919b2ef72786a58f5ad",
+    "post_y": "49a5235118945196a248ddf74926817bf36efcee29d5095ebf44c14655be2e2a",
+    "pre_xy": "d4c4cae9cede0f06e9040e6abf34bb59025dc35692502f9fbdc10c158161db52",
+    "pre_x": "377e299e17c7baa59a30b823c9fa64ebe21498d753c28af42d803f41ecc19b5c",
+    "pre_y": "1798fa51f579e2678b3fce3bfccd882eccb56aff36549d2284b2649019aaa041"
+  },
+  "reproduced_binary_paths": {
+    "post_xy": "/tmp/denise_m5e1_rebuilt/post_xy",
+    "post_x": "/tmp/denise_m5e1_rebuilt/post_x",
+    "post_y": "/tmp/denise_m5e1_rebuilt/post_y",
+    "pre_xy": "/tmp/denise_m5e1_rebuilt/pre_xy",
+    "pre_x": "/tmp/denise_m5e1_rebuilt/pre_x",
+    "pre_y": "/tmp/denise_m5e1_rebuilt/pre_y"
+  },
+  "per_mode_hash_match": {
+    "post_xy": true,
+    "post_x": true,
+    "post_y": true,
+    "pre_xy": true,
+    "pre_x": true,
+    "pre_y": true
+  },
+  "per_mode_verdict": {
+    "post_xy": "EXACT HASH MATCH",
+    "post_x": "EXACT HASH MATCH",
+    "post_y": "EXACT HASH MATCH",
+    "pre_xy": "EXACT HASH MATCH",
+    "pre_x": "EXACT HASH MATCH",
+    "pre_y": "EXACT HASH MATCH"
+  },
+  "semantic_reproduction_performed": true,
+  "production_source_restored": true,
+  "semantic_reproduction": {
+    "diagnostics_path": "/tmp/m5e_temporal_alignment_reproduction.json",
+    "diagnostics_sha256": "da191f8e4beba27686e25962f73a5eb1d14befb52d60e837b94754c675b8834a",
+    "mandatory_rows": 6,
+    "holdout_rows": 2,
+    "hard_assertions_satisfied": true
+  }
+}

@@ -14,7 +14,7 @@
 void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
 	float **  vz, float **  vzp1, float **  vzm1, float **  utty,float ** sxz, float ** syz,
 	float  **rho, float **rhoi, float **  srcpos_loc, float ** signals, int nsrc, float ** absorb_coeff,
-	float *hc, int infoout,int sw, float * K_x, float * a_x, float * b_x, float * K_x_half, float * a_x_half, 
+	float *hc, int infoout,int sw, int exact_elastic_sh_adjoint, float * K_x, float * a_x, float * b_x, float * K_x_half, float * a_x_half,
 	float * b_x_half, float * K_y, float * a_y, float * b_y, float * K_y_half, float * a_y_half, 
 	float * b_y_half, float ** psi_sxz_x, float ** psi_syz_y){
 
@@ -95,7 +95,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
                                  	}
 					
-					if(sw==1){					
+					if((sw==1)&&(!exact_elastic_sh_adjoint)){
 						vzp1[j][i] += vz[j][i] * DT;					
                                  	}
 
@@ -108,7 +108,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
                                  	}
 					
-					if(sw==1){					
+					if((sw==1)&&(!exact_elastic_sh_adjoint)){
 						vzp1[j][i] = vz[j][i];					
                                  	}
 
@@ -179,7 +179,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
                                  	}
 					
-					if(sw==1){					
+					if((sw==1)&&(!exact_elastic_sh_adjoint)){
 						vzp1[j][i] += vz[j][i] * DT;					
                                  	}
 
@@ -191,7 +191,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
                                  	}
 					
-					if(sw==1){					
+					if((sw==1)&&(!exact_elastic_sh_adjoint)){
 						vzp1[j][i] = vz[j][i];					
                                  	}
 
@@ -265,7 +265,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
                                  	}
 					
-					if(sw==1){					
+					if((sw==1)&&(!exact_elastic_sh_adjoint)){
 						vzp1[j][i] += vz[j][i] * DT;					
                                  	}
 
@@ -278,7 +278,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
                                  	}
 					
-					if(sw==1){					
+					if((sw==1)&&(!exact_elastic_sh_adjoint)){
 						vzp1[j][i] = vz[j][i];					
                                  	}
 
@@ -354,7 +354,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
                                  	}
 					
-					if(sw==1){					
+					if((sw==1)&&(!exact_elastic_sh_adjoint)){
 						vzp1[j][i] += vz[j][i] * DT;					
                                  	}
 
@@ -366,7 +366,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
                                  	}
 					
-					if(sw==1){					
+					if((sw==1)&&(!exact_elastic_sh_adjoint)){
 						vzp1[j][i] = vz[j][i];					
                                  	}
 
@@ -444,7 +444,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
                                  	}
 					
-					if(sw==1){					
+					if((sw==1)&&(!exact_elastic_sh_adjoint)){
 						vzp1[j][i] += vz[j][i] * DT;					
                                  	}
 
@@ -457,7 +457,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
                                  	}
 					
-					if(sw==1){					
+					if((sw==1)&&(!exact_elastic_sh_adjoint)){
 						vzp1[j][i] = vz[j][i];					
                                  	}
 
@@ -537,7 +537,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
                                  	}
 					
-					if(sw==1){					
+					if((sw==1)&&(!exact_elastic_sh_adjoint)){
 						vzp1[j][i] += vz[j][i] * DT;					
                                  	}
 
@@ -549,7 +549,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
                                  	}
 					
-					if(sw==1){					
+					if((sw==1)&&(!exact_elastic_sh_adjoint)){
 						vzp1[j][i] = vz[j][i];					
                                  	}
 
@@ -589,7 +589,15 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
 		j=(int)srcpos_loc[2][l];
 		    
                 if((GRAD_FORM==1)||(GRAD_FORM==2)){
-		    if(QUELLTYPB==1){vz[j][i] += signals[l][nt];}  /* single force in z */
+		    if(QUELLTYPB==1){
+			/* Velocity data use y_v = R lambda_v with R = rhoi = 1/rho,
+			 * so receiver residuals enter as y_v += R C^T r. */
+			if(exact_elastic_sh_adjoint){
+			    vz[j][i] += rhoi[j][i] * signals[l][nt];
+			}else{
+			    vz[j][i] += signals[l][nt];
+			}
+		    }  /* single force in z */
                 }
             }
 	}                         

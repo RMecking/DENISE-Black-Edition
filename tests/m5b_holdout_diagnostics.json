@@ -1,0 +1,110 @@
+{
+  "git_sha": "47f3ab93ae7b27433980dafeb77646c9f5a6940a",
+  "binary_path": "/mnt/d/Softwareprojekte/DENISE-Black-Edition/bin/denise",
+  "binary_sha256": "1407ccd7f37246f99d9fd405f3665b081e061dde9df0c13cecbec5eb1321aa3c",
+  "direction": "delta_Vs=Vs_background*p, max_abs(p)=1; epsilon dimensionless",
+  "rows": [
+    {
+      "label": "holdout_blind",
+      "grad_form": 1,
+      "vs_m_s": 2550.0,
+      "density_kg_m3": 2150.0,
+      "dt_s": 0.00037,
+      "dh_m": 10.0,
+      "dtinv": 2,
+      "objective_center": 4.809784842687871e-06,
+      "g_dot_p_raw": -1.4336238273859263e+20,
+      "g_dot_p_hypothetical": -0.5214277351583497,
+      "d_fd_plateau": -0.0004926960901133185,
+      "r_raw": 3.4367180616110574e-24,
+      "r_hypothetical": 0.0009448981266094221,
+      "epsilons": [
+        {
+          "epsilon_fraction": 0.015,
+          "j_plus": 2.901829449075557e-07,
+          "j_minus": 1.5257352401499449e-05,
+          "d_fd": -0.0004989056485530632,
+          "relative_to_previous": null,
+          "model_sha256": {
+            "plus": "844e520a09bb9949cf46ec760db367b49a7bd3f0845d928666735433712e1ccf",
+            "minus": "27e751c9f7915a5cb8b11bcdabf5ee7373c597af4958b98720db66fd868e69ec"
+          }
+        },
+        {
+          "epsilon_fraction": 0.0075,
+          "j_plus": 1.845974038903552e-06,
+          "j_minus": 9.255026714230427e-06,
+          "d_fd": -0.0004939368450217917,
+          "relative_to_previous": 0.00995940524161641,
+          "model_sha256": {
+            "plus": "794ebb890d2baf9188ec1a5794b6c5f6593637b14d8962931a75351fb7b1efad",
+            "minus": "1b24e1867b911f406d790672256e3bafe2229362a9070e2ad93472c367b5e655"
+          }
+        },
+        {
+          "epsilon_fraction": 0.00375,
+          "j_plus": 3.147342173028786e-06,
+          "j_minus": 6.842562848878675e-06,
+          "d_fd": -0.0004926960901133185,
+          "relative_to_previous": 0.0025119707528974836,
+          "model_sha256": {
+            "plus": "1b8f95786292f7884dbae3069ae5f8acb737ffd48f0c2c4269f453a89801d877",
+            "minus": "93088835eb62cec6deffd43b0d3bafdfa42d637671d7e3edd758a9d45088c04c"
+          }
+        }
+      ],
+      "observed_sha256": "6453953d2738a572db506e3180f36739fa906405380fcb3f8880e8dc06a5ec3f"
+    },
+    {
+      "label": "holdout_blind",
+      "grad_form": 2,
+      "vs_m_s": 2550.0,
+      "density_kg_m3": 2150.0,
+      "dt_s": 0.00037,
+      "dh_m": 10.0,
+      "dtinv": 2,
+      "objective_center": 0.03846683262199127,
+      "g_dot_p_raw": -21597275576.34928,
+      "g_dot_p_hypothetical": null,
+      "d_fd_plateau": -3.943853524108907,
+      "r_raw": 1.8260884388713072e-10,
+      "r_hypothetical": null,
+      "epsilons": [
+        {
+          "epsilon_fraction": 0.015,
+          "j_plus": 0.002317411164536158,
+          "j_minus": 0.12216525592505233,
+          "d_fd": -3.9949281586838725,
+          "relative_to_previous": null,
+          "model_sha256": {
+            "plus": "844e520a09bb9949cf46ec760db367b49a7bd3f0845d928666735433712e1ccf",
+            "minus": "27e751c9f7915a5cb8b11bcdabf5ee7373c597af4958b98720db66fd868e69ec"
+          }
+        },
+        {
+          "epsilon_fraction": 0.0075,
+          "j_plus": 0.0147532258945461,
+          "j_minus": 0.0740641026168781,
+          "d_fd": -3.954058448155467,
+          "relative_to_previous": 0.010230399372656108,
+          "model_sha256": {
+            "plus": "794ebb890d2baf9188ec1a5794b6c5f6593637b14d8962931a75351fb7b1efad",
+            "minus": "1b24e1867b911f406d790672256e3bafe2229362a9070e2ad93472c367b5e655"
+          }
+        },
+        {
+          "epsilon_fraction": 0.00375,
+          "j_plus": 0.025162769903638575,
+          "j_minus": 0.05474167133445538,
+          "d_fd": -3.943853524108907,
+          "relative_to_previous": 0.0025808733432658537,
+          "model_sha256": {
+            "plus": "1b8f95786292f7884dbae3069ae5f8acb737ffd48f0c2c4269f453a89801d877",
+            "minus": "93088835eb62cec6deffd43b0d3bafdfa42d637671d7e3edd758a9d45088c04c"
+          }
+        }
+      ],
+      "observed_sha256": "6453953d2738a572db506e3180f36739fa906405380fcb3f8880e8dc06a5ec3f"
+    }
+  ]
+}

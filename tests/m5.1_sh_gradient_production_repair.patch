@@ -1,0 +1,585 @@
+diff --git a/include/fd.h b/include/fd.h
+index e5d556d..e801691 100644
+--- a/include/fd.h
++++ b/include/fd.h
+@@ -161,6 +161,7 @@ struct fwiSH{
+    float  ** Vs0, ** Rho0, ** Taus0;
+    float  ** waveconv_mu, **waveconv_rho, **waveconv_ts, **waveconv_rho_s, **waveconv_u,  **waveconv_ts_s;
+    float  ** waveconv_u_shot, **waveconv_rho_shot, **waveconv_ts_shot;
++   float  ** waveconv_u_x_shot, **waveconv_u_y_shot;
+    float  ** gradg_rho, ** gradp_rho, ** gradg_u, ** gradp_u, ** gradg_ts, ** gradp_ts;
+    float   * forward_prop_z, *forward_prop_rho_z, *forward_prop_sxz, *forward_prop_syz;
+    float  ** forward_prop_rxz, **forward_prop_ryz, ***Rxz, ***Ryz, ***rxzt, ***ryzt;
+@@ -558,6 +559,10 @@ void alloc_SH(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML);
+ 
+ void ass_gradSH(struct fwiSH *fwiSH, struct matSH *matSH, int iter);
+ 
++void assemble_gradSH_exact(struct fwiSH *fwiSH, struct matSH *matSH,
++                           struct mpiPSV *mpiPSV, MPI_Request *req_send,
++                           MPI_Request *req_rec);
++
+ void ass_gradSH_visc(struct fwiSH *fwiSH, struct matSH *matSH, int iter);
+ 
+ void apply_inv_hessSH(struct fwiSH *fwiSH, struct matSH *matSH, int nshots);
+@@ -712,7 +717,7 @@ void update_s_visc_PML_SH(int nx1, int nx2, int ny1, int ny2,
+ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+ 	float **  vz, float **  vzp1, float **  vzm1, float **  utty,float ** sxz, float ** syz,
+ 	float  **rho, float **rhoi, float **  srcpos_loc, float ** signals, int nsrc, float ** absorb_coeff,
+-	float *hc, int infoout,int sw, float * K_x, float * a_x, float * b_x, float * K_x_half, float * a_x_half, 
++	float *hc, int infoout,int sw, int exact_elastic_sh_adjoint, float * K_x, float * a_x, float * b_x, float * K_x_half, float * a_x_half,
+ 	float * b_x_half, float * K_y, float * a_y, float * b_y, float * K_y_half, float * a_y_half, 
+ 	float * b_y_half, float ** psi_sxz_x, float ** psi_syz_y);
+ 
+@@ -1013,5 +1018,3 @@ void free_f3tensor(float ***t, int nrl, int nrh, int ncl, int nch, int ndl,
+ int ndh);
+ void zero(float *A, int u_max);
+ void normalize_data(float **data, int ntr, int ns);
+-
+-
+diff --git a/src/Makefile b/src/Makefile
+index 130377d..9accb6a 100644
+--- a/src/Makefile
++++ b/src/Makefile
+@@ -198,6 +198,7 @@ DENISE += ac.c \
+ 
+ # add SH source files
+ DENISE += alloc_fwiSH.c \
++	  assemble_gradSH_exact.c \
+ 	  alloc_matSH.c \
+ 	  alloc_seisSH.c \
+ 	  alloc_seisSHfull.c \
+diff --git a/src/SH/FWI_SH.c b/src/SH/FWI_SH.c
+index 8fd8a40..6a9f097 100644
+--- a/src/SH/FWI_SH.c
++++ b/src/SH/FWI_SH.c
+@@ -872,6 +872,8 @@ free_matrix(fwiSH.gradp_u,-nd+1,NY+nd,-nd+1,NX+nd);
+ free_matrix(fwiSH.waveconv_u,-nd+1,NY+nd,-nd+1,NX+nd);
+ free_matrix(fwiSH.waveconv_mu,-nd+1,NY+nd,-nd+1,NX+nd);
+ free_matrix(fwiSH.waveconv_u_shot,-nd+1,NY+nd,-nd+1,NX+nd);
++free_matrix(fwiSH.waveconv_u_x_shot,-nd+1,NY+nd,-nd+1,NX+nd);
++free_matrix(fwiSH.waveconv_u_y_shot,-nd+1,NY+nd,-nd+1,NX+nd);
+ 
+ free_vector(fwiSH.forward_prop_sxz,1,NY*NX*NT);
+ free_vector(fwiSH.forward_prop_syz,1,NY*NX*NT);
+diff --git a/src/SH/FWI_SH_visc.c b/src/SH/FWI_SH_visc.c
+index e38a2d5..dbc0f85 100644
+--- a/src/SH/FWI_SH_visc.c
++++ b/src/SH/FWI_SH_visc.c
+@@ -921,6 +921,8 @@ free_matrix(fwiSH.gradp_u,-nd+1,NY+nd,-nd+1,NX+nd);
+ free_matrix(fwiSH.waveconv_u,-nd+1,NY+nd,-nd+1,NX+nd);
+ free_matrix(fwiSH.waveconv_mu,-nd+1,NY+nd,-nd+1,NX+nd);
+ free_matrix(fwiSH.waveconv_u_shot,-nd+1,NY+nd,-nd+1,NX+nd);
++free_matrix(fwiSH.waveconv_u_x_shot,-nd+1,NY+nd,-nd+1,NX+nd);
++free_matrix(fwiSH.waveconv_u_y_shot,-nd+1,NY+nd,-nd+1,NX+nd);
+ 
+ free_matrix(fwiSH.gradg_ts,-nd+1,NY+nd,-nd+1,NX+nd);
+ free_matrix(fwiSH.gradp_ts,-nd+1,NY+nd,-nd+1,NX+nd);
+diff --git a/src/SH/alloc_fwiSH.c b/src/SH/alloc_fwiSH.c
+index b1c9595..b4e021b 100644
+--- a/src/SH/alloc_fwiSH.c
++++ b/src/SH/alloc_fwiSH.c
+@@ -41,6 +41,8 @@ void alloc_fwiSH(struct fwiSH *fwiSH){
+ 	(*fwiSH).waveconv_u = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
+ 	(*fwiSH).waveconv_mu = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
+ 	(*fwiSH).waveconv_u_shot = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
++	(*fwiSH).waveconv_u_x_shot = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
++	(*fwiSH).waveconv_u_y_shot = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
+ 
+ 	if(L){
+ 	   (*fwiSH).gradg_ts = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
+diff --git a/src/SH/ass_gradSH.c b/src/SH/ass_gradSH.c
+index a185359..5029a4b 100644
+--- a/src/SH/ass_gradSH.c
++++ b/src/SH/ass_gradSH.c
+@@ -24,6 +24,13 @@ void ass_gradSH(struct fwiSH *fwiSH, struct matSH *matSH, int iter){
+ 
+ 	for (i=1;i<=NX;i=i+IDX){
+    		for (j=1;j<=NY;j=j+IDY){
++			if(INVMAT1==1){
++			    /* Exact elastic shot assembly already produced dJ/dVs. */
++			    if(iter<INV_VS_ITER){
++				(*fwiSH).waveconv_u[j][i] = 0.0;
++			    }
++			    continue;
++			}
+ 		 
+       			/* calculate mu gradient */ 
+       			(*fwiSH).waveconv_mu[j][i] = - DT * (*fwiSH).waveconv_u[j][i];
+@@ -66,6 +73,13 @@ void ass_gradSH(struct fwiSH *fwiSH, struct matSH *matSH, int iter){
+ 	/* ------------------------------ */
+ 	for (i=1;i<=NX;i=i+IDX){
+     		for (j=1;j<=NY;j=j+IDY){
++			if(INVMAT1==1){
++			    /* Exact elastic shot assembly already produced total dJ/drho. */
++			    if(iter<INV_RHO_ITER){
++				(*fwiSH).waveconv_rho[j][i] = 0.0;
++			    }
++			    continue;
++			}
+ 
+        			/* calculate density gradient rho' */
+        			(*fwiSH).waveconv_rho_s[j][i]= - DT * (*fwiSH).waveconv_rho[j][i];
+diff --git a/src/SH/assemble_gradSH_exact.c b/src/SH/assemble_gradSH_exact.c
+new file mode 100644
+index 0000000..50f1204
+--- /dev/null
++++ b/src/SH/assemble_gradSH_exact.c
+@@ -0,0 +1,129 @@
++/*------------------------------------------------------------------------
++ * Assemble the exact elastic SH INVMAT1=1 shot gradient.
++ *
++ * Native X/Y material correlations live on the same staggered locations as
++ * sxz/syz. They remain separate through the material-map VJP and their halos
++ * are exchanged before cell-centred assembly.
++ * ----------------------------------------------------------------------*/
++
++#include "fd.h"
++
++static double cell_mu(float rho, float vs){
++    return (double)rho * (double)vs * (double)vs;
++}
++
++void assemble_gradSH_exact(struct fwiSH *fwiSH, struct matSH *matSH,
++                           struct mpiPSV *mpiPSV, MPI_Request *req_send,
++                           MPI_Request *req_rec){
++
++    extern int NX, NY, NXG, NYG, POS[3], BOUNDARY;
++    extern int INVMAT1, GRAD_FORM, MODE, DTINV;
++    extern float DT;
++    int i, j, global_i, global_j;
++    double rho, vs, g_native, g_material, g_rho_material;
++    double a, b, denominator;
++
++    if((MODE!=1)||(INVMAT1!=1)) return;
++
++    /* These arrays occupy the sxz/syz native edges, so exchange_s_SH gives
++     * each PE the -x/-y sensitivities required by its boundary cells. */
++    exchange_s_SH((*fwiSH).waveconv_u_x_shot,
++                  (*fwiSH).waveconv_u_y_shot,
++                  (*mpiPSV).bufferlef_to_rig,
++                  (*mpiPSV).bufferrig_to_lef,
++                  (*mpiPSV).buffertop_to_bot,
++                  (*mpiPSV).bufferbot_to_top,
++                  req_send,req_rec);
++
++    for(i=1;i<=NX;i++){
++        global_i=POS[1]*NX+i;
++        for(j=1;j<=NY;j++){
++            global_j=POS[2]*NY+j;
++            rho=(*matSH).prho[j][i];
++            vs=(*matSH).pu[j][i];
++            g_material=0.0;
++
++            if((rho>0.0)&&(vs>0.0)){
++                if(GRAD_FORM==2){
++                    /* Form 2 stores the forward strain increment including DT.
++                     * Its native derivative is -DTINV*C/mu_edge. */
++                    if(BOUNDARY || (global_i<NXG)){
++                        a=cell_mu((*matSH).prho[j][i],(*matSH).pu[j][i]);
++                        b=cell_mu((*matSH).prho[j][i+1],(*matSH).pu[j][i+1]);
++                        denominator=(a+b)*(a+b);
++                        if((a>0.0)&&(b>0.0)&&(denominator>0.0)){
++                            g_native=-(double)DTINV*
++                                (*fwiSH).waveconv_u_x_shot[j][i]*
++                                (a+b)/(2.0*a*b);
++                            g_material+=2.0*b*b/denominator*g_native;
++                        }
++                    }
++                    if(BOUNDARY || (global_i>1)){
++                        a=cell_mu((*matSH).prho[j][i-1],(*matSH).pu[j][i-1]);
++                        b=cell_mu((*matSH).prho[j][i],(*matSH).pu[j][i]);
++                        denominator=(a+b)*(a+b);
++                        if((a>0.0)&&(b>0.0)&&(denominator>0.0)){
++                            g_native=-(double)DTINV*
++                                (*fwiSH).waveconv_u_x_shot[j][i-1]*
++                                (a+b)/(2.0*a*b);
++                            g_material+=2.0*a*a/denominator*g_native;
++                        }
++                    }
++                    if(BOUNDARY || (global_j<NYG)){
++                        a=cell_mu((*matSH).prho[j][i],(*matSH).pu[j][i]);
++                        b=cell_mu((*matSH).prho[j+1][i],(*matSH).pu[j+1][i]);
++                        denominator=(a+b)*(a+b);
++                        if((a>0.0)&&(b>0.0)&&(denominator>0.0)){
++                            g_native=-(double)DTINV*
++                                (*fwiSH).waveconv_u_y_shot[j][i]*
++                                (a+b)/(2.0*a*b);
++                            g_material+=2.0*b*b/denominator*g_native;
++                        }
++                    }
++                    if(BOUNDARY || (global_j>1)){
++                        a=cell_mu((*matSH).prho[j-1][i],(*matSH).pu[j-1][i]);
++                        b=cell_mu((*matSH).prho[j][i],(*matSH).pu[j][i]);
++                        denominator=(a+b)*(a+b);
++                        if((a>0.0)&&(b>0.0)&&(denominator>0.0)){
++                            g_native=-(double)DTINV*
++                                (*fwiSH).waveconv_u_y_shot[j-1][i]*
++                                (a+b)/(2.0*a*b);
++                            g_material+=2.0*a*a/denominator*g_native;
++                        }
++                    }
++                    (*fwiSH).waveconv_u_shot[j][i]=(float)(
++                        2.0*rho*vs*g_material);
++                    g_rho_material=vs*vs*g_material;
++                }else{
++                    /* Form 1 maps cell compliance arithmetically to edges. */
++                    if(BOUNDARY || (global_i<NXG)){
++                        g_material+=0.5*(double)DT*(double)DTINV*
++                            (*fwiSH).waveconv_u_x_shot[j][i];
++                    }
++                    if(BOUNDARY || (global_i>1)){
++                        g_material+=0.5*(double)DT*(double)DTINV*
++                            (*fwiSH).waveconv_u_x_shot[j][i-1];
++                    }
++                    if(BOUNDARY || (global_j<NYG)){
++                        g_material+=0.5*(double)DT*(double)DTINV*
++                            (*fwiSH).waveconv_u_y_shot[j][i];
++                    }
++                    if(BOUNDARY || (global_j>1)){
++                        g_material+=0.5*(double)DT*(double)DTINV*
++                            (*fwiSH).waveconv_u_y_shot[j-1][i];
++                    }
++                    (*fwiSH).waveconv_u_shot[j][i]=(float)(
++                        -2.0*g_material/(rho*vs*vs*vs));
++                    g_rho_material=-g_material/(rho*rho*vs*vs);
++                }
++
++                (*fwiSH).waveconv_rho_shot[j][i]=(float)(
++                    -(double)DT*(double)DTINV*
++                    (*fwiSH).waveconv_rho_shot[j][i]+g_rho_material);
++            }else{
++                (*fwiSH).waveconv_u_shot[j][i]=0.0;
++                (*fwiSH).waveconv_rho_shot[j][i]=0.0;
++            }
++        }
++    }
++}
+diff --git a/src/SH/debug/sh.c b/src/SH/debug/sh.c
+index 1548701..773e122 100644
+--- a/src/SH/debug/sh.c
++++ b/src/SH/debug/sh.c
+@@ -122,13 +122,13 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
+ 	      /* update of particle velocities */
+               if(mode==0 || mode==2){
+ 		update_v_PML_SH(1, NX, 1, NY, nt, (*waveSH).pvz, (*waveSH).pvzp1, (*waveSH).pvzm1, (*waveSH).uttz, (*waveSH).psxz, (*waveSH).psyz, (*matSH).prho, (*matSH).prhoi, (*acq).srcpos_loc, (*acq).signals, nsrc_loc, 
+-			       (*waveSH_PML).absorb_coeff,hc, infoout, 0, (*waveSH_PML).K_x, (*waveSH_PML).a_x, (*waveSH_PML).b_x, (*waveSH_PML).K_x_half, (*waveSH_PML).a_x_half, (*waveSH_PML).b_x_half, (*waveSH_PML).K_y, 
++			       (*waveSH_PML).absorb_coeff,hc, infoout, 0, 0, (*waveSH_PML).K_x, (*waveSH_PML).a_x, (*waveSH_PML).b_x, (*waveSH_PML).K_x_half, (*waveSH_PML).a_x_half, (*waveSH_PML).b_x_half, (*waveSH_PML).K_y,
+ 			       (*waveSH_PML).a_y, (*waveSH_PML).b_y, (*waveSH_PML).K_y_half, (*waveSH_PML).a_y_half, (*waveSH_PML).b_y_half, (*waveSH_PML).psi_sxz_x, (*waveSH_PML).psi_syz_y);
+               }
+ 
+               if(mode==1){
+ 		update_v_PML_SH(1, NX, 1, NY, nt, (*waveSH).pvz, (*waveSH).pvzp1, (*waveSH).pvzm1, (*waveSH).uttz, (*waveSH).psxz, (*waveSH).psyz, (*matSH).prho, (*matSH).prhoi, (*acq).srcpos_loc_back, (*seisSHfwi).sectionvzdiff, ntr, 
+-			       (*waveSH_PML).absorb_coeff,hc, infoout, 1, (*waveSH_PML).K_x, (*waveSH_PML).a_x, (*waveSH_PML).b_x, (*waveSH_PML).K_x_half, (*waveSH_PML).a_x_half, (*waveSH_PML).b_x_half, (*waveSH_PML).K_y, 
++			       (*waveSH_PML).absorb_coeff,hc, infoout, 1, 0, (*waveSH_PML).K_x, (*waveSH_PML).a_x, (*waveSH_PML).b_x, (*waveSH_PML).K_x_half, (*waveSH_PML).a_x_half, (*waveSH_PML).b_x_half, (*waveSH_PML).K_y,
+ 			       (*waveSH_PML).a_y, (*waveSH_PML).b_y, (*waveSH_PML).K_y_half, (*waveSH_PML).a_y_half, (*waveSH_PML).b_y_half, (*waveSH_PML).psi_sxz_x, (*waveSH_PML).psi_syz_y);
+               }
+ 		                 
+diff --git a/src/SH/debug/update_v_PML_SH.c b/src/SH/debug/update_v_PML_SH.c
+index 465c5d9..bebb4af 100644
+--- a/src/SH/debug/update_v_PML_SH.c
++++ b/src/SH/debug/update_v_PML_SH.c
+@@ -14,7 +14,7 @@
+ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+ 	float **  vz, float **  vzp1, float **  vzm1, float **  utty,float ** sxz, float ** syz,
+ 	float  **rho, float **rhoi, float **  srcpos_loc, float ** signals, int nsrc, float ** absorb_coeff,
+-	float *hc, int infoout,int sw, float * K_x, float * a_x, float * b_x, float * K_x_half, float * a_x_half, 
++	float *hc, int infoout,int sw, int exact_elastic_sh_adjoint, float * K_x, float * a_x, float * b_x, float * K_x_half, float * a_x_half,
+ 	float * b_x_half, float * K_y, float * a_y, float * b_y, float * K_y_half, float * a_y_half, 
+ 	float * b_y_half, float ** psi_sxz_x, float ** psi_syz_y){
+ 
+diff --git a/src/SH/grad_obj_sh.c b/src/SH/grad_obj_sh.c
+index a5d1338..080f063 100644
+--- a/src/SH/grad_obj_sh.c
++++ b/src/SH/grad_obj_sh.c
+@@ -63,6 +63,8 @@ double grad_obj_sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct
+ 	/*initialize gradient matrices for each shot with zeros*/
+ 	init_grad((*fwiSH).waveconv_u_shot);
+ 	init_grad((*fwiSH).waveconv_rho_shot);
++	init_grad((*fwiSH).waveconv_u_x_shot);
++	init_grad((*fwiSH).waveconv_u_y_shot);
+ 
+ 	if((EPRECOND==1)||(EPRECOND==3)){
+ 	   init_grad(Ws);
+@@ -193,6 +195,10 @@ double grad_obj_sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct
+ 	/* solve adjoint problem */	  
+         sh(waveSH,waveSH_PML,matSH,fwiSH,mpiPSV,seisSH,seisSHfwi,acq,hc,ishot,nshots,nsrc_loc,ns,ntr,Ws,Wr,hin,DTINV_help,1,req_send,req_rec);
+ 
++	/* Produce physical cell-centred Vs/rho shot gradients before any
++	 * shot-wise energy weighting, tapering, or summation. */
++	assemble_gradSH_exact(fwiSH,matSH,mpiPSV,req_send,req_rec);
++
+ 	/* calculate gradients for normalized material parameters */
+ 	/*for(i=1;i<=NX;i=i+IDX){
+ 	    for(j=1;j<=NY;j=j+IDY){
+diff --git a/src/SH/grad_obj_sh_visc.c b/src/SH/grad_obj_sh_visc.c
+index d0e1700..aacf873 100644
+--- a/src/SH/grad_obj_sh_visc.c
++++ b/src/SH/grad_obj_sh_visc.c
+@@ -75,6 +75,8 @@ double grad_obj_sh_visc(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, st
+ 	/*initialize gradient matrices for each shot with zeros*/
+ 	init_grad((*fwiSH).waveconv_u_shot);
+ 	init_grad((*fwiSH).waveconv_rho_shot);
++	init_grad((*fwiSH).waveconv_u_x_shot);
++	init_grad((*fwiSH).waveconv_u_y_shot);
+ 	init_grad((*fwiSH).waveconv_ts_shot);
+ 
+ 	if((EPRECOND==1)||(EPRECOND==3)){
+diff --git a/src/SH/sh.c b/src/SH/sh.c
+index 46a1b80..bb63248 100644
+--- a/src/SH/sh.c
++++ b/src/SH/sh.c
+@@ -28,10 +28,12 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
+ 
+         /* local variables */
+ 	int i,j,l,nt,lsamp,lsnap,nsnap, nd, hin1, imat, imat1, imat2, infoout;
++	int exact_elastic_sh_adjoint;
+         float tmp, tmp1, muss, lamss, P3, P5;
+         float hess_rho, hess_mu;
+ 
+         nd = FDORDER/2 + 1;
++	exact_elastic_sh_adjoint = ((MODE==1)&&(mode==1)&&(INVMAT1==1));
+ 
+ 	/*MPI_Barrier(MPI_COMM_WORLD);*/
+         
+@@ -108,13 +110,13 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
+ 	      /* particle velocity update */
+               if(mode==0 || mode==2){
+ 		update_v_PML_SH(1, NX, 1, NY, nt, (*waveSH).pvz, (*waveSH).pvzp1, (*waveSH).pvzm1, (*waveSH).uttz, (*waveSH).psxz, (*waveSH).psyz, (*matSH).prho, (*matSH).prhoi, (*acq).srcpos_loc, (*acq).signals, nsrc_loc, 
+-			       (*waveSH_PML).absorb_coeff,hc, infoout, 0, (*waveSH_PML).K_x, (*waveSH_PML).a_x, (*waveSH_PML).b_x, (*waveSH_PML).K_x_half, (*waveSH_PML).a_x_half, (*waveSH_PML).b_x_half, (*waveSH_PML).K_y, 
++			       (*waveSH_PML).absorb_coeff,hc, infoout, 0, 0, (*waveSH_PML).K_x, (*waveSH_PML).a_x, (*waveSH_PML).b_x, (*waveSH_PML).K_x_half, (*waveSH_PML).a_x_half, (*waveSH_PML).b_x_half, (*waveSH_PML).K_y,
+ 			       (*waveSH_PML).a_y, (*waveSH_PML).b_y, (*waveSH_PML).K_y_half, (*waveSH_PML).a_y_half, (*waveSH_PML).b_y_half, (*waveSH_PML).psi_sxz_x, (*waveSH_PML).psi_syz_y);
+               }
+ 
+               if(mode==1){
+ 		update_v_PML_SH(1, NX, 1, NY, nt, (*waveSH).pvz, (*waveSH).pvzp1, (*waveSH).pvzm1, (*waveSH).uttz, (*waveSH).psxz, (*waveSH).psyz, (*matSH).prho, (*matSH).prhoi, (*acq).srcpos_loc_back, (*seisSHfwi).sectionvzdiff, ntr, 
+-			       (*waveSH_PML).absorb_coeff,hc, infoout, 1, (*waveSH_PML).K_x, (*waveSH_PML).a_x, (*waveSH_PML).b_x, (*waveSH_PML).K_x_half, (*waveSH_PML).a_x_half, (*waveSH_PML).b_x_half, (*waveSH_PML).K_y, 
++			       (*waveSH_PML).absorb_coeff,hc, infoout, 1, exact_elastic_sh_adjoint, (*waveSH_PML).K_x, (*waveSH_PML).a_x, (*waveSH_PML).b_x, (*waveSH_PML).K_x_half, (*waveSH_PML).a_x_half, (*waveSH_PML).b_x_half, (*waveSH_PML).K_y,
+ 			       (*waveSH_PML).a_y, (*waveSH_PML).b_y, (*waveSH_PML).K_y_half, (*waveSH_PML).a_y_half, (*waveSH_PML).b_y_half, (*waveSH_PML).psi_sxz_x, (*waveSH_PML).psi_syz_y);
+               }
+ 		                 
+@@ -122,7 +124,41 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
+ 	      /* exchange of particle velocities between PEs */
+ 	      exchange_v_SH((*waveSH).pvz, (*mpiPSV).bufferlef_to_rig, (*mpiPSV).bufferrig_to_lef, (*mpiPSV).buffertop_to_bot, (*mpiPSV).bufferbot_to_top, req_send, req_rec);
+ 		                                                       
+-                                                                                    	
++	      /* The exact Form-1 density multiplier is the time integral of B:
++	       * after reverse V^T plus receiver injection, not the legacy A state. */
++	      if(exact_elastic_sh_adjoint && (GRAD_FORM==1)){
++		for (i=1;i<=NX;i++){
++		    for (j=1;j<=NY;j++){
++			(*waveSH).pvzp1[j][i] += (*waveSH).pvz[j][i] * DT;
++		    }
++		}
++	      }
++
++	      if(exact_elastic_sh_adjoint &&
++	         (DTINV_help[NT-nt+1]==1)){
++		imat=((NXNYI*(NTDTINV)) - hin*NXNYI)+1;
++		for (i=1;i<=NX;i=i+IDXI){
++		    for (j=1;j<=NY;j=j+IDYI){
++			/* PRE stress is the exact S^T material multiplier.  Keep
++			 * X and Y native edges separate until the material VJP. */
++			(*fwiSH).waveconv_u_x_shot[j][i] +=
++			    (*fwiSH).forward_prop_sxz[imat] * (*waveSH).psxz[j][i];
++			(*fwiSH).waveconv_u_y_shot[j][i] +=
++			    (*fwiSH).forward_prop_syz[imat] * (*waveSH).psyz[j][i];
++			/* B velocity is the exact V^T inverse-density multiplier. */
++			if(GRAD_FORM==1){
++			    (*fwiSH).waveconv_rho_shot[j][i] +=
++			        (*waveSH).pvzp1[j][i] *
++			        (*fwiSH).forward_prop_rho_z[imat];
++			}else{
++			    (*fwiSH).waveconv_rho_shot[j][i] +=
++			        (*waveSH).pvz[j][i] *
++			        (*fwiSH).forward_prop_rho_z[imat];
++			}
++			imat++;
++		    }
++		}
++	      }
+ 
+               /* stress update */
+ 	      update_s_elastic_PML_SH(1, NX, 1, NY, (*waveSH).pvz, (*waveSH).uz, (*waveSH).uzx, (*waveSH).psyz, (*waveSH).psxz, (*matSH).pujp, (*matSH).puip, (*matSH).prho, hc,infoout,
+@@ -207,11 +243,13 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
+ 		    for (i=1;i<=NX;i=i+IDXI){   
+ 			for (j=1;j<=NY;j=j+IDYI){ 
+ 		                 
+-				 /* Density gradient */                  
++				 /* Legacy parameterizations retain the POST/A-state path. */
++				 if(!exact_elastic_sh_adjoint){
+ 			   	(*fwiSH).waveconv_rho_shot[j][i] += (*waveSH).pvzp1[j][i] * (*fwiSH).forward_prop_rho_z[imat];
++				 }
+ 			
+ 				/* Vs-gradient (stress-displacement formulation) */
+-		                if(GRAD_FORM==1){			
++		                if((GRAD_FORM==1)&&(!exact_elastic_sh_adjoint)){
+ 
+ 		           	    if(INVMAT1==1){
+ 		               	        muss = (*matSH).prho[j][i] * (*matSH).pu[j][i] * (*matSH).pu[j][i];
+@@ -227,7 +265,7 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
+ 		                }
+ 				
+ 				/* Vs-gradient (symmetrized stress-velocity formulation) */
+-		                if(GRAD_FORM==2){			
++		                if((GRAD_FORM==2)&&(!exact_elastic_sh_adjoint)){
+ 
+ 		           	    if(INVMAT1==1){
+ 		               	        muss = (*matSH).prho[j][i] * (*matSH).pu[j][i] * (*matSH).pu[j][i];
+diff --git a/src/SH/sh_visc.c b/src/SH/sh_visc.c
+index 207257d..2cc9e80 100644
+--- a/src/SH/sh_visc.c
++++ b/src/SH/sh_visc.c
+@@ -112,13 +112,13 @@ void sh_visc(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH
+ 	      /* particle velocity update */
+               if(mode==0 || mode==2){
+ 		update_v_PML_SH(1, NX, 1, NY, nt, (*waveSH).pvz, (*waveSH).pvzp1, (*waveSH).pvzm1, (*waveSH).uttz, (*waveSH).psxz, (*waveSH).psyz, (*matSH).prho, (*matSH).prhoi, (*acq).srcpos_loc, (*acq).signals, nsrc_loc, 
+-			       (*waveSH_PML).absorb_coeff,hc, infoout, 0, (*waveSH_PML).K_x, (*waveSH_PML).a_x, (*waveSH_PML).b_x, (*waveSH_PML).K_x_half, (*waveSH_PML).a_x_half, (*waveSH_PML).b_x_half, (*waveSH_PML).K_y, 
++			       (*waveSH_PML).absorb_coeff,hc, infoout, 0, 0, (*waveSH_PML).K_x, (*waveSH_PML).a_x, (*waveSH_PML).b_x, (*waveSH_PML).K_x_half, (*waveSH_PML).a_x_half, (*waveSH_PML).b_x_half, (*waveSH_PML).K_y,
+ 			       (*waveSH_PML).a_y, (*waveSH_PML).b_y, (*waveSH_PML).K_y_half, (*waveSH_PML).a_y_half, (*waveSH_PML).b_y_half, (*waveSH_PML).psi_sxz_x, (*waveSH_PML).psi_syz_y);
+               }
+ 
+               if(mode==1){
+ 		update_v_PML_SH(1, NX, 1, NY, nt, (*waveSH).pvz, (*waveSH).pvzp1, (*waveSH).pvzm1, (*waveSH).uttz, (*waveSH).psxz, (*waveSH).psyz, (*matSH).prho, (*matSH).prhoi, (*acq).srcpos_loc_back, (*seisSHfwi).sectionvzdiff, ntr, 
+-			       (*waveSH_PML).absorb_coeff,hc, infoout, 1, (*waveSH_PML).K_x, (*waveSH_PML).a_x, (*waveSH_PML).b_x, (*waveSH_PML).K_x_half, (*waveSH_PML).a_x_half, (*waveSH_PML).b_x_half, (*waveSH_PML).K_y, 
++			       (*waveSH_PML).absorb_coeff,hc, infoout, 1, 0, (*waveSH_PML).K_x, (*waveSH_PML).a_x, (*waveSH_PML).b_x, (*waveSH_PML).K_x_half, (*waveSH_PML).a_x_half, (*waveSH_PML).b_x_half, (*waveSH_PML).K_y,
+ 			       (*waveSH_PML).a_y, (*waveSH_PML).b_y, (*waveSH_PML).K_y_half, (*waveSH_PML).a_y_half, (*waveSH_PML).b_y_half, (*waveSH_PML).psi_sxz_x, (*waveSH_PML).psi_syz_y);
+               }
+ 		                 
+diff --git a/src/SH/update_v_PML_SH.c b/src/SH/update_v_PML_SH.c
+index 79fbb7f..518b6be 100644
+--- a/src/SH/update_v_PML_SH.c
++++ b/src/SH/update_v_PML_SH.c
+@@ -14,7 +14,7 @@
+ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+ 	float **  vz, float **  vzp1, float **  vzm1, float **  utty,float ** sxz, float ** syz,
+ 	float  **rho, float **rhoi, float **  srcpos_loc, float ** signals, int nsrc, float ** absorb_coeff,
+-	float *hc, int infoout,int sw, float * K_x, float * a_x, float * b_x, float * K_x_half, float * a_x_half, 
++	float *hc, int infoout,int sw, int exact_elastic_sh_adjoint, float * K_x, float * a_x, float * b_x, float * K_x_half, float * a_x_half,
+ 	float * b_x_half, float * K_y, float * a_y, float * b_y, float * K_y_half, float * a_y_half, 
+ 	float * b_y_half, float ** psi_sxz_x, float ** psi_syz_y){
+ 
+@@ -95,7 +95,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
+                                  	}
+ 					
+-					if(sw==1){					
++					if((sw==1)&&(!exact_elastic_sh_adjoint)){
+ 						vzp1[j][i] += vz[j][i] * DT;					
+                                  	}
+ 
+@@ -108,7 +108,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
+                                  	}
+ 					
+-					if(sw==1){					
++					if((sw==1)&&(!exact_elastic_sh_adjoint)){
+ 						vzp1[j][i] = vz[j][i];					
+                                  	}
+ 
+@@ -179,7 +179,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
+                                  	}
+ 					
+-					if(sw==1){					
++					if((sw==1)&&(!exact_elastic_sh_adjoint)){
+ 						vzp1[j][i] += vz[j][i] * DT;					
+                                  	}
+ 
+@@ -191,7 +191,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
+                                  	}
+ 					
+-					if(sw==1){					
++					if((sw==1)&&(!exact_elastic_sh_adjoint)){
+ 						vzp1[j][i] = vz[j][i];					
+                                  	}
+ 
+@@ -265,7 +265,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
+                                  	}
+ 					
+-					if(sw==1){					
++					if((sw==1)&&(!exact_elastic_sh_adjoint)){
+ 						vzp1[j][i] += vz[j][i] * DT;					
+                                  	}
+ 
+@@ -278,7 +278,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
+                                  	}
+ 					
+-					if(sw==1){					
++					if((sw==1)&&(!exact_elastic_sh_adjoint)){
+ 						vzp1[j][i] = vz[j][i];					
+                                  	}
+ 
+@@ -354,7 +354,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
+                                  	}
+ 					
+-					if(sw==1){					
++					if((sw==1)&&(!exact_elastic_sh_adjoint)){
+ 						vzp1[j][i] += vz[j][i] * DT;					
+                                  	}
+ 
+@@ -366,7 +366,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
+                                  	}
+ 					
+-					if(sw==1){					
++					if((sw==1)&&(!exact_elastic_sh_adjoint)){
+ 						vzp1[j][i] = vz[j][i];					
+                                  	}
+ 
+@@ -444,7 +444,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
+                                  	}
+ 					
+-					if(sw==1){					
++					if((sw==1)&&(!exact_elastic_sh_adjoint)){
+ 						vzp1[j][i] += vz[j][i] * DT;					
+                                  	}
+ 
+@@ -457,7 +457,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
+                                  	}
+ 					
+-					if(sw==1){					
++					if((sw==1)&&(!exact_elastic_sh_adjoint)){
+ 						vzp1[j][i] = vz[j][i];					
+                                  	}
+ 
+@@ -537,7 +537,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
+                                  	}
+ 					
+-					if(sw==1){					
++					if((sw==1)&&(!exact_elastic_sh_adjoint)){
+ 						vzp1[j][i] += vz[j][i] * DT;					
+                                  	}
+ 
+@@ -549,7 +549,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  		vzp1[j][i] = rhoi[j][i] * (sxz_x+syz_y) / DH;    
+                                  	}
+ 					
+-					if(sw==1){					
++					if((sw==1)&&(!exact_elastic_sh_adjoint)){
+ 						vzp1[j][i] = vz[j][i];					
+                                  	}
+ 
+@@ -589,7 +589,15 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
+ 		j=(int)srcpos_loc[2][l];
+ 		    
+                 if((GRAD_FORM==1)||(GRAD_FORM==2)){
+-		    if(QUELLTYPB==1){vz[j][i] += signals[l][nt];}  /* single force in z */
++		    if(QUELLTYPB==1){
++			/* Velocity data use y_v = R lambda_v with R = rhoi = 1/rho,
++			 * so receiver residuals enter as y_v += R C^T r. */
++			if(exact_elastic_sh_adjoint){
++			    vz[j][i] += rhoi[j][i] * signals[l][nt];
++			}else{
++			    vz[j][i] += signals[l][nt];
++			}
++		    }  /* single force in z */
+                 }
+             }
+ 	}                         

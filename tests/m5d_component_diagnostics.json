@@ -1,0 +1,576 @@
+{
+  "git_base_sha": "47f3ab93ae7b27433980dafeb77646c9f5a6940a",
+  "git_dirty_during_instrumented_run": true,
+  "source_patch_sha256": "5ec32289708973c06a38ecf5d51a83e74c0beae9cf463fcc8d04a712319d9f82",
+  "compiler": "mpicc",
+  "compiler_version": "gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0\nCopyright (C) 2021 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+  "compile_flags": "-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon plus component macro",
+  "binaries": {
+    "xy": {
+      "path": "/tmp/denise_m5d/denise_xy",
+      "sha256": "1407ccd7f37246f99d9fd405f3665b081e061dde9df0c13cecbec5eb1321aa3c",
+      "build_command": "make -C src -B sh.o CFLAGS='-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon'; make -C src denise"
+    },
+    "x": {
+      "path": "/tmp/denise_m5d/denise_x",
+      "sha256": "4645f722b35ed946cb59e5a52ddc61cd8a92a2847b4c8919b2ef72786a58f5ad",
+      "build_command": "CFLAGS='-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon -DM5_SH_GRAD_X_ONLY' make -e -C src -B sh.o; make -C src denise"
+    },
+    "y": {
+      "path": "/tmp/denise_m5d/denise_y",
+      "sha256": "49a5235118945196a248ddf74926817bf36efcee29d5095ebf44c14655be2e2a",
+      "build_command": "CFLAGS='-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon -DM5_SH_GRAD_Y_ONLY' make -e -C src -B sh.o; make -C src denise"
+    }
+  },
+  "component_identity": [
+    {
+      "grad_form": 1,
+      "relative_l2": 5.291310236752735e-07,
+      "normalized_correlation": 0.9999999999998604
+    },
+    {
+      "grad_form": 2,
+      "relative_l2": 6.236623819846946e-07,
+      "normalized_correlation": 0.9999999999998135
+    }
+  ],
+  "rows": [
+    {
+      "direction": "gaussian_sigma_20m",
+      "grad_form": 1,
+      "d_fd": -9.237802643885032e-05,
+      "fd_diagnostics": {
+        "central_fine": -9.238696198241412e-05,
+        "central_relative_change": 0.0002900718268893672,
+        "five_point_coarse": -9.237961659123501e-05,
+        "five_point_fine": -9.237802643885032e-05,
+        "five_point_relative_change": 1.7213238627327102e-05
+      },
+      "production_g_dot_p": -2.4649802060798996e+19,
+      "m5b_corrected_local_g_dot_p": -9.250685472778606e-05,
+      "exact_vjp_g_dot_p": -9.106566374660042e-05,
+      "k_production": 3.747617372788591e-24,
+      "k_local": 0.9986073649426863,
+      "k_exact_vjp": 1.0144111692404911,
+      "absolute_local_residual": 0.0013926350573136848,
+      "absolute_exact_vjp_residual": 0.014411169240491128
+    },
+    {
+      "direction": "gaussian_sigma_80m",
+      "grad_form": 1,
+      "d_fd": -0.0007804423519931985,
+      "fd_diagnostics": {
+        "central_fine": -0.0007812252475097668,
+        "central_relative_change": 0.002997402603142621,
+        "five_point_coarse": -0.0007804437731660906,
+        "five_point_fine": -0.0007804423519931985,
+        "five_point_relative_change": 1.820980499832091e-06
+      },
+      "production_g_dot_p": -2.052650828760873e+20,
+      "m5b_corrected_local_g_dot_p": -0.0007703277760799061,
+      "exact_vjp_g_dot_p": -0.000782284818810428,
+      "k_production": 3.8021193914618654e-24,
+      "k_local": 1.0131302235585533,
+      "k_exact_vjp": 0.9976447621468211,
+      "absolute_local_residual": 0.013130223558553311,
+      "absolute_exact_vjp_residual": 0.0023552378531789264
+    },
+    {
+      "direction": "flat_top",
+      "grad_form": 1,
+      "d_fd": -0.0013290702763250094,
+      "fd_diagnostics": {
+        "central_fine": -0.001331373945237368,
+        "central_relative_change": 0.005164077147307128,
+        "five_point_coarse": -0.001329105825600461,
+        "five_point_fine": -0.0013290702763250094,
+        "five_point_relative_change": 2.6746760691880862e-05
+      },
+      "production_g_dot_p": -3.514964919131476e+20,
+      "m5b_corrected_local_g_dot_p": -0.0013191114003485841,
+      "exact_vjp_g_dot_p": -0.0013391189763486344,
+      "k_production": 3.781176503614761e-24,
+      "k_local": 1.007549685321341,
+      "k_exact_vjp": 0.992496036423123,
+      "absolute_local_residual": 0.0075496853213410375,
+      "absolute_exact_vjp_residual": 0.007503963576876993
+    },
+    {
+      "direction": "gaussian_sigma_20m",
+      "grad_form": 2,
+      "d_fd": -0.7756479403640147,
+      "fd_diagnostics": {
+        "central_fine": -0.7757225265976997,
+        "central_relative_change": 0.0002883688024489157,
+        "five_point_coarse": -0.7756549364799086,
+        "five_point_fine": -0.7756479403640147,
+        "five_point_relative_change": 9.019624016810006e-06
+      },
+      "production_g_dot_p": -5304292556.421625,
+      "m5b_corrected_local_g_dot_p": -0.7736896655146014,
+      "exact_vjp_g_dot_p": -0.7633080170709668,
+      "k_production": 1.4623023374247692e-10,
+      "k_local": 1.002531085701023,
+      "k_exact_vjp": 1.016166374539599,
+      "absolute_local_residual": 0.002531085701023006,
+      "absolute_exact_vjp_residual": 0.016166374539599015
+    },
+    {
+      "direction": "gaussian_sigma_80m",
+      "grad_form": 2,
+      "d_fd": -6.176755829782736,
+      "fd_diagnostics": {
+        "central_fine": -6.182942882493134,
+        "central_relative_change": 0.0029930091167567827,
+        "five_point_coarse": -6.17677462593855,
+        "five_point_fine": -6.176755829782736,
+        "five_point_relative_change": 3.043037337817697e-06
+      },
+      "production_g_dot_p": -41821587919.309525,
+      "m5b_corrected_local_g_dot_p": -6.100140598279646,
+      "exact_vjp_g_dot_p": -6.1946394003325,
+      "k_production": 1.476930010811678e-10,
+      "k_local": 1.0125595845323134,
+      "k_exact_vjp": 0.9971130570491634,
+      "absolute_local_residual": 0.012559584532313428,
+      "absolute_exact_vjp_residual": 0.0028869429508365796
+    },
+    {
+      "direction": "flat_top",
+      "grad_form": 2,
+      "d_fd": -10.18949722907083,
+      "fd_diagnostics": {
+        "central_fine": -10.203739438605886,
+        "central_relative_change": 0.004169889240340268,
+        "five_point_coarse": -10.18981466503141,
+        "five_point_fine": -10.18949722907083,
+        "five_point_relative_change": 3.115228009688703e-05
+      },
+      "production_g_dot_p": -69463109304.62057,
+      "m5b_corrected_local_g_dot_p": -10.131961846341305,
+      "exact_vjp_g_dot_p": -10.27927794639113,
+      "k_production": 1.4668933382158637e-10,
+      "k_local": 1.0056786023873847,
+      "k_exact_vjp": 0.9912658537118533,
+      "absolute_local_residual": 0.0056786023873847125,
+      "absolute_exact_vjp_residual": 0.008734146288146727
+    }
+  ],
+  "run_metadata": [
+    {
+      "command": [
+        "/usr/bin/mpirun",
+        "-np",
+        "1",
+        "/tmp/denise_m5d/denise_xy",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable": {
+        "path": "/tmp/denise_m5d/denise_xy",
+        "sha256": "1407ccd7f37246f99d9fd405f3665b081e061dde9df0c13cecbec5eb1321aa3c"
+      },
+      "local_build_context": {
+        "compiler_command": "mpicc",
+        "compiler_version": "gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0\nCopyright (C) 2021 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+        "description": "Observed repository Makefile/toolchain context only; not verified provenance for an externally supplied executable.",
+        "make_variables": {
+          "CC": "mpicc",
+          "CFLAGS": "-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon",
+          "IFLAGS": "-I./../libcseife -I./../include",
+          "LFLAGS": "-lm -lcseife -lfftw3 -lstdc++",
+          "SFLAGS": "-L./../libcseife"
+        },
+        "makefile": "/mnt/d/Softwareprojekte/DENISE-Black-Edition/src/Makefile"
+      },
+      "mpi_ranks": 1,
+      "mpi_version": "mpirun (Open MPI) 4.1.2\n\nReport bugs to http://www.open-mpi.org/community/help/",
+      "repository": {
+        "dirty": true,
+        "git_commit": "47f3ab93ae7b27433980dafeb77646c9f5a6940a",
+        "status_porcelain": "M src/SH/sh.c\n?? scripts/\n?? tests/cases/sh_fwi_gradient.py\n?? tests/m5b_dtinv_diagnostics.json\n?? tests/m5b_holdout_diagnostics.json\n?? tests/m5b_scaling_diagnostics.json\n?? tests/m5c_flat_top_diagnostics.json\n?? tests/m5c_gaussian_width_diagnostics.json\n?? tests/m5c_heterogeneous_diagnostics.json\n?? tests/m5d_component_diagnostics.json\n?? tests/m5d_sh_component_instrumentation.patch\n?? tests/physics/test_sh_fwi_averaging_diagnostic.py\n?? tests/physics/test_sh_fwi_component_diagnostic.py\n?? tests/physics/test_sh_fwi_gradient.py\n?? tests/physics/test_sh_fwi_scaling_diagnostic.py\n?? tests/test_sh_fwi_gradient_math.py\n?? tests/utilities/fwi_gradient.py"
+      },
+      "returncode": 0,
+      "runtime_seconds": 1.002235644999928,
+      "test_configuration": {
+        "absorbing_width_gridpoints": 12,
+        "anomaly_sigma_m": 70.0,
+        "anomaly_x_m": 520.0,
+        "anomaly_y_m": 400.0,
+        "background_contrast_fraction": 0.0,
+        "density_kg_m3": 1800.0,
+        "dh_m": 10.0,
+        "direction_normalization": "delta_Vs=Vs_background*p; max_abs_p_equals_1",
+        "dt_s": 0.0004,
+        "dtinv": 1,
+        "fd_order": 8,
+        "nprocx": 1,
+        "nprocy": 1,
+        "nx": 96,
+        "ny": 80,
+        "receiver_x_m": [
+          420.0,
+          500.0,
+          580.0,
+          660.0,
+          740.0
+        ],
+        "receiver_y_m": 400.0,
+        "role": "m5d_form_1_xy",
+        "source_frequency_hz": 12.0,
+        "source_x_m": 260.0,
+        "source_y_m": 400.0,
+        "target_fraction": 0.02,
+        "time_s": 0.4,
+        "vs_m_s": 2300.0
+      },
+      "timed_out": false
+    },
+    {
+      "command": [
+        "/usr/bin/mpirun",
+        "-np",
+        "1",
+        "/tmp/denise_m5d/denise_x",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable": {
+        "path": "/tmp/denise_m5d/denise_x",
+        "sha256": "4645f722b35ed946cb59e5a52ddc61cd8a92a2847b4c8919b2ef72786a58f5ad"
+      },
+      "local_build_context": {
+        "compiler_command": "mpicc",
+        "compiler_version": "gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0\nCopyright (C) 2021 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+        "description": "Observed repository Makefile/toolchain context only; not verified provenance for an externally supplied executable.",
+        "make_variables": {
+          "CC": "mpicc",
+          "CFLAGS": "-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon",
+          "IFLAGS": "-I./../libcseife -I./../include",
+          "LFLAGS": "-lm -lcseife -lfftw3 -lstdc++",
+          "SFLAGS": "-L./../libcseife"
+        },
+        "makefile": "/mnt/d/Softwareprojekte/DENISE-Black-Edition/src/Makefile"
+      },
+      "mpi_ranks": 1,
+      "mpi_version": "mpirun (Open MPI) 4.1.2\n\nReport bugs to http://www.open-mpi.org/community/help/",
+      "repository": {
+        "dirty": true,
+        "git_commit": "47f3ab93ae7b27433980dafeb77646c9f5a6940a",
+        "status_porcelain": "M src/SH/sh.c\n?? scripts/\n?? tests/cases/sh_fwi_gradient.py\n?? tests/m5b_dtinv_diagnostics.json\n?? tests/m5b_holdout_diagnostics.json\n?? tests/m5b_scaling_diagnostics.json\n?? tests/m5c_flat_top_diagnostics.json\n?? tests/m5c_gaussian_width_diagnostics.json\n?? tests/m5c_heterogeneous_diagnostics.json\n?? tests/m5d_component_diagnostics.json\n?? tests/m5d_sh_component_instrumentation.patch\n?? tests/physics/test_sh_fwi_averaging_diagnostic.py\n?? tests/physics/test_sh_fwi_component_diagnostic.py\n?? tests/physics/test_sh_fwi_gradient.py\n?? tests/physics/test_sh_fwi_scaling_diagnostic.py\n?? tests/test_sh_fwi_gradient_math.py\n?? tests/utilities/fwi_gradient.py"
+      },
+      "returncode": 0,
+      "runtime_seconds": 0.9644345309998243,
+      "test_configuration": {
+        "absorbing_width_gridpoints": 12,
+        "anomaly_sigma_m": 70.0,
+        "anomaly_x_m": 520.0,
+        "anomaly_y_m": 400.0,
+        "background_contrast_fraction": 0.0,
+        "density_kg_m3": 1800.0,
+        "dh_m": 10.0,
+        "direction_normalization": "delta_Vs=Vs_background*p; max_abs_p_equals_1",
+        "dt_s": 0.0004,
+        "dtinv": 1,
+        "fd_order": 8,
+        "nprocx": 1,
+        "nprocy": 1,
+        "nx": 96,
+        "ny": 80,
+        "receiver_x_m": [
+          420.0,
+          500.0,
+          580.0,
+          660.0,
+          740.0
+        ],
+        "receiver_y_m": 400.0,
+        "role": "m5d_form_1_x",
+        "source_frequency_hz": 12.0,
+        "source_x_m": 260.0,
+        "source_y_m": 400.0,
+        "target_fraction": 0.02,
+        "time_s": 0.4,
+        "vs_m_s": 2300.0
+      },
+      "timed_out": false
+    },
+    {
+      "command": [
+        "/usr/bin/mpirun",
+        "-np",
+        "1",
+        "/tmp/denise_m5d/denise_y",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable": {
+        "path": "/tmp/denise_m5d/denise_y",
+        "sha256": "49a5235118945196a248ddf74926817bf36efcee29d5095ebf44c14655be2e2a"
+      },
+      "local_build_context": {
+        "compiler_command": "mpicc",
+        "compiler_version": "gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0\nCopyright (C) 2021 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+        "description": "Observed repository Makefile/toolchain context only; not verified provenance for an externally supplied executable.",
+        "make_variables": {
+          "CC": "mpicc",
+          "CFLAGS": "-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon",
+          "IFLAGS": "-I./../libcseife -I./../include",
+          "LFLAGS": "-lm -lcseife -lfftw3 -lstdc++",
+          "SFLAGS": "-L./../libcseife"
+        },
+        "makefile": "/mnt/d/Softwareprojekte/DENISE-Black-Edition/src/Makefile"
+      },
+      "mpi_ranks": 1,
+      "mpi_version": "mpirun (Open MPI) 4.1.2\n\nReport bugs to http://www.open-mpi.org/community/help/",
+      "repository": {
+        "dirty": true,
+        "git_commit": "47f3ab93ae7b27433980dafeb77646c9f5a6940a",
+        "status_porcelain": "M src/SH/sh.c\n?? scripts/\n?? tests/cases/sh_fwi_gradient.py\n?? tests/m5b_dtinv_diagnostics.json\n?? tests/m5b_holdout_diagnostics.json\n?? tests/m5b_scaling_diagnostics.json\n?? tests/m5c_flat_top_diagnostics.json\n?? tests/m5c_gaussian_width_diagnostics.json\n?? tests/m5c_heterogeneous_diagnostics.json\n?? tests/m5d_component_diagnostics.json\n?? tests/m5d_sh_component_instrumentation.patch\n?? tests/physics/test_sh_fwi_averaging_diagnostic.py\n?? tests/physics/test_sh_fwi_component_diagnostic.py\n?? tests/physics/test_sh_fwi_gradient.py\n?? tests/physics/test_sh_fwi_scaling_diagnostic.py\n?? tests/test_sh_fwi_gradient_math.py\n?? tests/utilities/fwi_gradient.py"
+      },
+      "returncode": 0,
+      "runtime_seconds": 0.8812449709994326,
+      "test_configuration": {
+        "absorbing_width_gridpoints": 12,
+        "anomaly_sigma_m": 70.0,
+        "anomaly_x_m": 520.0,
+        "anomaly_y_m": 400.0,
+        "background_contrast_fraction": 0.0,
+        "density_kg_m3": 1800.0,
+        "dh_m": 10.0,
+        "direction_normalization": "delta_Vs=Vs_background*p; max_abs_p_equals_1",
+        "dt_s": 0.0004,
+        "dtinv": 1,
+        "fd_order": 8,
+        "nprocx": 1,
+        "nprocy": 1,
+        "nx": 96,
+        "ny": 80,
+        "receiver_x_m": [
+          420.0,
+          500.0,
+          580.0,
+          660.0,
+          740.0
+        ],
+        "receiver_y_m": 400.0,
+        "role": "m5d_form_1_y",
+        "source_frequency_hz": 12.0,
+        "source_x_m": 260.0,
+        "source_y_m": 400.0,
+        "target_fraction": 0.02,
+        "time_s": 0.4,
+        "vs_m_s": 2300.0
+      },
+      "timed_out": false
+    },
+    {
+      "command": [
+        "/usr/bin/mpirun",
+        "-np",
+        "1",
+        "/tmp/denise_m5d/denise_xy",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable": {
+        "path": "/tmp/denise_m5d/denise_xy",
+        "sha256": "1407ccd7f37246f99d9fd405f3665b081e061dde9df0c13cecbec5eb1321aa3c"
+      },
+      "local_build_context": {
+        "compiler_command": "mpicc",
+        "compiler_version": "gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0\nCopyright (C) 2021 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+        "description": "Observed repository Makefile/toolchain context only; not verified provenance for an externally supplied executable.",
+        "make_variables": {
+          "CC": "mpicc",
+          "CFLAGS": "-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon",
+          "IFLAGS": "-I./../libcseife -I./../include",
+          "LFLAGS": "-lm -lcseife -lfftw3 -lstdc++",
+          "SFLAGS": "-L./../libcseife"
+        },
+        "makefile": "/mnt/d/Softwareprojekte/DENISE-Black-Edition/src/Makefile"
+      },
+      "mpi_ranks": 1,
+      "mpi_version": "mpirun (Open MPI) 4.1.2\n\nReport bugs to http://www.open-mpi.org/community/help/",
+      "repository": {
+        "dirty": true,
+        "git_commit": "47f3ab93ae7b27433980dafeb77646c9f5a6940a",
+        "status_porcelain": "M src/SH/sh.c\n?? scripts/\n?? tests/cases/sh_fwi_gradient.py\n?? tests/m5b_dtinv_diagnostics.json\n?? tests/m5b_holdout_diagnostics.json\n?? tests/m5b_scaling_diagnostics.json\n?? tests/m5c_flat_top_diagnostics.json\n?? tests/m5c_gaussian_width_diagnostics.json\n?? tests/m5c_heterogeneous_diagnostics.json\n?? tests/m5d_component_diagnostics.json\n?? tests/m5d_sh_component_instrumentation.patch\n?? tests/physics/test_sh_fwi_averaging_diagnostic.py\n?? tests/physics/test_sh_fwi_component_diagnostic.py\n?? tests/physics/test_sh_fwi_gradient.py\n?? tests/physics/test_sh_fwi_scaling_diagnostic.py\n?? tests/test_sh_fwi_gradient_math.py\n?? tests/utilities/fwi_gradient.py"
+      },
+      "returncode": 0,
+      "runtime_seconds": 0.9357927549999658,
+      "test_configuration": {
+        "absorbing_width_gridpoints": 12,
+        "anomaly_sigma_m": 70.0,
+        "anomaly_x_m": 520.0,
+        "anomaly_y_m": 400.0,
+        "background_contrast_fraction": 0.0,
+        "density_kg_m3": 1800.0,
+        "dh_m": 10.0,
+        "direction_normalization": "delta_Vs=Vs_background*p; max_abs_p_equals_1",
+        "dt_s": 0.0004,
+        "dtinv": 1,
+        "fd_order": 8,
+        "nprocx": 1,
+        "nprocy": 1,
+        "nx": 96,
+        "ny": 80,
+        "receiver_x_m": [
+          420.0,
+          500.0,
+          580.0,
+          660.0,
+          740.0
+        ],
+        "receiver_y_m": 400.0,
+        "role": "m5d_form_2_xy",
+        "source_frequency_hz": 12.0,
+        "source_x_m": 260.0,
+        "source_y_m": 400.0,
+        "target_fraction": 0.02,
+        "time_s": 0.4,
+        "vs_m_s": 2300.0
+      },
+      "timed_out": false
+    },
+    {
+      "command": [
+        "/usr/bin/mpirun",
+        "-np",
+        "1",
+        "/tmp/denise_m5d/denise_x",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable": {
+        "path": "/tmp/denise_m5d/denise_x",
+        "sha256": "4645f722b35ed946cb59e5a52ddc61cd8a92a2847b4c8919b2ef72786a58f5ad"
+      },
+      "local_build_context": {
+        "compiler_command": "mpicc",
+        "compiler_version": "gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0\nCopyright (C) 2021 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+        "description": "Observed repository Makefile/toolchain context only; not verified provenance for an externally supplied executable.",
+        "make_variables": {
+          "CC": "mpicc",
+          "CFLAGS": "-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon",
+          "IFLAGS": "-I./../libcseife -I./../include",
+          "LFLAGS": "-lm -lcseife -lfftw3 -lstdc++",
+          "SFLAGS": "-L./../libcseife"
+        },
+        "makefile": "/mnt/d/Softwareprojekte/DENISE-Black-Edition/src/Makefile"
+      },
+      "mpi_ranks": 1,
+      "mpi_version": "mpirun (Open MPI) 4.1.2\n\nReport bugs to http://www.open-mpi.org/community/help/",
+      "repository": {
+        "dirty": true,
+        "git_commit": "47f3ab93ae7b27433980dafeb77646c9f5a6940a",
+        "status_porcelain": "M src/SH/sh.c\n?? scripts/\n?? tests/cases/sh_fwi_gradient.py\n?? tests/m5b_dtinv_diagnostics.json\n?? tests/m5b_holdout_diagnostics.json\n?? tests/m5b_scaling_diagnostics.json\n?? tests/m5c_flat_top_diagnostics.json\n?? tests/m5c_gaussian_width_diagnostics.json\n?? tests/m5c_heterogeneous_diagnostics.json\n?? tests/m5d_component_diagnostics.json\n?? tests/m5d_sh_component_instrumentation.patch\n?? tests/physics/test_sh_fwi_averaging_diagnostic.py\n?? tests/physics/test_sh_fwi_component_diagnostic.py\n?? tests/physics/test_sh_fwi_gradient.py\n?? tests/physics/test_sh_fwi_scaling_diagnostic.py\n?? tests/test_sh_fwi_gradient_math.py\n?? tests/utilities/fwi_gradient.py"
+      },
+      "returncode": 0,
+      "runtime_seconds": 0.9313555939997968,
+      "test_configuration": {
+        "absorbing_width_gridpoints": 12,
+        "anomaly_sigma_m": 70.0,
+        "anomaly_x_m": 520.0,
+        "anomaly_y_m": 400.0,
+        "background_contrast_fraction": 0.0,
+        "density_kg_m3": 1800.0,
+        "dh_m": 10.0,
+        "direction_normalization": "delta_Vs=Vs_background*p; max_abs_p_equals_1",
+        "dt_s": 0.0004,
+        "dtinv": 1,
+        "fd_order": 8,
+        "nprocx": 1,
+        "nprocy": 1,
+        "nx": 96,
+        "ny": 80,
+        "receiver_x_m": [
+          420.0,
+          500.0,
+          580.0,
+          660.0,
+          740.0
+        ],
+        "receiver_y_m": 400.0,
+        "role": "m5d_form_2_x",
+        "source_frequency_hz": 12.0,
+        "source_x_m": 260.0,
+        "source_y_m": 400.0,
+        "target_fraction": 0.02,
+        "time_s": 0.4,
+        "vs_m_s": 2300.0
+      },
+      "timed_out": false
+    },
+    {
+      "command": [
+        "/usr/bin/mpirun",
+        "-np",
+        "1",
+        "/tmp/denise_m5d/denise_y",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable": {
+        "path": "/tmp/denise_m5d/denise_y",
+        "sha256": "49a5235118945196a248ddf74926817bf36efcee29d5095ebf44c14655be2e2a"
+      },
+      "local_build_context": {
+        "compiler_command": "mpicc",
+        "compiler_version": "gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0\nCopyright (C) 2021 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+        "description": "Observed repository Makefile/toolchain context only; not verified provenance for an externally supplied executable.",
+        "make_variables": {
+          "CC": "mpicc",
+          "CFLAGS": "-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon",
+          "IFLAGS": "-I./../libcseife -I./../include",
+          "LFLAGS": "-lm -lcseife -lfftw3 -lstdc++",
+          "SFLAGS": "-L./../libcseife"
+        },
+        "makefile": "/mnt/d/Softwareprojekte/DENISE-Black-Edition/src/Makefile"
+      },
+      "mpi_ranks": 1,
+      "mpi_version": "mpirun (Open MPI) 4.1.2\n\nReport bugs to http://www.open-mpi.org/community/help/",
+      "repository": {
+        "dirty": true,
+        "git_commit": "47f3ab93ae7b27433980dafeb77646c9f5a6940a",
+        "status_porcelain": "M src/SH/sh.c\n?? scripts/\n?? tests/cases/sh_fwi_gradient.py\n?? tests/m5b_dtinv_diagnostics.json\n?? tests/m5b_holdout_diagnostics.json\n?? tests/m5b_scaling_diagnostics.json\n?? tests/m5c_flat_top_diagnostics.json\n?? tests/m5c_gaussian_width_diagnostics.json\n?? tests/m5c_heterogeneous_diagnostics.json\n?? tests/m5d_component_diagnostics.json\n?? tests/m5d_sh_component_instrumentation.patch\n?? tests/physics/test_sh_fwi_averaging_diagnostic.py\n?? tests/physics/test_sh_fwi_component_diagnostic.py\n?? tests/physics/test_sh_fwi_gradient.py\n?? tests/physics/test_sh_fwi_scaling_diagnostic.py\n?? tests/test_sh_fwi_gradient_math.py\n?? tests/utilities/fwi_gradient.py"
+      },
+      "returncode": 0,
+      "runtime_seconds": 0.847388377000243,
+      "test_configuration": {
+        "absorbing_width_gridpoints": 12,
+        "anomaly_sigma_m": 70.0,
+        "anomaly_x_m": 520.0,
+        "anomaly_y_m": 400.0,
+        "background_contrast_fraction": 0.0,
+        "density_kg_m3": 1800.0,
+        "dh_m": 10.0,
+        "direction_normalization": "delta_Vs=Vs_background*p; max_abs_p_equals_1",
+        "dt_s": 0.0004,
+        "dtinv": 1,
+        "fd_order": 8,
+        "nprocx": 1,
+        "nprocy": 1,
+        "nx": 96,
+        "ny": 80,
+        "receiver_x_m": [
+          420.0,
+          500.0,
+          580.0,
+          660.0,
+          740.0
+        ],
+        "receiver_y_m": 400.0,
+        "role": "m5d_form_2_y",
+        "source_frequency_hz": 12.0,
+        "source_x_m": 260.0,
+        "source_y_m": 400.0,
+        "target_fraction": 0.02,
+        "time_s": 0.4,
+        "vs_m_s": 2300.0
+      },
+      "timed_out": false
+    }
+  ],
+  "finite_difference_source": "Reused M5.0c objective evaluations; fine five-point derivative uses h=0.00375 and coarse comparison uses h=0.0075."
+}

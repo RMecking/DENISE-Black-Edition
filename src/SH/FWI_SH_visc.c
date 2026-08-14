@@ -921,6 +921,8 @@ free_matrix(fwiSH.gradp_u,-nd+1,NY+nd,-nd+1,NX+nd);
 free_matrix(fwiSH.waveconv_u,-nd+1,NY+nd,-nd+1,NX+nd);
 free_matrix(fwiSH.waveconv_mu,-nd+1,NY+nd,-nd+1,NX+nd);
 free_matrix(fwiSH.waveconv_u_shot,-nd+1,NY+nd,-nd+1,NX+nd);
+free_matrix(fwiSH.waveconv_u_x_shot,-nd+1,NY+nd,-nd+1,NX+nd);
+free_matrix(fwiSH.waveconv_u_y_shot,-nd+1,NY+nd,-nd+1,NX+nd);
 
 free_matrix(fwiSH.gradg_ts,-nd+1,NY+nd,-nd+1,NX+nd);
 free_matrix(fwiSH.gradp_ts,-nd+1,NY+nd,-nd+1,NX+nd);

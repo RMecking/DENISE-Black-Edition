@@ -28,10 +28,12 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
 
         /* local variables */
 	int i,j,l,nt,lsamp,lsnap,nsnap, nd, hin1, imat, imat1, imat2, infoout;
+	int exact_elastic_sh_adjoint;
         float tmp, tmp1, muss, lamss, P3, P5;
         float hess_rho, hess_mu;
 
         nd = FDORDER/2 + 1;
+	exact_elastic_sh_adjoint = ((MODE==1)&&(mode==1)&&(INVMAT1==1));
 
 	/*MPI_Barrier(MPI_COMM_WORLD);*/
         
@@ -108,13 +110,13 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
 	      /* particle velocity update */
               if(mode==0 || mode==2){
 		update_v_PML_SH(1, NX, 1, NY, nt, (*waveSH).pvz, (*waveSH).pvzp1, (*waveSH).pvzm1, (*waveSH).uttz, (*waveSH).psxz, (*waveSH).psyz, (*matSH).prho, (*matSH).prhoi, (*acq).srcpos_loc, (*acq).signals, nsrc_loc, 
-			       (*waveSH_PML).absorb_coeff,hc, infoout, 0, (*waveSH_PML).K_x, (*waveSH_PML).a_x, (*waveSH_PML).b_x, (*waveSH_PML).K_x_half, (*waveSH_PML).a_x_half, (*waveSH_PML).b_x_half, (*waveSH_PML).K_y, 
+			       (*waveSH_PML).absorb_coeff,hc, infoout, 0, 0, (*waveSH_PML).K_x, (*waveSH_PML).a_x, (*waveSH_PML).b_x, (*waveSH_PML).K_x_half, (*waveSH_PML).a_x_half, (*waveSH_PML).b_x_half, (*waveSH_PML).K_y,
 			       (*waveSH_PML).a_y, (*waveSH_PML).b_y, (*waveSH_PML).K_y_half, (*waveSH_PML).a_y_half, (*waveSH_PML).b_y_half, (*waveSH_PML).psi_sxz_x, (*waveSH_PML).psi_syz_y);
               }
 
               if(mode==1){
 		update_v_PML_SH(1, NX, 1, NY, nt, (*waveSH).pvz, (*waveSH).pvzp1, (*waveSH).pvzm1, (*waveSH).uttz, (*waveSH).psxz, (*waveSH).psyz, (*matSH).prho, (*matSH).prhoi, (*acq).srcpos_loc_back, (*seisSHfwi).sectionvzdiff, ntr, 
-			       (*waveSH_PML).absorb_coeff,hc, infoout, 1, (*waveSH_PML).K_x, (*waveSH_PML).a_x, (*waveSH_PML).b_x, (*waveSH_PML).K_x_half, (*waveSH_PML).a_x_half, (*waveSH_PML).b_x_half, (*waveSH_PML).K_y, 
+			       (*waveSH_PML).absorb_coeff,hc, infoout, 1, exact_elastic_sh_adjoint, (*waveSH_PML).K_x, (*waveSH_PML).a_x, (*waveSH_PML).b_x, (*waveSH_PML).K_x_half, (*waveSH_PML).a_x_half, (*waveSH_PML).b_x_half, (*waveSH_PML).K_y,
 			       (*waveSH_PML).a_y, (*waveSH_PML).b_y, (*waveSH_PML).K_y_half, (*waveSH_PML).a_y_half, (*waveSH_PML).b_y_half, (*waveSH_PML).psi_sxz_x, (*waveSH_PML).psi_syz_y);
               }
 		                 
@@ -122,7 +124,41 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
 	      /* exchange of particle velocities between PEs */
 	      exchange_v_SH((*waveSH).pvz, (*mpiPSV).bufferlef_to_rig, (*mpiPSV).bufferrig_to_lef, (*mpiPSV).buffertop_to_bot, (*mpiPSV).bufferbot_to_top, req_send, req_rec);
 		                                                       
-                                                                                    	
+	      /* The exact Form-1 density multiplier is the time integral of B:
+	       * after reverse V^T plus receiver injection, not the legacy A state. */
+	      if(exact_elastic_sh_adjoint && (GRAD_FORM==1)){
+		for (i=1;i<=NX;i++){
+		    for (j=1;j<=NY;j++){
+			(*waveSH).pvzp1[j][i] += (*waveSH).pvz[j][i] * DT;
+		    }
+		}
+	      }
+
+	      if(exact_elastic_sh_adjoint &&
+	         (DTINV_help[NT-nt+1]==1)){
+		imat=((NXNYI*(NTDTINV)) - hin*NXNYI)+1;
+		for (i=1;i<=NX;i=i+IDXI){
+		    for (j=1;j<=NY;j=j+IDYI){
+			/* PRE stress is the exact S^T material multiplier.  Keep
+			 * X and Y native edges separate until the material VJP. */
+			(*fwiSH).waveconv_u_x_shot[j][i] +=
+			    (*fwiSH).forward_prop_sxz[imat] * (*waveSH).psxz[j][i];
+			(*fwiSH).waveconv_u_y_shot[j][i] +=
+			    (*fwiSH).forward_prop_syz[imat] * (*waveSH).psyz[j][i];
+			/* B velocity is the exact V^T inverse-density multiplier. */
+			if(GRAD_FORM==1){
+			    (*fwiSH).waveconv_rho_shot[j][i] +=
+			        (*waveSH).pvzp1[j][i] *
+			        (*fwiSH).forward_prop_rho_z[imat];
+			}else{
+			    (*fwiSH).waveconv_rho_shot[j][i] +=
+			        (*waveSH).pvz[j][i] *
+			        (*fwiSH).forward_prop_rho_z[imat];
+			}
+			imat++;
+		    }
+		}
+	      }
 
               /* stress update */
 	      update_s_elastic_PML_SH(1, NX, 1, NY, (*waveSH).pvz, (*waveSH).uz, (*waveSH).uzx, (*waveSH).psyz, (*waveSH).psxz, (*matSH).pujp, (*matSH).puip, (*matSH).prho, hc,infoout,
@@ -207,11 +243,13 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
 		    for (i=1;i<=NX;i=i+IDXI){   
 			for (j=1;j<=NY;j=j+IDYI){ 
 		                 
-				 /* Density gradient */                  
+				 /* Legacy parameterizations retain the POST/A-state path. */
+				 if(!exact_elastic_sh_adjoint){
 			   	(*fwiSH).waveconv_rho_shot[j][i] += (*waveSH).pvzp1[j][i] * (*fwiSH).forward_prop_rho_z[imat];
+				 }
 			
 				/* Vs-gradient (stress-displacement formulation) */
-		                if(GRAD_FORM==1){			
+		                if((GRAD_FORM==1)&&(!exact_elastic_sh_adjoint)){
 
 		           	    if(INVMAT1==1){
 		               	        muss = (*matSH).prho[j][i] * (*matSH).pu[j][i] * (*matSH).pu[j][i];
@@ -227,7 +265,7 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
 		                }
 				
 				/* Vs-gradient (symmetrized stress-velocity formulation) */
-		                if(GRAD_FORM==2){			
+		                if((GRAD_FORM==2)&&(!exact_elastic_sh_adjoint)){
 
 		           	    if(INVMAT1==1){
 		               	        muss = (*matSH).prho[j][i] * (*matSH).pu[j][i] * (*matSH).pu[j][i];

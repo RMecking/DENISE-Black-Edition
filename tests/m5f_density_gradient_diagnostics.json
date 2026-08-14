@@ -1,0 +1,324 @@
+{
+  "base_git_sha": "47f3ab93ae7b27433980dafeb77646c9f5a6940a",
+  "prediction_recorded_before_runs": "The exact inverse-density term uses B_VELOCITY: after reverse update_v and receiver injection, before reverse update_s. No fitted rho, DT, or DH factor is permitted.",
+  "source_audit": {
+    "forward_prop_rho_z": "R*D_sigma/DH before v advance; no DT; no source",
+    "source_density_derivative": "none for QUELLTYP=1 direct vz injection",
+    "legacy_pvzp1_form2": "A velocity before reverse update_v",
+    "legacy_pvzp1_form1": "DT accumulation of A velocities",
+    "B_VELOCITY": "after reverse update_v and residual injection",
+    "C_velocity": "identical to B because reverse update_s does not alter velocity",
+    "state_metric_mapping": "lambda_v=rho*y_v; legacy lambda correlation requires /rho, exact-metric y correlation does not",
+    "exact_kinetic_form2": "-DT * y_v(B) * forward_prop_rho_z",
+    "exact_kinetic_form1": "-DT * time_integral(y_v(B)) * forward_prop_rho_z"
+  },
+  "baseline_relative_l2": {
+    "R": 0.0,
+    "M": 0.0
+  },
+  "component_identity": [
+    {
+      "grad_form": 2,
+      "relative_l2": 6.183998932747336e-07,
+      "normalized_correlation": 0.999999999999818
+    },
+    {
+      "grad_form": 1,
+      "relative_l2": 5.717392598405253e-07,
+      "normalized_correlation": 0.9999999999998432
+    }
+  ],
+  "rows": [
+    {
+      "direction": "gaussian_sigma_25m",
+      "grad_form": 2,
+      "d_r_fd": -0.017719209977520894,
+      "d_m_fd": 0.0005301014335804359,
+      "d_t_fd": -0.017193064743402636,
+      "g_r_dot_p": -0.017720972449957514,
+      "g_m_dot_p": 0.0005291098967638613,
+      "g_t_dot_p": -0.017191862553193653,
+      "k_r": 0.9999005431309372,
+      "k_m": 1.00187397140488,
+      "k_t": 1.0000699278629794,
+      "fd_stability": {
+        "R": 0.00016637540370439144,
+        "M": 0.003819438938732993,
+        "T": 4.3572387719851697e-05
+      },
+      "fd_decomposition_residual": -3.956199462177732e-06,
+      "fd_decomposition_relative": 0.00022327177493786023,
+      "acceptance_ceiling": {
+        "R": 0.0003327508074087829,
+        "M": 0.007638877877465986,
+        "T": 0.00022327177493786023
+      }
+    },
+    {
+      "direction": "gaussian_sigma_80m",
+      "grad_form": 2,
+      "d_r_fd": -0.09987889935442328,
+      "d_m_fd": 0.060991786848798905,
+      "d_t_fd": -0.0388868241882599,
+      "g_r_dot_p": -0.09988418102154632,
+      "g_m_dot_p": 0.06099348946028242,
+      "g_t_dot_p": -0.03889069156126391,
+      "k_r": 0.9999471220861098,
+      "k_m": 0.9999720853570015,
+      "k_t": 0.9999005578751945,
+      "fd_stability": {
+        "R": 2.6487845252114776e-05,
+        "M": 1.6870516451136227e-05,
+        "T": 7.736584616070638e-05
+      },
+      "fd_decomposition_residual": 2.8831736446910394e-07,
+      "fd_decomposition_relative": 2.8866694199943184e-06,
+      "acceptance_ceiling": {
+        "R": 5.297569050422955e-05,
+        "M": 5e-05,
+        "T": 0.00015473169232141276
+      }
+    },
+    {
+      "direction": "flat_top",
+      "grad_form": 2,
+      "d_r_fd": -0.16227324164524948,
+      "d_m_fd": 0.1182519797562042,
+      "d_t_fd": -0.04401764662802909,
+      "g_r_dot_p": -0.1622772811732411,
+      "g_m_dot_p": 0.11826181721643178,
+      "g_t_dot_p": -0.044015463956809345,
+      "k_r": 0.9999751072487632,
+      "k_m": 0.9999168162602341,
+      "k_t": 1.000049588735947,
+      "fd_stability": {
+        "R": 1.3589490184119532e-05,
+        "M": 0.0002619221895112851,
+        "T": 5.401888411402491e-05
+      },
+      "fd_decomposition_residual": 3.615261016179372e-06,
+      "fd_decomposition_relative": 2.227884880788174e-05,
+      "acceptance_ceiling": {
+        "R": 5e-05,
+        "M": 0.0005238443790225701,
+        "T": 0.00010803776822804981
+      }
+    },
+    {
+      "direction": "gaussian_sigma_25m",
+      "grad_form": 1,
+      "d_r_fd": -3.087283458946921e-06,
+      "d_m_fd": -7.121608124013695e-08,
+      "d_t_fd": -3.1587782362104686e-06,
+      "g_r_dot_p": -3.087167973198033e-06,
+      "g_m_dot_p": -7.144416132448001e-08,
+      "g_t_dot_p": -3.158612134522513e-06,
+      "k_r": 1.0000374083139922,
+      "k_m": 0.996807575593096,
+      "k_t": 1.0000525869213697,
+      "fd_stability": {
+        "R": 1.604314009907324e-05,
+        "M": 0.005408768699028842,
+        "T": 1.9306089090837177e-05
+      },
+      "fd_decomposition_residual": -2.7869602341066164e-10,
+      "fd_decomposition_relative": 8.822905648008023e-05,
+      "acceptance_ceiling": {
+        "R": 5e-05,
+        "M": 0.010817537398057684,
+        "T": 8.822905648008023e-05
+      }
+    },
+    {
+      "direction": "gaussian_sigma_80m",
+      "grad_form": 1,
+      "d_r_fd": -1.736534748944486e-05,
+      "d_m_fd": 9.12908747410985e-06,
+      "d_t_fd": -8.235668853694596e-06,
+      "g_r_dot_p": -1.736604679028145e-05,
+      "g_m_dot_p": 9.129550237149606e-06,
+      "g_t_dot_p": -8.236496553131843e-06,
+      "k_r": 0.999959731719888,
+      "k_m": 0.9999493115183404,
+      "k_t": 0.9998995083125565,
+      "fd_stability": {
+        "R": 1.881513440997686e-05,
+        "M": 4.221979148711486e-05,
+        "T": 9.528457688102754e-05
+      },
+      "fd_decomposition_residual": 5.911616404137224e-10,
+      "fd_decomposition_relative": 3.404260356857511e-05,
+      "acceptance_ceiling": {
+        "R": 5e-05,
+        "M": 8.443958297422972e-05,
+        "T": 0.0001905691537620551
+      }
+    },
+    {
+      "direction": "flat_top",
+      "grad_form": 1,
+      "d_r_fd": -2.948117437722684e-05,
+      "d_m_fd": 1.864933352883485e-05,
+      "d_t_fd": -1.0831887163524904e-05,
+      "g_r_dot_p": -2.948211111776597e-05,
+      "g_m_dot_p": 1.8650854679705734e-05,
+      "g_t_dot_p": -1.0831256438060235e-05,
+      "k_r": 0.999968226816072,
+      "k_m": 0.9999184406882684,
+      "k_t": 1.000058231975974,
+      "fd_stability": {
+        "R": 1.6077492365128454e-05,
+        "M": 0.00023799021727125122,
+        "T": 4.980500059176833e-05
+      },
+      "fd_decomposition_residual": -4.6315132915116745e-11,
+      "fd_decomposition_relative": 1.5710070542811735e-06,
+      "acceptance_ceiling": {
+        "R": 5e-05,
+        "M": 0.00047598043454250244,
+        "T": 9.961000118353666e-05
+      }
+    }
+  ],
+  "legacy_comparison": [
+    {
+      "direction": "gaussian_sigma_25m",
+      "grad_form": 2,
+      "legacy_post_g_r_dot_p": -33.913424782668834,
+      "legacy_metric_b_g_r_dot_p": -0.01772097375658588,
+      "exact_metric_legacy_state_g_r_dot_p": -0.018840788797274455,
+      "exact_metric_b_g_r_dot_p": -0.017720972449957514
+    },
+    {
+      "direction": "gaussian_sigma_80m",
+      "grad_form": 2,
+      "legacy_post_g_r_dot_p": -186.2002510012871,
+      "legacy_metric_b_g_r_dot_p": -0.09988418305648561,
+      "exact_metric_legacy_state_g_r_dot_p": -0.10344457948724199,
+      "exact_metric_b_g_r_dot_p": -0.09988418102154632
+    },
+    {
+      "direction": "flat_top",
+      "grad_form": 2,
+      "legacy_post_g_r_dot_p": -300.05538195817564,
+      "legacy_metric_b_g_r_dot_p": -0.16227728394141497,
+      "exact_metric_legacy_state_g_r_dot_p": -0.16669742668567358,
+      "exact_metric_b_g_r_dot_p": -0.1622772811732411
+    },
+    {
+      "direction": "gaussian_sigma_25m",
+      "grad_form": 1,
+      "legacy_post_g_r_dot_p": -0.005814990799883224,
+      "legacy_metric_b_g_r_dot_p": 0.0003584561932093352,
+      "exact_metric_legacy_state_g_r_dot_p": -3.2305503202558834e-06,
+      "exact_metric_b_g_r_dot_p": -3.087167973198033e-06
+    },
+    {
+      "direction": "gaussian_sigma_80m",
+      "grad_form": 1,
+      "legacy_post_g_r_dot_p": -0.03200783220879097,
+      "legacy_metric_b_g_r_dot_p": 0.0010402061678419841,
+      "exact_metric_legacy_state_g_r_dot_p": -1.7782129222475605e-05,
+      "exact_metric_b_g_r_dot_p": -1.736604679028145e-05
+    },
+    {
+      "direction": "flat_top",
+      "grad_form": 1,
+      "legacy_post_g_r_dot_p": -0.05390128124429866,
+      "legacy_metric_b_g_r_dot_p": 0.0011576124550738444,
+      "exact_metric_legacy_state_g_r_dot_p": -2.99451565750282e-05,
+      "exact_metric_b_g_r_dot_p": -2.948211111776597e-05
+    }
+  ],
+  "heterogeneous_run": true,
+  "dtinv_secondary_run": true,
+  "temporary_patch_sha256": "b48972a20cdbeec783baa8df09b0983a2dc8e311b63ddfa850abc60f51347e3a",
+  "build_provenance": {
+    "base_git_sha": "47f3ab93ae7b27433980dafeb77646c9f5a6940a",
+    "temporary_patch_path": "/mnt/d/Softwareprojekte/DENISE-Black-Edition/tests/m5f_sh_density_instrumentation.patch",
+    "temporary_patch_sha256": "b48972a20cdbeec783baa8df09b0983a2dc8e311b63ddfa850abc60f51347e3a",
+    "compiler": "mpicc",
+    "compiler_version": "gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0\nCopyright (C) 2021 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+    "binaries": {
+      "legacy_post_xy": {
+        "path": "/tmp/denise_m5f/legacy_post_xy",
+        "sha256": "1407ccd7f37246f99d9fd405f3665b081e061dde9df0c13cecbec5eb1321aa3c",
+        "compile_flags": "-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon",
+        "macros": []
+      },
+      "legacy_b_xy": {
+        "path": "/tmp/denise_m5f/legacy_b_xy",
+        "sha256": "e608bef3a4a2c5cfd96758e1d7b9ad428ac857d47618576f65f066555a1a1927",
+        "compile_flags": "-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon -DM5_SH_RHO_B_VELOCITY",
+        "macros": [
+          "M5_SH_RHO_B_VELOCITY"
+        ]
+      },
+      "exact_metric_legacy_xy": {
+        "path": "/tmp/denise_m5f/exact_metric_legacy_xy",
+        "sha256": "b79a3a1f6c4a4613e88e8a43545ec1edd691389ee116e9eadfc707a128adf3a3",
+        "compile_flags": "-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon -DM5_SH_EXACT_RECEIVER_METRIC",
+        "macros": [
+          "M5_SH_EXACT_RECEIVER_METRIC"
+        ]
+      },
+      "exact_b_pre_xy": {
+        "path": "/tmp/denise_m5f/exact_b_pre_xy",
+        "sha256": "eae15e1afaccf18774d6376bd0244f360b44386980b90013d18835b268b1390b",
+        "compile_flags": "-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon -DM5_SH_EXACT_RECEIVER_METRIC -DM5_SH_RHO_B_VELOCITY -DM5_SH_GRAD_PRE_STRESS",
+        "macros": [
+          "M5_SH_EXACT_RECEIVER_METRIC",
+          "M5_SH_RHO_B_VELOCITY",
+          "M5_SH_GRAD_PRE_STRESS"
+        ]
+      },
+      "exact_b_integrated_pre_xy": {
+        "path": "/tmp/denise_m5f/exact_b_integrated_pre_xy",
+        "sha256": "44a51e2956fd56a091a57df462e66779e7238df6c4f222c92f13cb3942b35638",
+        "compile_flags": "-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon -DM5_SH_EXACT_RECEIVER_METRIC -DM5_SH_RHO_B_INTEGRATED -DM5_SH_GRAD_PRE_STRESS",
+        "macros": [
+          "M5_SH_EXACT_RECEIVER_METRIC",
+          "M5_SH_RHO_B_INTEGRATED",
+          "M5_SH_GRAD_PRE_STRESS"
+        ]
+      },
+      "exact_b_pre_x": {
+        "path": "/tmp/denise_m5f/exact_b_pre_x",
+        "sha256": "4c7eebe8b2cce529e30056b2ee49c4a5fa4275235bdad029954f3dc3012704d8",
+        "compile_flags": "-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon -DM5_SH_EXACT_RECEIVER_METRIC -DM5_SH_RHO_B_VELOCITY -DM5_SH_GRAD_PRE_STRESS -DM5_SH_GRAD_X_ONLY",
+        "macros": [
+          "M5_SH_EXACT_RECEIVER_METRIC",
+          "M5_SH_RHO_B_VELOCITY",
+          "M5_SH_GRAD_PRE_STRESS",
+          "M5_SH_GRAD_X_ONLY"
+        ]
+      },
+      "exact_b_pre_y": {
+        "path": "/tmp/denise_m5f/exact_b_pre_y",
+        "sha256": "424864279432d1b9efbffb6c20eb7cc7041c204ef0345a7511e9c8788a2df824",
+        "compile_flags": "-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon -DM5_SH_EXACT_RECEIVER_METRIC -DM5_SH_RHO_B_VELOCITY -DM5_SH_GRAD_PRE_STRESS -DM5_SH_GRAD_Y_ONLY",
+        "macros": [
+          "M5_SH_EXACT_RECEIVER_METRIC",
+          "M5_SH_RHO_B_VELOCITY",
+          "M5_SH_GRAD_PRE_STRESS",
+          "M5_SH_GRAD_Y_ONLY"
+        ]
+      }
+    }
+  },
+  "heterogeneous_artifact": {
+    "path": "/mnt/d/Softwareprojekte/DENISE-Black-Edition/tests/m5f_density_gradient_heterogeneous.json",
+    "sha256": "3e18b729181cb6b9e6a8b4aa7e0f9d64740b41ec23fe89b74fe00c6b0dff8b85",
+    "status": "PASS within independently measured FD uncertainty"
+  },
+  "dtinv_secondary_artifact": {
+    "path": "/mnt/d/Softwareprojekte/DENISE-Black-Edition/tests/m5f_density_gradient_dtinv3.json",
+    "sha256": "40bf727edc73f619660d4a2fa99154e79e231fdc891681acf6fe2549e47726d7",
+    "status": "FAIL fixed uncertainty-based acceptance",
+    "failed_component": "M",
+    "absolute_k_error": 8.438930016518853e-05,
+    "acceptance_ceiling": 7.024640519716417e-05
+  },
+  "verdict": "ADDITIONAL DEFECT IDENTIFIED",
+  "verdict_reason": "DTINV=1 homogeneous and heterogeneous R/M/T decomposition closes, but the single DTINV=3 material check exceeds its predefined finite-difference uncertainty ceiling."
+}

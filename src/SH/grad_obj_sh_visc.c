@@ -75,6 +75,8 @@ double grad_obj_sh_visc(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, st
 	/*initialize gradient matrices for each shot with zeros*/
 	init_grad((*fwiSH).waveconv_u_shot);
 	init_grad((*fwiSH).waveconv_rho_shot);
+	init_grad((*fwiSH).waveconv_u_x_shot);
+	init_grad((*fwiSH).waveconv_u_y_shot);
 	init_grad((*fwiSH).waveconv_ts_shot);
 
 	if((EPRECOND==1)||(EPRECOND==3)){
