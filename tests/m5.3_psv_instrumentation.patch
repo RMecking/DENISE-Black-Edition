@@ -1,0 +1,42 @@
+diff --git a/src/PSV/ass_gradPSV.c b/src/PSV/ass_gradPSV.c
+index d0578d0..11c7801 100644
+--- a/src/PSV/ass_gradPSV.c
++++ b/src/PSV/ass_gradPSV.c
+@@ -148,6 +148,14 @@ void ass_gradPSV(struct fwiPSV *fwiPSV, struct matPSV *matPSV, int iter){
+ 	 
+     		}
+ 	}
++
++#ifdef M53_PSV_DUMP_RAW
++	/* M5.3 diagnostic only: write physical gradients before the optimizer
++	 * applies its C_vp/C_vs/C_rho normalization. */
++	writemod("jacobian/m53_raw_vp", (*fwiPSV).waveconv_shot, 3);
++	writemod("jacobian/m53_raw_vs", (*fwiPSV).waveconv_u_shot, 3);
++	writemod("jacobian/m53_raw_rho", (*fwiPSV).waveconv_rho_shot, 3);
++#endif
+ 	
+ }
+ 
+diff --git a/src/PSV/update_v_PML_PSV.c b/src/PSV/update_v_PML_PSV.c
+index aa04c5c..1b365d2 100644
+--- a/src/PSV/update_v_PML_PSV.c
++++ b/src/PSV/update_v_PML_PSV.c
+@@ -758,11 +758,17 @@ for (j=ny1;j<=ny2;j++){
+ 		    j=(int)srcpos_loc[2][l];
+ 		    
+                     if((GRAD_FORM==1)||(GRAD_FORM==2)){
++#ifdef M53_PSV_RECEIVER_METRIC
++		       if(QUELLTYPB==1){vx[j][i] += rip[j][i]*signals[l][nt];
++		                        vy[j][i] += rjp[j][i]*signals1[l][nt];}
++		       if(QUELLTYPB==2||QUELLTYPB==6||QUELLTYPB==7){vy[j][i] += rjp[j][i]*signals1[l][nt];}
++		       if(QUELLTYPB==3||QUELLTYPB==5||QUELLTYPB==7){vx[j][i] += rip[j][i]*signals[l][nt];}
++#else
+ 		       if(QUELLTYPB==1){vx[j][i] += signals[l][nt];    /* single force in x */
+ 		                        vy[j][i] += signals1[l][nt];}  /* + single force in y */
+-
+ 		       if(QUELLTYPB==2||QUELLTYPB==6||QUELLTYPB==7){vy[j][i] += signals1[l][nt];}  /* single force in y */
+ 		       if(QUELLTYPB==3||QUELLTYPB==5||QUELLTYPB==7){vx[j][i] += signals[l][nt];}   /* single force in x */
++#endif
+                     }
+ 
+ 		}}                         
