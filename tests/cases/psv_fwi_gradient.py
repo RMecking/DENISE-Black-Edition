@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from array import array
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -111,6 +112,115 @@ def perturbed_model(
     return model
 
 
+def _centered_normalized(values: Sequence[float]) -> list[float]:
+    mean = math.fsum(values) / len(values)
+    centered = [value - mean for value in values]
+    scale = max(abs(value) for value in centered)
+    if scale == 0.0:
+        raise ValueError("spatial pattern must vary")
+    return [value / scale for value in centered]
+
+
+def _float32_values(values: Sequence[float]) -> list[float]:
+    return array("f", values).tolist()
+
+
+def heterogeneous_model(config: PSVFWIGradientConfig) -> dict[str, list[float]]:
+    """Smooth positive current model with variation across both MPI seams."""
+    patterns: dict[str, list[float]] = {name: [] for name in ("vp", "vs", "rho")}
+    for ix in range(1, config.nx + 1):
+        x = (ix - 0.5) / config.nx
+        for iy in range(1, config.ny + 1):
+            y = (iy - 0.5) / config.ny
+            patterns["vp"].append(
+                math.sin(2.0 * math.pi * x) * math.cos(2.0 * math.pi * y)
+                + 0.30 * math.cos(4.0 * math.pi * x + math.pi * y)
+            )
+            patterns["vs"].append(
+                math.cos(2.0 * math.pi * x - 0.35) * math.sin(2.0 * math.pi * y)
+                + 0.25 * math.sin(math.pi * x + 3.0 * math.pi * y)
+            )
+            patterns["rho"].append(
+                math.sin(2.0 * math.pi * (x + y))
+                + 0.35 * math.cos(3.0 * math.pi * x) * math.cos(2.0 * math.pi * y)
+            )
+    amplitudes = {"vp": 0.06, "vs": 0.07, "rho": 0.05}
+    references = {
+        "vp": config.vp_m_s,
+        "vs": config.vs_m_s,
+        "rho": config.density_kg_m3,
+    }
+    return {
+        name: _float32_values([
+            references[name] * (1.0 + amplitudes[name] * weight)
+            for weight in _centered_normalized(patterns[name])
+        ])
+        for name in patterns
+    }
+
+
+def heterogeneous_direction(config: PSVFWIGradientConfig) -> dict[str, list[float]]:
+    """Joint smooth direction distinct from the homogeneous Gaussian gate."""
+    raw: dict[str, list[float]] = {name: [] for name in ("vp", "vs", "rho")}
+    for ix in range(1, config.nx + 1):
+        x = (ix - 0.5) / config.nx
+        for iy in range(1, config.ny + 1):
+            y = (iy - 0.5) / config.ny
+            boundary_taper = math.sin(math.pi * x) ** 2 * math.sin(math.pi * y) ** 2
+            envelope = (
+                boundary_taper
+                * math.exp(-((x - 0.54) ** 2 + (y - 0.48) ** 2) / 0.16)
+            )
+            raw["vp"].append(envelope * math.sin(math.pi * x) * math.cos(2.0 * math.pi * y))
+            raw["vs"].append(envelope * math.cos(2.0 * math.pi * x + 0.2) * math.sin(math.pi * y))
+            raw["rho"].append(envelope * math.sin(2.0 * math.pi * (x - y) + 0.4))
+    return {name: _centered_normalized(values) for name, values in raw.items()}
+
+
+def heterogeneous_target_model(
+    config: PSVFWIGradientConfig,
+    model: Mapping[str, Sequence[float]],
+) -> dict[str, list[float]]:
+    shapes = {
+        "vp": gaussian_direction(
+            nx=config.nx, ny=config.ny, dh_m=config.dh_m,
+            center_x_m=360.0, center_y_m=430.0, sigma_m=95.0,
+        ),
+        "vs": gaussian_direction(
+            nx=config.nx, ny=config.ny, dh_m=config.dh_m,
+            center_x_m=520.0, center_y_m=300.0, sigma_m=85.0,
+        ),
+        "rho": gaussian_direction(
+            nx=config.nx, ny=config.ny, dh_m=config.dh_m,
+            center_x_m=430.0, center_y_m=390.0, sigma_m=105.0,
+        ),
+    }
+    return {
+        name: _float32_values([
+            value * (1.0 + 0.015 * weight)
+            for value, weight in zip(model[name], shapes[name])
+        ])
+        for name in ("vp", "vs", "rho")
+    }
+
+
+def heterogeneous_perturbed_model(
+    model: Mapping[str, Sequence[float]],
+    direction: Mapping[str, Sequence[float]],
+    epsilon: float,
+) -> dict[str, list[float]]:
+    result = {
+        name: _float32_values([
+            value * (1.0 + epsilon * weight)
+            for value, weight in zip(model[name], direction[name])
+        ])
+        for name in ("vp", "vs", "rho")
+    }
+    if any(value <= 0.0 for values in result.values() for value in values):
+        raise ValueError("heterogeneous perturbed model is not positive")
+    return result
+
+
 def _base_config(config: PSVFWIGradientConfig) -> HomogeneousPSVConfig:
     return HomogeneousPSVConfig(
         nx=config.nx,
@@ -141,8 +251,9 @@ def _replace(records: list[str], key: str, value: str) -> None:
     records[indices[0]] = f"{key} ={value}"
 
 
-def _records(config: PSVFWIGradientConfig, *, mode: int, grad_form: int, data_components: int) -> list[str]:
-    records = _parameter_lines(_base_config(config), 1, 1)
+def _records(config: PSVFWIGradientConfig, *, mode: int, grad_form: int,
+             data_components: int, nprocx: int, nprocy: int) -> list[str]:
+    records = _parameter_lines(_base_config(config), nprocx, nprocy)
     overrides = {
         "MODE": str(mode),
         "MFILE": "model/current",
@@ -194,6 +305,8 @@ def generate_case(
     observed_x: Path | None = None,
     observed_y: Path | None = None,
     metadata: Mapping[str, object] | None = None,
+    nprocx: int = 1,
+    nprocy: int = 1,
 ) -> None:
     for name in ("model", "su", "log", "snap", "wavelet", "jacobian", "taper", "picked_times", "trace_kill", "gravity", "inverted"):
         (directory / name).mkdir(parents=True, exist_ok=True)
@@ -215,14 +328,18 @@ def generate_case(
             raise ValueError("FWI case requires both observed velocity files")
         (directory / "observed_x.su.shot1").write_bytes(observed_x.read_bytes())
         (directory / "observed_y.su.shot1").write_bytes(observed_y.read_bytes())
-    records = _records(config, mode=mode, grad_form=grad_form, data_components=data_components)
+    records = _records(config, mode=mode, grad_form=grad_form,
+                       data_components=data_components, nprocx=nprocx,
+                       nprocy=nprocy)
     text = "# Generated elastic PSV FWI gradient audit case\n" + "".join(
         f"# positional parameter {index:03d}\n{record}\n"
         for index, record in enumerate(records, start=1)
     )
     (directory / "denise.inp").write_text(text, encoding="ascii")
     _write_workflow(directory)
-    payload = config.as_metadata() | {"mode": mode, "grad_form": grad_form, "data_components": data_components}
+    payload = config.as_metadata() | {"mode": mode, "grad_form": grad_form,
+                                      "data_components": data_components,
+                                      "nprocx": nprocx, "nprocy": nprocy}
     if metadata:
         payload.update(metadata)
     (directory / "case.json").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")

@@ -74,6 +74,9 @@ struct fwiPSV{
    float  ** Vp0, ** Vs0, ** Rho0;
    float  **waveconv, **waveconv_lam, **waveconv_mu, **waveconv_rho, **waveconv_rho_s, **waveconv_u;
    float **waveconv_shot, **waveconv_u_shot, **waveconv_rho_shot;
+   /* Native staggered-grid correlations for the exact elastic PSV VJP. */
+   float **waveconv_lam_exact, **waveconv_mu_normal_exact, **waveconv_mu_xy_exact;
+   float **waveconv_rho_x_exact, **waveconv_rho_y_exact;
    float ** gradg, ** gradp,** gradg_rho, ** gradp_rho, ** gradg_u, ** gradp_u;
    float  *forward_prop_x, *forward_prop_y, *forward_prop_rho_x, *forward_prop_u, *forward_prop_rho_y;
 } fwiPSV;
@@ -227,6 +230,10 @@ void alloc_PSV(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML);
 
 void ass_gradPSV(struct fwiPSV *fwiPSV, struct matPSV *matPSV, int iter);
 
+void assemble_gradPSV_exact(struct fwiPSV *fwiPSV, struct matPSV *matPSV,
+                            struct mpiPSV *mpiPSV, int iter,
+                            MPI_Request *req_send, MPI_Request *req_rec);
+
 float calc_mat_change_test_PSV(float  **  waveconv, float  **  waveconv_rho, float  **  waveconv_u, float  **  rho, float  **  rhonp1, float **  pi, float **  pinp1, float **  u, float **  unp1, 
 int iter, int epstest, float eps_scale, int itest);
 
@@ -343,7 +350,8 @@ float **  vx, float **  vxp1, float **  vxm1, float ** vy, float **  vyp1, float
 float ** sxy, float  **rip, float **rjp, float **  srcpos_loc, float ** signals, float ** signals1, int nsrc, float ** absorb_coeff,
 float *hc, int infoout,int sw, float * K_x, float * a_x, float * b_x, float * K_x_half, float * a_x_half, float * b_x_half,
 float * K_y, float * a_y, float * b_y, float * K_y_half, float * a_y_half, float * b_y_half,
-float ** psi_sxx_x, float ** psi_syy_y, float ** psi_sxy_y, float ** psi_syx_x);
+float ** psi_sxx_x, float ** psi_syy_y, float ** psi_sxy_y, float ** psi_syx_x,
+int exact_elastic_psv_adjoint);
 
 void zero_denise_elast_PSV(int ny1, int ny2, int nx1, int nx2, float ** vx, float ** vy, float ** sxx, float ** syy, float ** sxy, float ** vxm1, float ** vym1, 
 float ** vxym1, float ** vxp1, float ** vyp1, float ** psi_sxx_x, float ** psi_sxy_x, float ** psi_vxx, float ** psi_vyx, float ** psi_syy_y, float ** psi_sxy_y, 
