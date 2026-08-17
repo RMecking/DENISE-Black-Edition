@@ -23,6 +23,7 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 	extern float C_vp, C_vs, C_rho;
 	extern char MFILE[STRING_SIZE];
 	extern int NSHOT1, NSHOT2, NSHOTS, COLOR, NCOLORS;
+	extern int MODE, L, INVMAT1, GRAD_FORM;
 	extern MPI_Comm SHOT_COMM, DOMAIN_COMM;
 
 	/* local variables */
@@ -67,6 +68,11 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 		init_grad((*fwiPSV).waveconv_shot);
 		init_grad((*fwiPSV).waveconv_u_shot);
 		init_grad((*fwiPSV).waveconv_rho_shot);
+		init_grad((*fwiPSV).waveconv_lam_exact);
+		init_grad((*fwiPSV).waveconv_mu_normal_exact);
+		init_grad((*fwiPSV).waveconv_mu_xy_exact);
+		init_grad((*fwiPSV).waveconv_rho_x_exact);
+		init_grad((*fwiPSV).waveconv_rho_y_exact);
 
 		if ((EPRECOND == 1) || (EPRECOND == 3))
 		{
@@ -212,7 +218,12 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 
 
 		/* assemble PSV gradients for each shot */
-		ass_gradPSV(fwiPSV, matPSV, iter);
+		if((MODE==1)&&(L==0)&&(INVMAT1==1)&&
+		   ((GRAD_FORM==1)||(GRAD_FORM==2)))
+			assemble_gradPSV_exact(fwiPSV, matPSV, mpiPSV, iter,
+			                       req_send, req_rec);
+		else
+			ass_gradPSV(fwiPSV, matPSV, iter);
 		MPI_Barrier(SHOT_COMM);
 
 		/* apply preconditioning operators */

@@ -1,0 +1,588 @@
+diff --git a/include/fd.h b/include/fd.h
+index e801691..02ad6ce 100644
+--- a/include/fd.h
++++ b/include/fd.h
+@@ -74,6 +74,9 @@ struct fwiPSV{
+    float  ** Vp0, ** Vs0, ** Rho0;
+    float  **waveconv, **waveconv_lam, **waveconv_mu, **waveconv_rho, **waveconv_rho_s, **waveconv_u;
+    float **waveconv_shot, **waveconv_u_shot, **waveconv_rho_shot;
++   /* Native staggered-grid correlations for the exact elastic PSV VJP. */
++   float **waveconv_lam_exact, **waveconv_mu_normal_exact, **waveconv_mu_xy_exact;
++   float **waveconv_rho_x_exact, **waveconv_rho_y_exact;
+    float ** gradg, ** gradp,** gradg_rho, ** gradp_rho, ** gradg_u, ** gradp_u;
+    float  *forward_prop_x, *forward_prop_y, *forward_prop_rho_x, *forward_prop_u, *forward_prop_rho_y;
+ } fwiPSV;
+@@ -227,6 +230,10 @@ void alloc_PSV(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML);
+ 
+ void ass_gradPSV(struct fwiPSV *fwiPSV, struct matPSV *matPSV, int iter);
+ 
++void assemble_gradPSV_exact(struct fwiPSV *fwiPSV, struct matPSV *matPSV,
++                            struct mpiPSV *mpiPSV, int iter,
++                            MPI_Request *req_send, MPI_Request *req_rec);
++
+ float calc_mat_change_test_PSV(float  **  waveconv, float  **  waveconv_rho, float  **  waveconv_u, float  **  rho, float  **  rhonp1, float **  pi, float **  pinp1, float **  u, float **  unp1, 
+ int iter, int epstest, float eps_scale, int itest);
+ 
+@@ -343,7 +350,8 @@ float **  vx, float **  vxp1, float **  vxm1, float ** vy, float **  vyp1, float
+ float ** sxy, float  **rip, float **rjp, float **  srcpos_loc, float ** signals, float ** signals1, int nsrc, float ** absorb_coeff,
+ float *hc, int infoout,int sw, float * K_x, float * a_x, float * b_x, float * K_x_half, float * a_x_half, float * b_x_half,
+ float * K_y, float * a_y, float * b_y, float * K_y_half, float * a_y_half, float * b_y_half,
+-float ** psi_sxx_x, float ** psi_syy_y, float ** psi_sxy_y, float ** psi_syx_x);
++float ** psi_sxx_x, float ** psi_syy_y, float ** psi_sxy_y, float ** psi_syx_x,
++int exact_elastic_psv_adjoint);
+ 
+ void zero_denise_elast_PSV(int ny1, int ny2, int nx1, int nx2, float ** vx, float ** vy, float ** sxx, float ** syy, float ** sxy, float ** vxm1, float ** vym1, 
+ float ** vxym1, float ** vxp1, float ** vyp1, float ** psi_sxx_x, float ** psi_sxy_x, float ** psi_vxx, float ** psi_vyx, float ** psi_syy_y, float ** psi_sxy_y, 
+diff --git a/src/Makefile b/src/Makefile
+index 9accb6a..25bd32a 100644
+--- a/src/Makefile
++++ b/src/Makefile
+@@ -84,6 +84,7 @@ DENISE += alloc_fwiPSV.c \
+  	  alloc_seisPSV.c \
+ 	  alloc_seisPSVfull.c \
+ 	  alloc_seisPSVfwi.c \
++	  assemble_gradPSV_exact.c \
+ 	  ass_gradPSV.c \
+ 	  calc_mat_change_test_PSV.c \
+ 	  calc_res_PSV.c \
+diff --git a/src/PSV/FWI_PSV.c b/src/PSV/FWI_PSV.c
+index f96f8a6..7b2a975 100644
+--- a/src/PSV/FWI_PSV.c
++++ b/src/PSV/FWI_PSV.c
+@@ -888,6 +888,11 @@ frequency MIN_ITER */
+   free_matrix(fwiPSV.waveconv_u, -nd + 1, NY + nd, -nd + 1, NX + nd);
+   free_matrix(fwiPSV.waveconv_mu, -nd + 1, NY + nd, -nd + 1, NX + nd);
+   free_matrix(fwiPSV.waveconv_u_shot, -nd + 1, NY + nd, -nd + 1, NX + nd);
++  free_matrix(fwiPSV.waveconv_lam_exact, -nd + 1, NY + nd, -nd + 1, NX + nd);
++  free_matrix(fwiPSV.waveconv_mu_normal_exact, -nd + 1, NY + nd, -nd + 1, NX + nd);
++  free_matrix(fwiPSV.waveconv_mu_xy_exact, -nd + 1, NY + nd, -nd + 1, NX + nd);
++  free_matrix(fwiPSV.waveconv_rho_x_exact, -nd + 1, NY + nd, -nd + 1, NX + nd);
++  free_matrix(fwiPSV.waveconv_rho_y_exact, -nd + 1, NY + nd, -nd + 1, NX + nd);
+ 
+   free_vector(fwiPSV.forward_prop_x, 1, NY * NX * NT);
+   free_vector(fwiPSV.forward_prop_y, 1, NY * NX * NT);
+diff --git a/src/PSV/alloc_fwiPSV.c b/src/PSV/alloc_fwiPSV.c
+index 7edfbdb..04fc4ac 100644
+--- a/src/PSV/alloc_fwiPSV.c
++++ b/src/PSV/alloc_fwiPSV.c
+@@ -44,6 +44,12 @@ void alloc_fwiPSV(struct fwiPSV *fwiPSV){
+ 	(*fwiPSV).waveconv_mu = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
+ 	(*fwiPSV).waveconv_u_shot = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
+ 
++	(*fwiPSV).waveconv_lam_exact = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
++	(*fwiPSV).waveconv_mu_normal_exact = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
++	(*fwiPSV).waveconv_mu_xy_exact = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
++	(*fwiPSV).waveconv_rho_x_exact = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
++	(*fwiPSV).waveconv_rho_y_exact = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
++
+ 	(*fwiPSV).forward_prop_x =  vector(1,NXNYI*(NTDTINV));
+ 	(*fwiPSV).forward_prop_y =  vector(1,NXNYI*(NTDTINV));
+ 	(*fwiPSV).forward_prop_rho_x =  vector(1,NXNYI*(NTDTINV));
+diff --git a/src/PSV/assemble_gradPSV_exact.c b/src/PSV/assemble_gradPSV_exact.c
+new file mode 100644
+index 0000000..5f7dd84
+--- /dev/null
++++ b/src/PSV/assemble_gradPSV_exact.c
+@@ -0,0 +1,167 @@
++/*------------------------------------------------------------------------
++ * Assemble the exact elastic PSV INVMAT1=1 shot gradient.
++ *
++ * Normal stresses are cell-centred, shear stress and mu_xy are located at
++ * cell corners, and inverse densities Rx/Ry live on their native faces.
++ * The native correlations remain separate until the corresponding spatial
++ * material-map transposes have been applied.
++ * ----------------------------------------------------------------------*/
++
++#include "fd.h"
++
++static double cell_mu(float rho, float vs){
++    return (double)rho*(double)vs*(double)vs;
++}
++
++static double corner_mu(float **rho, float **vs, int j, int i){
++    double m00=cell_mu(rho[j][i],vs[j][i]);
++    double m10=cell_mu(rho[j][i+1],vs[j][i+1]);
++    double m01=cell_mu(rho[j+1][i],vs[j+1][i]);
++    double m11=cell_mu(rho[j+1][i+1],vs[j+1][i+1]);
++    if((m00<=0.0)||(m10<=0.0)||(m01<=0.0)||(m11<=0.0)) return 0.0;
++    return 4.0/(1.0/m00+1.0/m10+1.0/m01+1.0/m11);
++}
++
++static double corner_cell_weight(float **rho, float **vs,
++                                 int corner_j, int corner_i,
++                                 int cell_j, int cell_i){
++    double mu_corner=corner_mu(rho,vs,corner_j,corner_i);
++    double mu_cell=cell_mu(rho[cell_j][cell_i],vs[cell_j][cell_i]);
++    if((mu_corner<=0.0)||(mu_cell<=0.0)) return 0.0;
++    return mu_corner*mu_corner/(4.0*mu_cell*mu_cell);
++}
++
++static double inverse_density_x(float **rho, int j, int i){
++    double denominator=(double)rho[j][i]+(double)rho[j][i+1];
++    return (denominator>0.0)?2.0/denominator:0.0;
++}
++
++static double inverse_density_y(float **rho, int j, int i){
++    double denominator=(double)rho[j][i]+(double)rho[j+1][i];
++    return (denominator>0.0)?2.0/denominator:0.0;
++}
++
++void assemble_gradPSV_exact(struct fwiPSV *fwiPSV, struct matPSV *matPSV,
++                            struct mpiPSV *mpiPSV, int iter,
++                            MPI_Request *req_send, MPI_Request *req_rec){
++    extern int NX,NY,NXG,NYG,POS[3],BOUNDARY,GRAD_FORM,DTINV;
++    extern int INV_VP_ITER,INV_VS_ITER,INV_RHO_ITER;
++    extern float DT;
++    int i,j,gi,gj,cj,ci;
++    double rho,vp,vs,mu,lambda,bulk;
++    double csum,cdiff,cxy,g_lambda,g_mu,g_mu_corner,g_rho_mass;
++    double mu_corner,rx,ry,g_rx,g_ry;
++
++    /* The third exchange component has the sxy/corner halo layout. */
++    exchange_s_PSV((*fwiPSV).waveconv_lam_exact,
++                   (*fwiPSV).waveconv_mu_normal_exact,
++                   (*fwiPSV).waveconv_mu_xy_exact,
++                   (*mpiPSV).bufferlef_to_rig,
++                   (*mpiPSV).bufferrig_to_lef,
++                   (*mpiPSV).buffertop_to_bot,
++                   (*mpiPSV).bufferbot_to_top,req_send,req_rec);
++
++    /* Each face correlation is owned by the lower-index adjacent cell.  The
++     * VJP needs that value in the neighbour's negative halo; the sxx/ry
++     * stress exchange has precisely this ownership direction in x/y. */
++    exchange_s_PSV((*fwiPSV).waveconv_rho_x_exact,
++                   (*fwiPSV).waveconv_rho_y_exact,
++                   (*fwiPSV).waveconv_mu_xy_exact,
++                   (*mpiPSV).bufferlef_to_rig,
++                   (*mpiPSV).bufferrig_to_lef,
++                   (*mpiPSV).buffertop_to_bot,
++                   (*mpiPSV).bufferbot_to_top,req_send,req_rec);
++
++    for(i=1;i<=NX;i++){
++        gi=POS[1]*NX+i;
++        for(j=1;j<=NY;j++){
++            gj=POS[2]*NY+j;
++            rho=(*matPSV).prho[j][i];
++            vp=(*matPSV).ppi[j][i];
++            vs=(*matPSV).pu[j][i];
++            mu=cell_mu((float)rho,(float)vs);
++            lambda=rho*vp*vp-2.0*mu;
++            bulk=lambda+mu;
++            csum=(*fwiPSV).waveconv_lam_exact[j][i];
++            cdiff=(*fwiPSV).waveconv_mu_normal_exact[j][i];
++
++            g_lambda=0.0;
++            g_mu=0.0;
++            if((rho>0.0)&&(vp>0.0)&&(vs>0.0)&&(mu>0.0)&&(bulk>0.0)){
++                /* GF1 stores stress, whereas GF2 stores stress rate.  The
++                 * legacy PSV adjoint stress variable is compliance-weighted;
++                 * the same -DT compliance VJP therefore closes both forms. */
++                g_lambda=-(double)DT*(double)DTINV*csum/
++                         (4.0*bulk*bulk);
++                g_mu=-(double)DT*(double)DTINV*0.25*
++                     (csum/(bulk*bulk)+cdiff/(mu*mu));
++
++                /* H_mu^T: this cell contributes to four surrounding corners. */
++                for(cj=j-1;cj<=j;cj++){
++                    for(ci=i-1;ci<=i;ci++){
++                        if((!BOUNDARY)&&
++                           (((gi==1)&&(ci==i-1))||
++                            ((gi==NXG)&&(ci==i)))) continue;
++                        if(((gj==1)&&(cj==j-1))||
++                           ((gj==NYG)&&(cj==j))) continue;
++                        mu_corner=corner_mu((*matPSV).prho,(*matPSV).pu,cj,ci);
++                        cxy=(*fwiPSV).waveconv_mu_xy_exact[cj][ci];
++                        if(mu_corner>0.0){
++                            g_mu_corner=-(double)DT*(double)DTINV*cxy/
++                                        (mu_corner*mu_corner);
++                            g_mu+=corner_cell_weight((*matPSV).prho,(*matPSV).pu,
++                                                     cj,ci,j,i)*g_mu_corner;
++                        }
++                    }
++                }
++            }
++
++            /* R_x/R_y VJPs.  Keeping g_R explicit documents the exact face
++             * map even though R^2 cancels algebraically for positive density. */
++            g_rho_mass=0.0;
++            if((BOUNDARY)||(gi<NXG)){
++                rx=inverse_density_x((*matPSV).prho,j,i);
++                if(rx>0.0){
++                    g_rx=(double)DT*(double)DTINV*
++                         (*fwiPSV).waveconv_rho_x_exact[j][i]/(rx*rx);
++                    g_rho_mass+=-0.5*rx*rx*g_rx;
++                }
++            }
++            if((BOUNDARY)||(gi>1)){
++                rx=inverse_density_x((*matPSV).prho,j,i-1);
++                if(rx>0.0){
++                    g_rx=(double)DT*(double)DTINV*
++                         (*fwiPSV).waveconv_rho_x_exact[j][i-1]/(rx*rx);
++                    g_rho_mass+=-0.5*rx*rx*g_rx;
++                }
++            }
++            if(gj<NYG){
++                ry=inverse_density_y((*matPSV).prho,j,i);
++                if(ry>0.0){
++                    g_ry=(double)DT*(double)DTINV*
++                         (*fwiPSV).waveconv_rho_y_exact[j][i]/(ry*ry);
++                    g_rho_mass+=-0.5*ry*ry*g_ry;
++                }
++            }
++            if(gj>1){
++                ry=inverse_density_y((*matPSV).prho,j-1,i);
++                if(ry>0.0){
++                    g_ry=(double)DT*(double)DTINV*
++                         (*fwiPSV).waveconv_rho_y_exact[j-1][i]/(ry*ry);
++                    g_rho_mass+=-0.5*ry*ry*g_ry;
++                }
++            }
++
++            (*fwiPSV).waveconv_lam[j][i]=(float)g_lambda;
++            (*fwiPSV).waveconv_mu[j][i]=(float)g_mu;
++            (*fwiPSV).waveconv_rho_s[j][i]=(float)g_rho_mass;
++            (*fwiPSV).waveconv_shot[j][i]=(iter<INV_VP_ITER)?0.0f:
++                (float)(2.0*rho*vp*g_lambda);
++            (*fwiPSV).waveconv_u_shot[j][i]=(iter<INV_VS_ITER)?0.0f:
++                (float)(-4.0*rho*vs*g_lambda+2.0*rho*vs*g_mu);
++            (*fwiPSV).waveconv_rho_shot[j][i]=(iter<INV_RHO_ITER)?0.0f:
++                (float)((vp*vp-2.0*vs*vs)*g_lambda+vs*vs*g_mu+
++                        g_rho_mass);
++        }
++    }
++}
+diff --git a/src/PSV/grad_obj_psv.c b/src/PSV/grad_obj_psv.c
+index 56cce63..679d383 100644
+--- a/src/PSV/grad_obj_psv.c
++++ b/src/PSV/grad_obj_psv.c
+@@ -23,6 +23,7 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
+ 	extern float C_vp, C_vs, C_rho;
+ 	extern char MFILE[STRING_SIZE];
+ 	extern int NSHOT1, NSHOT2, NSHOTS, COLOR, NCOLORS;
++	extern int MODE, L, INVMAT1, GRAD_FORM;
+ 	extern MPI_Comm SHOT_COMM, DOMAIN_COMM;
+ 
+ 	/* local variables */
+@@ -67,6 +68,11 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
+ 		init_grad((*fwiPSV).waveconv_shot);
+ 		init_grad((*fwiPSV).waveconv_u_shot);
+ 		init_grad((*fwiPSV).waveconv_rho_shot);
++		init_grad((*fwiPSV).waveconv_lam_exact);
++		init_grad((*fwiPSV).waveconv_mu_normal_exact);
++		init_grad((*fwiPSV).waveconv_mu_xy_exact);
++		init_grad((*fwiPSV).waveconv_rho_x_exact);
++		init_grad((*fwiPSV).waveconv_rho_y_exact);
+ 
+ 		if ((EPRECOND == 1) || (EPRECOND == 3))
+ 		{
+@@ -212,7 +218,12 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
+ 
+ 
+ 		/* assemble PSV gradients for each shot */
+-		ass_gradPSV(fwiPSV, matPSV, iter);
++		if((MODE==1)&&(L==0)&&(INVMAT1==1)&&
++		   ((GRAD_FORM==1)||(GRAD_FORM==2)))
++			assemble_gradPSV_exact(fwiPSV, matPSV, mpiPSV, iter,
++			                       req_send, req_rec);
++		else
++			ass_gradPSV(fwiPSV, matPSV, iter);
+ 		MPI_Barrier(SHOT_COMM);
+ 
+ 		/* apply preconditioning operators */
+diff --git a/src/PSV/psv.c b/src/PSV/psv.c
+index f1e7cef..364dc37 100644
+--- a/src/PSV/psv.c
++++ b/src/PSV/psv.c
+@@ -29,9 +29,13 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
+ 
+ 	/* local variables */
+ 	int i, j, nt, lsamp, lsnap, nsnap, nd, hin1, imat, imat1, imat2, infoout;
++	int exact_elastic_psv_adjoint;
+ 	float tmp, tmp1, muss, lamss;
+ 
+ 	nd = FDORDER / 2 + 1;
++	exact_elastic_psv_adjoint=((MODE==1)&&(mode==1)&&(L==0)&&
++	                            (INVMAT1==1)&&
++	                            ((GRAD_FORM==1)||(GRAD_FORM==2)));
+ 
+ 	/*MPI_Barrier(MPI_COMM_WORLD);*/
+ 
+@@ -117,7 +121,7 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
+ 			update_v_PML_PSV(1, NX, 1, NY, nt, (*wavePSV).pvx, (*wavePSV).pvxp1, (*wavePSV).pvxm1, (*wavePSV).pvy, (*wavePSV).pvyp1, (*wavePSV).pvym1, (*wavePSV).uttx, (*wavePSV).utty, (*wavePSV).psxx, (*wavePSV).psyy,
+ 							 (*wavePSV).psxy, (*matPSV).prip, (*matPSV).prjp, (*acq).srcpos_loc, (*acq).signals, (*acq).signals, nsrc_loc, (*wavePSV_PML).absorb_coeff, hc, infoout, 0, (*wavePSV_PML).K_x, (*wavePSV_PML).a_x,
+ 							 (*wavePSV_PML).b_x, (*wavePSV_PML).K_x_half, (*wavePSV_PML).a_x_half, (*wavePSV_PML).b_x_half, (*wavePSV_PML).K_y, (*wavePSV_PML).a_y, (*wavePSV_PML).b_y, (*wavePSV_PML).K_y_half,
+-							 (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_sxx_x, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y, (*wavePSV_PML).psi_sxy_x);
++							 (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_sxx_x, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y, (*wavePSV_PML).psi_sxy_x, 0);
+ 		}
+ 
+ 
+@@ -125,7 +129,7 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
+ 	         update_v_PML_PSV(1, NX, 1, NY, nt, (*wavePSV).pvx, (*wavePSV).pvxp1, (*wavePSV).pvxm1, (*wavePSV).pvy, (*wavePSV).pvyp1, (*wavePSV).pvym1, (*wavePSV).uttx, (*wavePSV).utty, (*wavePSV).psxx, (*wavePSV).psyy, 
+                               (*wavePSV).psxy, (*matPSV).prip, (*matPSV).prjp, (*acq).srcpos_loc_back, (*seisPSVfwi).sectionvxdiff, (*seisPSVfwi).sectionvydiff,ntr,(*wavePSV_PML).absorb_coeff,hc,infoout, 1, (*wavePSV_PML).K_x,
+  	                      (*wavePSV_PML).a_x, (*wavePSV_PML).b_x, (*wavePSV_PML).K_x_half, (*wavePSV_PML).a_x_half, (*wavePSV_PML).b_x_half, (*wavePSV_PML).K_y, (*wavePSV_PML).a_y, (*wavePSV_PML).b_y, (*wavePSV_PML).K_y_half, 
+-                              (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_sxx_x, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y, (*wavePSV_PML).psi_sxy_x);
++                              (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_sxx_x, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y, (*wavePSV_PML).psi_sxy_x, exact_elastic_psv_adjoint);
+                 }
+ 		                 
+ 		/*if (MYID==0){
+@@ -134,7 +138,7 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
+ 			update_v_PML_PSV(1, NX, 1, NY, nt, (*wavePSV).pvx, (*wavePSV).pvxp1, (*wavePSV).pvxm1, (*wavePSV).pvy, (*wavePSV).pvyp1, (*wavePSV).pvym1, (*wavePSV).uttx, (*wavePSV).utty, (*wavePSV).psxx, (*wavePSV).psyy,
+ 							 (*wavePSV).psxy, (*matPSV).prip, (*matPSV).prjp, (*acq).srcpos_loc_back, (*seisPSVfwi).sectionvxdiff, (*seisPSVfwi).sectionvydiff, ntr, (*wavePSV_PML).absorb_coeff, hc, infoout, 1, (*wavePSV_PML).K_x,
+ 							 (*wavePSV_PML).a_x, (*wavePSV_PML).b_x, (*wavePSV_PML).K_x_half, (*wavePSV_PML).a_x_half, (*wavePSV_PML).b_x_half, (*wavePSV_PML).K_y, (*wavePSV_PML).a_y, (*wavePSV_PML).b_y, (*wavePSV_PML).K_y_half,
+-							 (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_sxx_x, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y, (*wavePSV_PML).psi_sxy_x);
++							 (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_sxx_x, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y, (*wavePSV_PML).psi_sxy_x, 0);
+ 		}
+ 
+ 		/*if (MYID_SHOT==0){
+@@ -146,6 +150,56 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
+ 		/* exchange of particle velocities between PEs */
+ 		exchange_v_PSV((*wavePSV).pvx, (*wavePSV).pvy, (*mpiPSV).bufferlef_to_rig, (*mpiPSV).bufferrig_to_lef, (*mpiPSV).buffertop_to_bot, (*mpiPSV).bufferbot_to_top, req_send, req_rec);
+ 
++		/* Form 1 needs the B-state velocity multiplier: the time integral
++		 * immediately after receiver injection and the reverse V transpose. */
++		if(exact_elastic_psv_adjoint && (GRAD_FORM==1)){
++			for(i=1;i<=NX;i++){
++				for(j=1;j<=NY;j++){
++					(*wavePSV).pvxp1[j][i]+=(*wavePSV).pvx[j][i]*DT;
++					(*wavePSV).pvyp1[j][i]+=(*wavePSV).pvy[j][i]*DT;
++				}
++			}
++		}
++
++		/* C -> B is applied next.  Therefore PRE stress is the exact material
++		 * multiplier and B velocity is the exact inverse-density multiplier. */
++		if(exact_elastic_psv_adjoint &&
++		   (DTINV_help[NT-nt+1]==1)){
++			imat=((NXNYI*NTDTINV)-hin*NXNYI)+1;
++			for(i=1;i<=NX;i=i+IDXI){
++				for(j=1;j<=NY;j=j+IDYI){
++					(*fwiPSV).waveconv_lam_exact[j][i]+=
++						((*fwiPSV).forward_prop_x[imat]+
++						 (*fwiPSV).forward_prop_y[imat])*
++						((*wavePSV).psxx[j][i]+(*wavePSV).psyy[j][i]);
++					(*fwiPSV).waveconv_mu_normal_exact[j][i]+=
++						((*fwiPSV).forward_prop_x[imat]-
++						 (*fwiPSV).forward_prop_y[imat])*
++						((*wavePSV).psxx[j][i]-(*wavePSV).psyy[j][i]);
++					(*fwiPSV).waveconv_mu_xy_exact[j][i]+=
++						(*fwiPSV).forward_prop_u[imat]*(*wavePSV).psxy[j][i];
++					if(GRAD_FORM==1){
++						(*fwiPSV).waveconv_rho_x_exact[j][i]+=
++							(*wavePSV).pvxp1[j][i]*
++							(*fwiPSV).forward_prop_rho_x[imat];
++						(*fwiPSV).waveconv_rho_y_exact[j][i]+=
++							(*wavePSV).pvyp1[j][i]*
++							(*fwiPSV).forward_prop_rho_y[imat];
++					}else{
++						(*fwiPSV).waveconv_rho_x_exact[j][i]+=
++							(*wavePSV).pvx[j][i]*
++							(*fwiPSV).forward_prop_rho_x[imat];
++						(*fwiPSV).waveconv_rho_y_exact[j][i]+=
++							(*wavePSV).pvy[j][i]*
++							(*fwiPSV).forward_prop_rho_y[imat];
++					}
++					imat++;
++				}
++			}
++			if(EPRECOND==1) eprecond(Wr,(*wavePSV).pvx,(*wavePSV).pvy);
++			hin++;
++		}
++
+ 		/*if (MYID_SHOT==0){
+ 		  time5=MPI_Wtime();
+ 		  time_av_v_exchange+=(time5-time4);
+@@ -310,7 +364,8 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
+ 
+ 		/* save adjoint wavefields for time-domain inversion and partially assemble gradients */
+ 		/* ---------------------------------------------------------------------------------- */
+-		if ((mode == 1) && (DTINV_help[NT - nt + 1] == 1))
++		if ((mode == 1) && (!exact_elastic_psv_adjoint) &&
++		    (DTINV_help[NT - nt + 1] == 1))
+ 		{
+ 
+ 			imat = ((NXNYI * (NTDTINV)) - hin * NXNYI) + 1;
+diff --git a/src/PSV/update_v_PML_PSV.c b/src/PSV/update_v_PML_PSV.c
+index aa04c5c..eaafdbc 100644
+--- a/src/PSV/update_v_PML_PSV.c
++++ b/src/PSV/update_v_PML_PSV.c
+@@ -16,7 +16,8 @@ void update_v_PML_PSV(int nx1, int nx2, int ny1, int ny2, int nt,
+ 	float ** sxy, float  **rip, float **rjp, float **  srcpos_loc, float ** signals, float ** signals1, int nsrc, float ** absorb_coeff,
+ 	float *hc, int infoout,int sw, float * K_x, float * a_x, float * b_x, float * K_x_half, float * a_x_half, float * b_x_half,
+         float * K_y, float * a_y, float * b_y, float * K_y_half, float * a_y_half, float * b_y_half,
+-        float ** psi_sxx_x, float ** psi_syy_y, float ** psi_sxy_y, float ** psi_sxy_x){
++        float ** psi_sxx_x, float ** psi_syy_y, float ** psi_sxy_y, float ** psi_sxy_x,
++        int exact_elastic_psv_adjoint){
+ 
+ 	int i, j,l,fdoh,m, h, h1;
+ 	float amp, dtdh, azi_rad;
+@@ -125,7 +126,7 @@ void update_v_PML_PSV(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;                  
+                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}   
+ 
+-                              if(sw==1){
++                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
+                                  vxp1[j][i] += DT*vx[j][i];
+                                  vyp1[j][i] += DT*vy[j][i];}
+ 
+@@ -137,7 +138,7 @@ void update_v_PML_PSV(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;    
+                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}   
+ 
+-                              if(sw==1){
++                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
+                                  vxp1[j][i] = vx[j][i]; 
+                                  vyp1[j][i] = vy[j][i];} 
+ 
+@@ -228,7 +229,7 @@ void update_v_PML_PSV(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;                  
+                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}   
+ 
+-                              if(sw==1){
++                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
+                                  vxp1[j][i] += DT*vx[j][i];
+                                  vyp1[j][i] += DT*vy[j][i];}
+ 
+@@ -240,7 +241,7 @@ void update_v_PML_PSV(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;    
+                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}   
+ 
+-                              if(sw==1){
++                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
+                                  vxp1[j][i] = vx[j][i]; 
+                                  vyp1[j][i] = vy[j][i];} 
+ 
+@@ -336,7 +337,7 @@ void update_v_PML_PSV(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;                  
+                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}   
+ 
+-                              if(sw==1){
++                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
+                                  vxp1[j][i] += DT*vx[j][i];
+                                  vyp1[j][i] += DT*vy[j][i];}
+ 
+@@ -348,7 +349,7 @@ void update_v_PML_PSV(int nx1, int nx2, int ny1, int ny2, int nt,
+                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;    
+                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}   
+ 
+-                              if(sw==1){
++                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
+                                  vxp1[j][i] = vx[j][i]; 
+                                  vyp1[j][i] = vy[j][i];} 
+ 
+@@ -452,7 +453,7 @@ for (j=ny1;j<=ny2;j++){
+                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;                 
+                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}                 
+ 
+-                              if(sw==1){ 
++                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
+                                  vxp1[j][i] += DT*vx[j][i];
+                                  vyp1[j][i] += DT*vy[j][i];}
+ 
+@@ -464,7 +465,7 @@ for (j=ny1;j<=ny2;j++){
+                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;
+                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}
+                            
+-                              if(sw==1){
++                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
+ 			         vxp1[j][i] = vx[j][i];
+ 			         vyp1[j][i] = vy[j][i];}
+ 
+@@ -569,7 +570,7 @@ for (j=ny1;j<=ny2;j++){
+                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;                 
+                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}                 
+ 
+-                              if(sw==1){ 
++                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
+                                  vxp1[j][i] += DT*vx[j][i];
+                                  vyp1[j][i] += DT*vy[j][i];}
+ 
+@@ -581,7 +582,7 @@ for (j=ny1;j<=ny2;j++){
+                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;
+                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}
+                            
+-                              if(sw==1){
++                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
+ 			         vxp1[j][i] = vx[j][i];
+ 			         vyp1[j][i] = vy[j][i];}
+ 
+@@ -688,7 +689,7 @@ for (j=ny1;j<=ny2;j++){
+                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;                 
+                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}                 
+ 
+-                              if(sw==1){ 
++                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
+                                  vxp1[j][i] += DT*vx[j][i];
+                                  vyp1[j][i] += DT*vy[j][i];}
+ 
+@@ -700,7 +701,7 @@ for (j=ny1;j<=ny2;j++){
+                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;
+                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}
+                            
+-                              if(sw==1){
++                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
+ 			         vxp1[j][i] = vx[j][i];
+ 			         vyp1[j][i] = vy[j][i];}
+ 
+@@ -758,11 +759,15 @@ for (j=ny1;j<=ny2;j++){
+ 		    j=(int)srcpos_loc[2][l];
+ 		    
+                     if((GRAD_FORM==1)||(GRAD_FORM==2)){
+-		       if(QUELLTYPB==1){vx[j][i] += signals[l][nt];    /* single force in x */
+-		                        vy[j][i] += signals1[l][nt];}  /* + single force in y */
+-
+-		       if(QUELLTYPB==2||QUELLTYPB==6||QUELLTYPB==7){vy[j][i] += signals1[l][nt];}  /* single force in y */
+-		       if(QUELLTYPB==3||QUELLTYPB==5||QUELLTYPB==7){vx[j][i] += signals[l][nt];}   /* single force in x */
++		       if(QUELLTYPB==1){vx[j][i] += signals[l][nt]*
++                                                        (exact_elastic_psv_adjoint?rip[j][i]:1.0); /* x */
++		                        vy[j][i] += signals1[l][nt]*
++                                                        (exact_elastic_psv_adjoint?rjp[j][i]:1.0);} /* y */
++
++		       if(QUELLTYPB==2||QUELLTYPB==6||QUELLTYPB==7){vy[j][i] += signals1[l][nt]*
++                                                        (exact_elastic_psv_adjoint?rjp[j][i]:1.0);}
++		       if(QUELLTYPB==3||QUELLTYPB==5||QUELLTYPB==7){vx[j][i] += signals[l][nt]*
++                                                        (exact_elastic_psv_adjoint?rip[j][i]:1.0);}
+                     }
+ 
+ 		}}                         
+diff --git a/src/TTI/TTI.c b/src/TTI/TTI.c
+index dc09ccf..dbdf498 100644
+--- a/src/TTI/TTI.c
++++ b/src/TTI/TTI.c
+@@ -115,14 +115,14 @@ void TTI(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matTTI
+ 	         update_v_PML_PSV(1, NX, 1, NY, nt, (*wavePSV).pvx, (*wavePSV).pvxp1, (*wavePSV).pvxm1, (*wavePSV).pvy, (*wavePSV).pvyp1, (*wavePSV).pvym1, (*wavePSV).uttx, (*wavePSV).utty, (*wavePSV).psxx, (*wavePSV).psyy,       
+                               (*wavePSV).psxy, (*matTTI).prip, (*matTTI).prjp, (*acq).srcpos_loc,(*acq).signals,(*acq).signals,nsrc_loc,(*wavePSV_PML).absorb_coeff,hc,infoout, 0, (*wavePSV_PML).K_x, (*wavePSV_PML).a_x, 
+                               (*wavePSV_PML).b_x, (*wavePSV_PML).K_x_half, (*wavePSV_PML).a_x_half, (*wavePSV_PML).b_x_half, (*wavePSV_PML).K_y, (*wavePSV_PML).a_y, (*wavePSV_PML).b_y, (*wavePSV_PML).K_y_half, 
+-                              (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_sxx_x, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y, (*wavePSV_PML).psi_sxy_x);
++                              (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_sxx_x, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y, (*wavePSV_PML).psi_sxy_x, 0);
+               }
+ 
+               if(mode==1){
+ 	         update_v_PML_PSV(1, NX, 1, NY, nt, (*wavePSV).pvx, (*wavePSV).pvxp1, (*wavePSV).pvxm1, (*wavePSV).pvy, (*wavePSV).pvyp1, (*wavePSV).pvym1, (*wavePSV).uttx, (*wavePSV).utty, (*wavePSV).psxx, (*wavePSV).psyy, 
+                               (*wavePSV).psxy, (*matTTI).prip, (*matTTI).prjp, (*acq).srcpos_loc_back, (*seisPSVfwi).sectionvxdiff, (*seisPSVfwi).sectionvydiff,ntr,(*wavePSV_PML).absorb_coeff,hc,infoout, 1, (*wavePSV_PML).K_x,
+  	                      (*wavePSV_PML).a_x, (*wavePSV_PML).b_x, (*wavePSV_PML).K_x_half, (*wavePSV_PML).a_x_half, (*wavePSV_PML).b_x_half, (*wavePSV_PML).K_y, (*wavePSV_PML).a_y, (*wavePSV_PML).b_y, (*wavePSV_PML).K_y_half, 
+-                              (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_sxx_x, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y, (*wavePSV_PML).psi_sxy_x);
++                              (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_sxx_x, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y, (*wavePSV_PML).psi_sxy_x, 0);
+               }
+ 		                 
+ 		/*if (MYID==0){
+diff --git a/src/VTI/VTI.c b/src/VTI/VTI.c
+index bc5cc37..7115807 100644
+--- a/src/VTI/VTI.c
++++ b/src/VTI/VTI.c
+@@ -115,14 +115,14 @@ void VTI(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matVTI
+ 	         update_v_PML_PSV(1, NX, 1, NY, nt, (*wavePSV).pvx, (*wavePSV).pvxp1, (*wavePSV).pvxm1, (*wavePSV).pvy, (*wavePSV).pvyp1, (*wavePSV).pvym1, (*wavePSV).uttx, (*wavePSV).utty, (*wavePSV).psxx, (*wavePSV).psyy,       
+                               (*wavePSV).psxy, (*matVTI).prip, (*matVTI).prjp, (*acq).srcpos_loc,(*acq).signals,(*acq).signals,nsrc_loc,(*wavePSV_PML).absorb_coeff,hc,infoout, 0, (*wavePSV_PML).K_x, (*wavePSV_PML).a_x, 
+                               (*wavePSV_PML).b_x, (*wavePSV_PML).K_x_half, (*wavePSV_PML).a_x_half, (*wavePSV_PML).b_x_half, (*wavePSV_PML).K_y, (*wavePSV_PML).a_y, (*wavePSV_PML).b_y, (*wavePSV_PML).K_y_half, 
+-                              (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_sxx_x, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y, (*wavePSV_PML).psi_sxy_x);
++                              (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_sxx_x, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y, (*wavePSV_PML).psi_sxy_x, 0);
+               }
+ 
+               if(mode==1){
+ 	         update_v_PML_PSV(1, NX, 1, NY, nt, (*wavePSV).pvx, (*wavePSV).pvxp1, (*wavePSV).pvxm1, (*wavePSV).pvy, (*wavePSV).pvyp1, (*wavePSV).pvym1, (*wavePSV).uttx, (*wavePSV).utty, (*wavePSV).psxx, (*wavePSV).psyy, 
+                               (*wavePSV).psxy, (*matVTI).prip, (*matVTI).prjp, (*acq).srcpos_loc_back, (*seisPSVfwi).sectionvxdiff, (*seisPSVfwi).sectionvydiff,ntr,(*wavePSV_PML).absorb_coeff,hc,infoout, 1, (*wavePSV_PML).K_x,
+  	                      (*wavePSV_PML).a_x, (*wavePSV_PML).b_x, (*wavePSV_PML).K_x_half, (*wavePSV_PML).a_x_half, (*wavePSV_PML).b_x_half, (*wavePSV_PML).K_y, (*wavePSV_PML).a_y, (*wavePSV_PML).b_y, (*wavePSV_PML).K_y_half, 
+-                              (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_sxx_x, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y, (*wavePSV_PML).psi_sxy_x);
++                              (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_sxx_x, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y, (*wavePSV_PML).psi_sxy_x, 0);
+               }
+ 		                 
+ 		/*if (MYID==0){

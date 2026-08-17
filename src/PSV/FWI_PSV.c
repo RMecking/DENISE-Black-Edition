@@ -888,6 +888,11 @@ frequency MIN_ITER */
   free_matrix(fwiPSV.waveconv_u, -nd + 1, NY + nd, -nd + 1, NX + nd);
   free_matrix(fwiPSV.waveconv_mu, -nd + 1, NY + nd, -nd + 1, NX + nd);
   free_matrix(fwiPSV.waveconv_u_shot, -nd + 1, NY + nd, -nd + 1, NX + nd);
+  free_matrix(fwiPSV.waveconv_lam_exact, -nd + 1, NY + nd, -nd + 1, NX + nd);
+  free_matrix(fwiPSV.waveconv_mu_normal_exact, -nd + 1, NY + nd, -nd + 1, NX + nd);
+  free_matrix(fwiPSV.waveconv_mu_xy_exact, -nd + 1, NY + nd, -nd + 1, NX + nd);
+  free_matrix(fwiPSV.waveconv_rho_x_exact, -nd + 1, NY + nd, -nd + 1, NX + nd);
+  free_matrix(fwiPSV.waveconv_rho_y_exact, -nd + 1, NY + nd, -nd + 1, NX + nd);
 
   free_vector(fwiPSV.forward_prop_x, 1, NY * NX * NT);
   free_vector(fwiPSV.forward_prop_y, 1, NY * NX * NT);

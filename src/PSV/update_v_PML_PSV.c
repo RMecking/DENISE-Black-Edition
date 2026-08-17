@@ -16,7 +16,8 @@ void update_v_PML_PSV(int nx1, int nx2, int ny1, int ny2, int nt,
 	float ** sxy, float  **rip, float **rjp, float **  srcpos_loc, float ** signals, float ** signals1, int nsrc, float ** absorb_coeff,
 	float *hc, int infoout,int sw, float * K_x, float * a_x, float * b_x, float * K_x_half, float * a_x_half, float * b_x_half,
         float * K_y, float * a_y, float * b_y, float * K_y_half, float * a_y_half, float * b_y_half,
-        float ** psi_sxx_x, float ** psi_syy_y, float ** psi_sxy_y, float ** psi_sxy_x){
+        float ** psi_sxx_x, float ** psi_syy_y, float ** psi_sxy_y, float ** psi_sxy_x,
+        int exact_elastic_psv_adjoint){
 
 	int i, j,l,fdoh,m, h, h1;
 	float amp, dtdh, azi_rad;
@@ -125,7 +126,7 @@ void update_v_PML_PSV(int nx1, int nx2, int ny1, int ny2, int nt,
                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;                  
                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}   
 
-                              if(sw==1){
+                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
                                  vxp1[j][i] += DT*vx[j][i];
                                  vyp1[j][i] += DT*vy[j][i];}
 
@@ -137,7 +138,7 @@ void update_v_PML_PSV(int nx1, int nx2, int ny1, int ny2, int nt,
                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;    
                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}   
 
-                              if(sw==1){
+                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
                                  vxp1[j][i] = vx[j][i]; 
                                  vyp1[j][i] = vy[j][i];} 
 
@@ -228,7 +229,7 @@ void update_v_PML_PSV(int nx1, int nx2, int ny1, int ny2, int nt,
                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;                  
                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}   
 
-                              if(sw==1){
+                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
                                  vxp1[j][i] += DT*vx[j][i];
                                  vyp1[j][i] += DT*vy[j][i];}
 
@@ -240,7 +241,7 @@ void update_v_PML_PSV(int nx1, int nx2, int ny1, int ny2, int nt,
                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;    
                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}   
 
-                              if(sw==1){
+                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
                                  vxp1[j][i] = vx[j][i]; 
                                  vyp1[j][i] = vy[j][i];} 
 
@@ -336,7 +337,7 @@ void update_v_PML_PSV(int nx1, int nx2, int ny1, int ny2, int nt,
                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;                  
                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}   
 
-                              if(sw==1){
+                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
                                  vxp1[j][i] += DT*vx[j][i];
                                  vyp1[j][i] += DT*vy[j][i];}
 
@@ -348,7 +349,7 @@ void update_v_PML_PSV(int nx1, int nx2, int ny1, int ny2, int nt,
                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;    
                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}   
 
-                              if(sw==1){
+                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
                                  vxp1[j][i] = vx[j][i]; 
                                  vyp1[j][i] = vy[j][i];} 
 
@@ -452,7 +453,7 @@ for (j=ny1;j<=ny2;j++){
                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;                 
                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}                 
 
-                              if(sw==1){ 
+                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
                                  vxp1[j][i] += DT*vx[j][i];
                                  vyp1[j][i] += DT*vy[j][i];}
 
@@ -464,7 +465,7 @@ for (j=ny1;j<=ny2;j++){
                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;
                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}
                            
-                              if(sw==1){
+                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
 			         vxp1[j][i] = vx[j][i];
 			         vyp1[j][i] = vy[j][i];}
 
@@ -569,7 +570,7 @@ for (j=ny1;j<=ny2;j++){
                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;                 
                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}                 
 
-                              if(sw==1){ 
+                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
                                  vxp1[j][i] += DT*vx[j][i];
                                  vyp1[j][i] += DT*vy[j][i];}
 
@@ -581,7 +582,7 @@ for (j=ny1;j<=ny2;j++){
                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;
                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}
                            
-                              if(sw==1){
+                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
 			         vxp1[j][i] = vx[j][i];
 			         vyp1[j][i] = vy[j][i];}
 
@@ -688,7 +689,7 @@ for (j=ny1;j<=ny2;j++){
                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;                 
                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}                 
 
-                              if(sw==1){ 
+                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
                                  vxp1[j][i] += DT*vx[j][i];
                                  vyp1[j][i] += DT*vy[j][i];}
 
@@ -700,7 +701,7 @@ for (j=ny1;j<=ny2;j++){
                                  vxp1[j][i] = rip[j][i]*(sxx_x+sxy_y)/DH;
                                  vyp1[j][i] = rjp[j][i]*(sxy_x+syy_y)/DH;}
                            
-                              if(sw==1){
+                              if((sw==1)&&(!exact_elastic_psv_adjoint)){
 			         vxp1[j][i] = vx[j][i];
 			         vyp1[j][i] = vy[j][i];}
 
@@ -758,11 +759,15 @@ for (j=ny1;j<=ny2;j++){
 		    j=(int)srcpos_loc[2][l];
 		    
                     if((GRAD_FORM==1)||(GRAD_FORM==2)){
-		       if(QUELLTYPB==1){vx[j][i] += signals[l][nt];    /* single force in x */
-		                        vy[j][i] += signals1[l][nt];}  /* + single force in y */
+		       if(QUELLTYPB==1){vx[j][i] += signals[l][nt]*
+                                                        (exact_elastic_psv_adjoint?rip[j][i]:1.0); /* x */
+		                        vy[j][i] += signals1[l][nt]*
+                                                        (exact_elastic_psv_adjoint?rjp[j][i]:1.0);} /* y */
 
-		       if(QUELLTYPB==2||QUELLTYPB==6||QUELLTYPB==7){vy[j][i] += signals1[l][nt];}  /* single force in y */
-		       if(QUELLTYPB==3||QUELLTYPB==5||QUELLTYPB==7){vx[j][i] += signals[l][nt];}   /* single force in x */
+		       if(QUELLTYPB==2||QUELLTYPB==6||QUELLTYPB==7){vy[j][i] += signals1[l][nt]*
+                                                        (exact_elastic_psv_adjoint?rjp[j][i]:1.0);}
+		       if(QUELLTYPB==3||QUELLTYPB==5||QUELLTYPB==7){vx[j][i] += signals[l][nt]*
+                                                        (exact_elastic_psv_adjoint?rip[j][i]:1.0);}
                     }
 
 		}}                         

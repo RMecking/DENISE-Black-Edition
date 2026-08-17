@@ -29,9 +29,13 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 
 	/* local variables */
 	int i, j, nt, lsamp, lsnap, nsnap, nd, hin1, imat, imat1, imat2, infoout;
+	int exact_elastic_psv_adjoint;
 	float tmp, tmp1, muss, lamss;
 
 	nd = FDORDER / 2 + 1;
+	exact_elastic_psv_adjoint=((MODE==1)&&(mode==1)&&(L==0)&&
+	                            (INVMAT1==1)&&
+	                            ((GRAD_FORM==1)||(GRAD_FORM==2)));
 
 	/*MPI_Barrier(MPI_COMM_WORLD);*/
 
@@ -117,7 +121,7 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 			update_v_PML_PSV(1, NX, 1, NY, nt, (*wavePSV).pvx, (*wavePSV).pvxp1, (*wavePSV).pvxm1, (*wavePSV).pvy, (*wavePSV).pvyp1, (*wavePSV).pvym1, (*wavePSV).uttx, (*wavePSV).utty, (*wavePSV).psxx, (*wavePSV).psyy,
 							 (*wavePSV).psxy, (*matPSV).prip, (*matPSV).prjp, (*acq).srcpos_loc, (*acq).signals, (*acq).signals, nsrc_loc, (*wavePSV_PML).absorb_coeff, hc, infoout, 0, (*wavePSV_PML).K_x, (*wavePSV_PML).a_x,
 							 (*wavePSV_PML).b_x, (*wavePSV_PML).K_x_half, (*wavePSV_PML).a_x_half, (*wavePSV_PML).b_x_half, (*wavePSV_PML).K_y, (*wavePSV_PML).a_y, (*wavePSV_PML).b_y, (*wavePSV_PML).K_y_half,
-							 (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_sxx_x, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y, (*wavePSV_PML).psi_sxy_x);
+							 (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_sxx_x, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y, (*wavePSV_PML).psi_sxy_x, 0);
 		}
 
 
@@ -125,7 +129,7 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 	         update_v_PML_PSV(1, NX, 1, NY, nt, (*wavePSV).pvx, (*wavePSV).pvxp1, (*wavePSV).pvxm1, (*wavePSV).pvy, (*wavePSV).pvyp1, (*wavePSV).pvym1, (*wavePSV).uttx, (*wavePSV).utty, (*wavePSV).psxx, (*wavePSV).psyy, 
                               (*wavePSV).psxy, (*matPSV).prip, (*matPSV).prjp, (*acq).srcpos_loc_back, (*seisPSVfwi).sectionvxdiff, (*seisPSVfwi).sectionvydiff,ntr,(*wavePSV_PML).absorb_coeff,hc,infoout, 1, (*wavePSV_PML).K_x,
  	                      (*wavePSV_PML).a_x, (*wavePSV_PML).b_x, (*wavePSV_PML).K_x_half, (*wavePSV_PML).a_x_half, (*wavePSV_PML).b_x_half, (*wavePSV_PML).K_y, (*wavePSV_PML).a_y, (*wavePSV_PML).b_y, (*wavePSV_PML).K_y_half, 
-                              (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_sxx_x, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y, (*wavePSV_PML).psi_sxy_x);
+                              (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_sxx_x, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y, (*wavePSV_PML).psi_sxy_x, exact_elastic_psv_adjoint);
                 }
 		                 
 		/*if (MYID==0){
@@ -134,7 +138,7 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 			update_v_PML_PSV(1, NX, 1, NY, nt, (*wavePSV).pvx, (*wavePSV).pvxp1, (*wavePSV).pvxm1, (*wavePSV).pvy, (*wavePSV).pvyp1, (*wavePSV).pvym1, (*wavePSV).uttx, (*wavePSV).utty, (*wavePSV).psxx, (*wavePSV).psyy,
 							 (*wavePSV).psxy, (*matPSV).prip, (*matPSV).prjp, (*acq).srcpos_loc_back, (*seisPSVfwi).sectionvxdiff, (*seisPSVfwi).sectionvydiff, ntr, (*wavePSV_PML).absorb_coeff, hc, infoout, 1, (*wavePSV_PML).K_x,
 							 (*wavePSV_PML).a_x, (*wavePSV_PML).b_x, (*wavePSV_PML).K_x_half, (*wavePSV_PML).a_x_half, (*wavePSV_PML).b_x_half, (*wavePSV_PML).K_y, (*wavePSV_PML).a_y, (*wavePSV_PML).b_y, (*wavePSV_PML).K_y_half,
-							 (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_sxx_x, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y, (*wavePSV_PML).psi_sxy_x);
+							 (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_sxx_x, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y, (*wavePSV_PML).psi_sxy_x, 0);
 		}
 
 		/*if (MYID_SHOT==0){
@@ -145,6 +149,56 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 
 		/* exchange of particle velocities between PEs */
 		exchange_v_PSV((*wavePSV).pvx, (*wavePSV).pvy, (*mpiPSV).bufferlef_to_rig, (*mpiPSV).bufferrig_to_lef, (*mpiPSV).buffertop_to_bot, (*mpiPSV).bufferbot_to_top, req_send, req_rec);
+
+		/* Form 1 needs the B-state velocity multiplier: the time integral
+		 * immediately after receiver injection and the reverse V transpose. */
+		if(exact_elastic_psv_adjoint && (GRAD_FORM==1)){
+			for(i=1;i<=NX;i++){
+				for(j=1;j<=NY;j++){
+					(*wavePSV).pvxp1[j][i]+=(*wavePSV).pvx[j][i]*DT;
+					(*wavePSV).pvyp1[j][i]+=(*wavePSV).pvy[j][i]*DT;
+				}
+			}
+		}
+
+		/* C -> B is applied next.  Therefore PRE stress is the exact material
+		 * multiplier and B velocity is the exact inverse-density multiplier. */
+		if(exact_elastic_psv_adjoint &&
+		   (DTINV_help[NT-nt+1]==1)){
+			imat=((NXNYI*NTDTINV)-hin*NXNYI)+1;
+			for(i=1;i<=NX;i=i+IDXI){
+				for(j=1;j<=NY;j=j+IDYI){
+					(*fwiPSV).waveconv_lam_exact[j][i]+=
+						((*fwiPSV).forward_prop_x[imat]+
+						 (*fwiPSV).forward_prop_y[imat])*
+						((*wavePSV).psxx[j][i]+(*wavePSV).psyy[j][i]);
+					(*fwiPSV).waveconv_mu_normal_exact[j][i]+=
+						((*fwiPSV).forward_prop_x[imat]-
+						 (*fwiPSV).forward_prop_y[imat])*
+						((*wavePSV).psxx[j][i]-(*wavePSV).psyy[j][i]);
+					(*fwiPSV).waveconv_mu_xy_exact[j][i]+=
+						(*fwiPSV).forward_prop_u[imat]*(*wavePSV).psxy[j][i];
+					if(GRAD_FORM==1){
+						(*fwiPSV).waveconv_rho_x_exact[j][i]+=
+							(*wavePSV).pvxp1[j][i]*
+							(*fwiPSV).forward_prop_rho_x[imat];
+						(*fwiPSV).waveconv_rho_y_exact[j][i]+=
+							(*wavePSV).pvyp1[j][i]*
+							(*fwiPSV).forward_prop_rho_y[imat];
+					}else{
+						(*fwiPSV).waveconv_rho_x_exact[j][i]+=
+							(*wavePSV).pvx[j][i]*
+							(*fwiPSV).forward_prop_rho_x[imat];
+						(*fwiPSV).waveconv_rho_y_exact[j][i]+=
+							(*wavePSV).pvy[j][i]*
+							(*fwiPSV).forward_prop_rho_y[imat];
+					}
+					imat++;
+				}
+			}
+			if(EPRECOND==1) eprecond(Wr,(*wavePSV).pvx,(*wavePSV).pvy);
+			hin++;
+		}
 
 		/*if (MYID_SHOT==0){
 		  time5=MPI_Wtime();
@@ -310,7 +364,8 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 
 		/* save adjoint wavefields for time-domain inversion and partially assemble gradients */
 		/* ---------------------------------------------------------------------------------- */
-		if ((mode == 1) && (DTINV_help[NT - nt + 1] == 1))
+		if ((mode == 1) && (!exact_elastic_psv_adjoint) &&
+		    (DTINV_help[NT - nt + 1] == 1))
 		{
 
 			imat = ((NXNYI * (NTDTINV)) - hin * NXNYI) + 1;
