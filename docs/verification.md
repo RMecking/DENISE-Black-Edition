@@ -1242,3 +1242,51 @@ does not add impedance readers, conversions, generators, gradient formulas,
 or model-update behavior; a future interface-design milestone must define and
 verify any operational PSV impedance contract before this quarantine can be
 removed.
+
+## M5.5: formal elastic PSV Taylor verification
+
+M5.5 verifies the repaired M5.4 production gradients without changing solver
+code.  It uses elastic isotropic PSV with `MODE=1`, `INVMAT1=1`, both
+`GRAD_FORM=1/2`, and the combined `vx+vy` objective.  The independent Python
+oracle computes the objective directly from the synthetic and observed SU
+samples.  The production `Vp`, `Vs`, and density gradients are correlated with
+predeclared multiplicative directions; no fitted sign or scale is used.
+
+The fixed epsilon ladder is `1e-2, 5e-3, 2.5e-3, 1.25e-3, 6.25e-4`.  Only the
+first four points enter the acceptance fit; the smallest point is retained as
+a floating-point-floor diagnostic.  The checks require the zero-order
+remainder to behave approximately linearly, the first-order remainder to
+behave quadratically, and the corrected remainder to improve over the
+uncorrected one.  Each baseline forward run is repeated and its `vx`/`vy`
+sample payload must be byte-identical.  Forward data at each epsilon are reused
+for GF1 and GF2, giving exactly ten DENISE executions per physical case.
+
+The four homogeneous cases (Vp-only, Vs-only, density-only, and a joint
+three-parameter direction) form a mandatory gate.  The independently designed
+heterogeneous joint hold-out runs only after all eight homogeneous GF rows pass.
+All ten accepted rows are:
+
+| case | GF | fitted R0 slope | fitted R1 slope | median q0 | median q1 |
+|---|---:|---:|---:|---:|---:|
+| homogeneous Vp only | 1 | 0.892793 | 1.991238 | 0.910362 | 1.992337 |
+| homogeneous Vp only | 2 | 0.893277 | 1.991856 | 0.910775 | 1.992654 |
+| homogeneous Vs only | 1 | 0.920681 | 2.000311 | 0.933295 | 1.999704 |
+| homogeneous Vs only | 2 | 0.924843 | 1.996432 | 0.936452 | 1.996363 |
+| homogeneous density only | 1 | 0.885403 | 1.991316 | 0.904946 | 1.991596 |
+| homogeneous density only | 2 | 0.898148 | 1.989254 | 0.915094 | 1.991008 |
+| homogeneous joint | 1 | 0.915322 | 2.000349 | 0.928754 | 1.998631 |
+| homogeneous joint | 2 | 0.918323 | 2.000363 | 0.931134 | 1.998137 |
+| heterogeneous joint hold-out | 1 | 0.757642 | 1.998710 | 0.811514 | 1.998832 |
+| heterogeneous joint hold-out | 2 | 0.765053 | 1.999799 | 0.816816 | 1.999790 |
+
+The machine-readable artifact `tests/m5.5_psv_taylor_validation.json` retains
+the full objective and remainder tables, definition and model-file SHA-256
+hashes, per-parameter directional products, baseline repeatability, all 50 run
+records, executable/toolchain provenance, and the M5.4/M5.4.1a regression
+results.  Run the verification with:
+
+```bash
+python3 -m pytest tests/test_psv_taylor_math.py -q
+python3 -m pytest tests/physics/test_psv_fwi_taylor.py -q -m extended \
+  --require-denise --denise-bin bin/denise
+```
