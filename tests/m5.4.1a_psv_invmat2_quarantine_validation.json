@@ -1,0 +1,133 @@
+{
+  "base_sha": "6193a09e3db9d68a6951898394fd8370b96f24ea",
+  "base_binary_sha256": "6ca83a680d62e163903d3683f8ce825c3d03459a9441028402d37c8baee1440b",
+  "changed_production_files": [
+    "src/check_mode_phys.c",
+    "src/write_par.c"
+  ],
+  "diagnostic": "PSV INVMAT1=2 (Zp/Zs/rho impedance parameterization) is unsupported: the legacy PSV model-input/file contract is undefined. Use PSV INVMAT1=1 or INVMAT1=3 where applicable.",
+  "file_contract": "file contract undefined",
+  "historical_mathematical_semantics": {
+    "INVMAT1=1": {
+      "ppi": "Vp",
+      "prho": "rho",
+      "pu": "Vs"
+    },
+    "INVMAT1=2": {
+      "ppi": "Zp = rho*Vp",
+      "prho": "rho",
+      "pu": "Zs = rho*Vs"
+    },
+    "INVMAT1=3": {
+      "ppi": "lambda",
+      "prho": "rho",
+      "pu": "mu"
+    }
+  },
+  "interface_scope": {
+    "implicit_vp_vs_to_impedance_conversion_added": false,
+    "impedance_model_generator_added": false,
+    "new_zp_zs_files_added": false,
+    "psv_only_gate": "PHYSICS=1 && INVMAT1=2",
+    "solver_families_not_changed": [
+      "SH",
+      "acoustic",
+      "VTI",
+      "TTI"
+    ]
+  },
+  "milestone": "M5.4.1a",
+  "post_fix_repeated_behavior": {
+    "elastic": {
+      "diagnostic_present_each_run": true,
+      "returncodes": [1, 1, 1],
+      "valid_seismograms_created": false
+    },
+    "rejection_deterministic": true,
+    "viscoelastic": {
+      "diagnostic_present_each_run": true,
+      "returncodes": [1, 1, 1],
+      "valid_seismograms_created": false
+    }
+  },
+  "post_fix_two_rank_rejection": {
+    "elastic": {
+      "diagnostic_present": true,
+      "no_valid_seismograms": true,
+      "ranks": 2,
+      "returncode": 1,
+      "timeout_or_hang": false
+    },
+    "viscoelastic": {
+      "diagnostic_present": true,
+      "no_valid_seismograms": true,
+      "ranks": 2,
+      "returncode": 1,
+      "timeout_or_hang": false
+    }
+  },
+  "pre_fix_repeated_behavior": {
+    "classification": "undefined successful execution with zero or nondeterministic subnormal output",
+    "identical_input_sha256_prefixes_from_accepted_audit": {
+      "denise.inp": "900032ed",
+      "model/current.rho": "dd344e30",
+      "model/current.vp": "9c3faa8b",
+      "model/current.vs": "64274a2d",
+      "receiver.dat": "e1739c60",
+      "source.dat": "db7550d",
+      "workflow.inp": "075e0af3"
+    },
+    "returncodes": [0, 0, 0, 0, 0],
+    "synthetic_x_nonzero_sha256": [
+      "5e355a922158cf4dc3173e481b62248e7f221fa9f311e8d36f26c167ae8129d8",
+      "4c05572c3291e53a5b2f426a2586147573822b63bca309dbb1468c061564ff2d"
+    ],
+    "synthetic_y_nonzero_sha256": [
+      "329bdcae02baf12a7ad0158405816ce8f4d5fca48da8b2dafb078749925d9303",
+      "3954a48c6b898c9525c91badfc0bfbc7e2db86b871be76d934b63eb7babb844a"
+    ],
+    "zero_output_run_indices": [0, 2, 4]
+  },
+  "production_patch_sha256": "121bc1cc46c404cc7c2cda5bd19b43634ab150c4aeb2c767df5bf85f7fe1b91c",
+  "protected_parameterizations": {
+    "INVMAT1=1": {
+      "base_returncodes": [0, 0],
+      "byte_identical_base_to_repaired": true,
+      "repaired_returncodes": [0, 0],
+      "synthetic_x_sha256": "134822fddbe0ece6e163b4144ac5db2b1cfc7e7b772fc4573049295a858bf63d",
+      "synthetic_y_sha256": "32cc55244bd7801fcb56a1bf046cc7f63a8dd26e2c1edaf41c827718c9f19721"
+    },
+    "INVMAT1=3": {
+      "base_returncodes": [0, 0],
+      "byte_identical_base_to_repaired": true,
+      "repaired_returncodes": [0, 0],
+      "synthetic_x_sha256": "134822fddbe0ece6e163b4144ac5db2b1cfc7e7b772fc4573049295a858bf63d",
+      "synthetic_y_sha256": "32cc55244bd7801fcb56a1bf046cc7f63a8dd26e2c1edaf41c827718c9f19721"
+    }
+  },
+  "regression_tests": {
+    "contract_unit": {
+      "pytest_summary": "4 passed"
+    },
+    "m5.4_gradient_integration": {
+      "all_denise_returncodes_zero": true,
+      "denise_run_count": 67,
+      "heterogeneous_holdout": "1 passed in 20.21s",
+      "primary_gate": "1 passed in 85.63s"
+    },
+    "m5.4_gradient_math_and_provenance": {
+      "historical_patch_sha256": "d5ff334ee244c0457944fb97746771ebbbb26b659c38e5aeaafdf6f15fad9edc",
+      "pytest_summary": "5 passed"
+    },
+    "psv_quarantine_integration": {
+      "pytest_summary": "5 passed in 12.24s"
+    }
+  },
+  "repaired_binary_sha256": "b1e9f6d93cf4e2a1534a124905aeea9d17b0d319b38752e6a35fdcff6a7f1ba0",
+  "toolchain": {
+    "compiler": "GCC 11.4.0 via mpicc",
+    "compiler_flags": "-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon",
+    "mpi": "Open MPI 4.1.2"
+  },
+  "verdict": "M5.4.1a PSV INVMAT1=2 SAFELY QUARANTINED"
+}

@@ -326,7 +326,7 @@ void write_par(FILE *fp){
 	if (INVMAT1==1){
 		fprintf(fp," INVMAT1=%d: Inversion parameters are vp, vs and rho.\n",INVMAT1);}
 	if (INVMAT1==2){
-		fprintf(fp," INVMAT1=%d: Inversion parameters are Zp, Zs and rho.\n",INVMAT1);}
+		fprintf(fp," INVMAT1=%d: Historical parameters are Zp, Zs and rho; unsupported for PSV because the legacy model-input/file contract is undefined.\n",INVMAT1);}
 	if (INVMAT1==3){
 		fprintf(fp," INVMAT1=%d: Inversion parameters are lambda, mu and rho.\n",INVMAT1);}
 	if (QUELLTYPB==1){

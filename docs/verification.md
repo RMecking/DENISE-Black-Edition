@@ -1217,3 +1217,28 @@ existing executable/git/MPI provenance. Run only M4.3 with:
 python3 -m pytest tests/physics/test_psv_viscoelastic_rheology.py \
   --require-denise -m 'integration and not extended' -v
 ```
+
+## M5.4.1a: PSV `INVMAT1=2` quarantine
+
+The historical mathematical meaning of PSV `INVMAT1=2` is the impedance
+parameterization `ppi=Zp=rho*Vp`, `pu=Zs=rho*Vs`, and `prho=rho`.  The current
+repository does not, however, define a corresponding PSV model-input/file
+contract.  In particular, there are no supported `.zp` or `.zs` inputs, and
+the existing `.vp`, `.vs`, `.lam`, and `.mu` files must not be reinterpreted as
+impedances.
+
+Consequently isotropic PSV (`PHYSICS=1`) now rejects `INVMAT1=2` at the common
+configuration-validation gate, before model interpretation, material
+averaging, stability checks, stress updates, or time stepping.  The rejection
+applies to both elastic (`L=0`) and viscoelastic (`L>0`) PSV execution and
+returns a non-zero process status with an actionable diagnostic.  PSV
+`INVMAT1=1` (Vp/Vs/rho) and `INVMAT1=3` (lambda/mu/rho) remain available where
+applicable.
+
+This quarantine is deliberately scoped to isotropic PSV.  SH, acoustic, VTI,
+and TTI dispatch independently and are not rejected by this gate.  Their own
+parameterization semantics are not newly verified or changed here.  M5.4.1a
+does not add impedance readers, conversions, generators, gradient formulas,
+or model-update behavior; a future interface-design milestone must define and
+verify any operational PSV impedance contract before this quarantine can be
+removed.
