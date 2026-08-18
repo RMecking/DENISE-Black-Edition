@@ -11,9 +11,16 @@
 void check_mode_phys(){
 
 	/* declaration of extern variables */
-        extern int MODE, PHYSICS, MYID;
+        extern int MODE, PHYSICS, MYID, INVMAT1;
 	
         if (MYID==0){
+
+		/* The historical PSV impedance parameterization has no defined
+		 * model-input/file contract.  Reject it at the common validated
+		 * configuration gate before any PSV model or propagation code runs. */
+		if((PHYSICS==1)&&(INVMAT1==2)){
+			err(" PSV INVMAT1=2 (Zp/Zs/rho impedance parameterization) is unsupported: the legacy PSV model-input/file contract is undefined. Use PSV INVMAT1=1 or INVMAT1=3 where applicable. ");
+		}
 
 		printf("\n **Message from check_model_phys (printed by PE %d):\n",MYID);
 		printf("\n");
