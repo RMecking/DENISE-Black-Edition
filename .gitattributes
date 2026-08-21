@@ -15,3 +15,8 @@
 *.PDF	 diff=astextplain
 *.rtf	 diff=astextplain
 *.RTF	 diff=astextplain
+
+# Retained M5 provenance artifacts are hashed byte-for-byte by the test suite.
+# Preserve repository bytes on Windows/WSL checkouts instead of translating EOLs.
+tests/m5*.patch -text
+tests/m5*.json  -text
