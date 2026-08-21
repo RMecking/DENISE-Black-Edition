@@ -1290,3 +1290,17 @@ python3 -m pytest tests/test_psv_taylor_math.py -q
 python3 -m pytest tests/physics/test_psv_fwi_taylor.py -q -m extended \
   --require-denise --denise-bin bin/denise
 ```
+
+## M5.6: developer verification workflow consolidation
+
+M5.6 adds no production or numerical change. It audits the suite through M5.5
+and provides `docs/testing.md` as the developer-facing coverage matrix and test
+workflow, while this file remains the detailed scientific log. The transparent
+`scripts/run_verification.sh` wrapper exposes the documented QUICK, MANDATORY,
+and EXTENDED selections without changing pytest markers, tests, or tolerances.
+
+The consolidation is validated by the pure-Python suite, the normal mandatory
+physics command, wrapper QUICK mode, extended collection, and a representative
+extended test. The matrix explicitly retains missing or limited coverage for
+acoustic, VTI, TTI, RTM, SH free-surface behavior, optimizer convergence,
+attenuation inversion, and PSV parameterizations outside the verified scope.
