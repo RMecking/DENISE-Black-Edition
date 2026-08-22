@@ -1,0 +1,239 @@
+{
+  "milestone": "M6.0",
+  "scope": "source audit only",
+  "denise_sh_is_oracle": false,
+  "generated_utc": "2026-08-21T22:39:02Z",
+  "repositories": {
+    "black_edition": {
+      "url": "https://github.com/RMecking/DENISE-Black-Edition.git",
+      "commit": "ff8029e17b07d24644fb594f4102ed2ece9007b5",
+      "branch": "codex/m6.0-sh-cross-code-audit",
+      "source_manifest": {
+        "include/fd.h": "02ad6ce2ecab1feeb95e79506c3693a277d8a41a",
+        "src/Makefile": "25bd32adac39f9823865187910be935fbf928d6e",
+        "src/SH/FWI_SH.c": "6a9f09703de5b763e254eee41a1019e0a788cae5",
+        "src/SH/FWI_SH_visc.c": "dbc0f85cee4ff7bd9fe0d451da2d0bc57f8b23af",
+        "src/SH/PML_pro_SH.c": "2d91b05c2bc83eda94619c2f13d10967f36d5e1c",
+        "src/SH/ass_gradSH_visc.c": "aa8d23d49deb050f48a91e16f8d08d843fcaaf14",
+        "src/SH/assemble_gradSH_exact.c": "50f1204a6d6a1c91c99dba7a8ac04a3bc34e8963",
+        "src/SH/av_mu_SH.c": "5d5475cb01336c47226c1546b8b049a93dd8f3ae",
+        "src/av_tau.c": "7b8f18823325d798b90fc24e115e90921a45f9f9",
+        "src/SH/calc_mat_change_test_SH.c": "895bf1648614336038d94ca583aa7fc1b5c242f8",
+        "src/SH/calc_mat_change_test_SH_visc.c": "2506916c38ec59835adeca6a7d15d34c75f7f043",
+        "src/SH/exchange_s_SH.c": "4cc5d724314d463da53ae616b66e1cf9b3bd1de6",
+        "src/SH/exchange_v_SH.c": "2da7d7f8466f7bbbc53af33b84d19397db439c2c",
+        "src/SH/extract_LBFGS_SH.c": "338665d12cfeff325ef7a2f417999ac27d439856",
+        "src/SH/extract_LBFGS_SH_visc.c": "2c5598a6a2612ceaff936f2b59d128024a2785a2",
+        "src/SH/extract_PCG_SH.c": "4fdf98daf54ac8b2977045b1939ecd6065831fb7",
+        "src/SH/extract_PCG_SH_visc.c": "f5498155f7925bb3e223e450c8e3a4e5cafba52f",
+        "src/SH/grad_obj_sh_visc.c": "aacf873f2c7c937cff380a0ca5e50f33ad9c685a",
+        "src/SH/matcopy_SH.c": "7b29261f89e6c394c0feabc9488478867aa948d5",
+        "src/SH/matcopy_elastic_SH.c": "a2aac3e209474cb9cf7bfa77513a0ea27377266c",
+        "src/SH/obj_sh.c": "7dd046508875014bbc4f003358a09b95dff563e4",
+        "src/SH/prepare_update_s_visc_SH.c": "a5f9585b395540008d5e3e36c01f0ae12583187e",
+        "src/SH/readmod_elastic_SH.c": "06bd8709276079f260c5385ae0fd72801ff948dd",
+        "src/SH/readmod_visc_SH.c": "3bc9e1bc02bcb6397086d534f5fd72f3b744fa03",
+        "src/SH/sh.c": "bb6324803825b2eb0602c80d17df415a67dd77ac",
+        "src/SH/sh_visc.c": "2cc9e805f9b6a858e473d68ee220d08b05fb858c",
+        "src/SH/step_length_est_sh.c": "616a77be7c60e0328f64115d832348ec828a63ef",
+        "src/SH/store_LBFGS_SH.c": "4df37e290ee792340cbb91e2b972d72247858345",
+        "src/SH/store_LBFGS_SH_visc.c": "faf443481b4e0f85710148c470dbe95baa71be60",
+        "src/SH/store_PCG_SH.c": "bf21e0a86bb7a1f4bac62361a2bc2f81e19ff7bd",
+        "src/SH/store_PCG_SH_visc.c": "85d05fbea90f918522c763e56fc49d7c484735dd",
+        "src/SH/update_s_elastic_PML_SH.c": "0d62fbedcbacb87e405977482fb6151d821d7696",
+        "src/SH/update_s_visc_PML_SH.c": "627f6711dbd854bcfb9a942aea58f22b47605cfc",
+        "src/SH/update_v_PML_SH.c": "518b6beb64233a7c41405e009e181fe02554fe73"
+      }
+    },
+    "denise_sh": {
+      "url": "https://github.com/RMecking/DENISE-SH.git",
+      "commit": "9a4efe1db13c2076580cb36b4fc3a9c63a664079",
+      "commit_date": "2020-08-09T19:09:49+02:00",
+      "source_manifest": {
+        "src/Makefile": "bca6369fd237a3345c31140045b8d1fe73af6ebe",
+        "src/PCG.c": "e425f2f4a5a52ff458e7d2e5deb834b07e34ec7b",
+        "src/LBFGS.c": "8b9a0edfd97983e7da6e61e5985df5efc2c33540",
+        "src/PML_pro.c": "71241f4a7e7a36f75815037c07fc2103154e3454",
+        "src/av_mue.c": "96b9d25974cb0b5cf1607a7da685181eb1644530",
+        "src/av_tau.c": "7b8f18823325d798b90fc24e115e90921a45f9f9",
+        "src/calc_mat_change_test.c": "24abee47332b678dac360ed103b3ed624b5784c9",
+        "src/calc_res.c": "dfc60315d5e5c3caa0772ff330b692345eb64a5e",
+        "src/checkfd_ssg_elastic.c": "128207d2d54151b5082d1237c9e7a235e3cbcb40",
+        "src/checkfd_ssg_visc.c": "6b229d6de240a8127ee37d57a3a1c002696d8b8d",
+        "src/denise.c": "bd83d7a9a8bb652270b9fd1ca38556897321a291",
+        "src/descent.c": "4700e9fc9fa12d70661fb9d2ef21677314bfb13f",
+        "src/exchange_s.c": "fe4840ed287bc07395994a0281b956567e734d5d",
+        "src/exchange_v.c": "697b64fb74b28559da2326715c3530dfa8033d41",
+        "src/extract_LBFGS_SH.c": "d575a915867bc0ff44a05f3496eda793f0d03dcd",
+        "src/extract_PCG_SH.c": "5aacf19a06215daff469a0ac5d62c9f98e7a43a8",
+        "src/fd.h": "f689dda66ba92944b8f9695d6c4e6b88fb3ab95a",
+        "src/line_search.c": "b4ea6b58e37d47b053e12b93610a4e858bd1ca35",
+        "src/matcopy.c": "ccecb6b1ebee6314c08399d815429594a2bd890f",
+        "src/matcopy_elastic.c": "6cd9988dc53a09f180354e69c6f81b4f51deb65d",
+        "src/prepare_update_s.c": "f0963d978b14a155b56756113c79243200b31f01",
+        "src/readmod.c": "d461474d82f4a24c4025c35c18e7b9a1a9cc2d84",
+        "src/readmod_elastic.c": "f59f8530283379fc8fbe4d9a8dc75a9f7aa15401",
+        "src/store_LBFGS_SH.c": "703ff63e10b1f417adff22e45ef7f03d0e73f031",
+        "src/store_PCG_SH.c": "b96efeeb2e9b3cfb03e1b0987d1061ec293f1bdd",
+        "src/surface_PML.c": "bcfe40c69dc6a6eb71e17aee076a03b97fced2cb",
+        "src/surface_elastic_2nd.c": "1af4dcba8f1ac2449a999bfc2b1cf48c0f50c7a3",
+        "src/surface_elastic_PML.c": "1d23debc595210f2cb4531a4c663c6cbd072dbf9",
+        "src/update_s_elastic_PML.c": "eda5e9e6f1b6f9ae21e2cf39f7debe1d76fac758",
+        "src/update_s_visc_PML.c": "9af6cac9a0b4796e53dfa9e10565eecc9dc1f112",
+        "src/update_v_PML.c": "fc417977de28a61e5eb980ab84dfc5605aaa77bf"
+      }
+    }
+  },
+  "build_audit": {
+    "black_edition": "not rerun; baseline build is covered by M5.6 verification",
+    "denise_sh": {
+      "status": "DENISE-SH BUILD NOT REPRODUCED",
+      "command": "make -C libcseife && make -C src denise",
+      "failure": "src/Makefile invokes unavailable Intel mpiicc and contains historical cluster FFTW paths",
+      "environment": {
+        "gcc": "11.4.0",
+        "openmpi": "4.1.2",
+        "make": "4.3"
+      }
+    },
+    "runtime_cross_comparison_performed": false,
+    "reason": "both unmodified codes were not buildable in one equivalent environment"
+  },
+  "source_genealogy": [
+    {
+      "id": "G1",
+      "claim": "The forward kernels and model helpers have strong common ancestry.",
+      "evidence_type": "source text",
+      "direction": "not established",
+      "sources": [
+        {"repository": "black_edition", "path": "src/SH/prepare_update_s_visc_SH.c"},
+        {"repository": "denise_sh", "path": "src/prepare_update_s.c"}
+      ]
+    },
+    {
+      "id": "G2",
+      "claim": "DENISE-SH imported PCG and LBFGS modules from DENISE Black Edition in 2016.",
+      "evidence_type": "git history",
+      "direction": "black_edition_to_denise_sh",
+      "commit": "ae805416f31b66c67d2d075e49ea1e73b6178ff1",
+      "commit_subject": "Added PCG, LBFGS and Gauss-Filter modules from DENISE Black-Edition",
+      "sources": [
+        {"repository": "denise_sh", "path": "src/PCG.c"},
+        {"repository": "denise_sh", "path": "src/LBFGS.c"}
+      ]
+    },
+    {
+      "id": "G3",
+      "claim": "SH free-surface source files are compiled but their main DENISE-SH call sites are commented out.",
+      "evidence_type": "call-site reachability",
+      "direction": "not applicable",
+      "sources": [
+        {"repository": "denise_sh", "path": "src/Makefile"},
+        {"repository": "denise_sh", "path": "src/denise.c"},
+        {"repository": "denise_sh", "path": "src/surface_PML.c"},
+        {"repository": "denise_sh", "path": "src/surface_elastic_PML.c"}
+      ]
+    },
+    {
+      "id": "G4",
+      "claim": "Black Edition has no active SH traction-free routine; FREE_SURF only suppresses top CPML in the audited SH kernels.",
+      "evidence_type": "call-site reachability",
+      "direction": "not applicable",
+      "sources": [
+        {"repository": "black_edition", "path": "src/SH/sh.c"},
+        {"repository": "black_edition", "path": "src/SH/sh_visc.c"},
+        {"repository": "black_edition", "path": "src/SH/update_v_PML_SH.c"},
+        {"repository": "black_edition", "path": "src/SH/update_s_visc_PML_SH.c"}
+      ]
+    },
+    {
+      "id": "G5",
+      "claim": "DENISE-SH has no attenuation-gradient or attenuation-update data path.",
+      "evidence_type": "source text",
+      "direction": "not applicable",
+      "sources": [
+        {"repository": "denise_sh", "path": "src/denise.c"},
+        {"repository": "denise_sh", "path": "src/calc_mat_change_test.c"}
+      ]
+    },
+    {
+      "id": "G6",
+      "claim": "Black Edition contains attenuation-inversion infrastructure but no complete production gradient-to-model-update path.",
+      "evidence_type": "call-site reachability",
+      "direction": "not applicable",
+      "sources": [
+        {"repository": "black_edition", "path": "src/SH/grad_obj_sh_visc.c"},
+        {"repository": "black_edition", "path": "src/SH/store_PCG_SH_visc.c"},
+        {"repository": "black_edition", "path": "src/SH/calc_mat_change_test_SH_visc.c"},
+        {"repository": "black_edition", "path": "src/SH/FWI_SH_visc.c"}
+      ]
+    },
+    {
+      "id": "G7",
+      "claim": "The modern exact Black Edition elastic SH gradient path supersedes the historical DENISE-SH gradient path.",
+      "evidence_type": "source text",
+      "direction": "black_edition_diverged_after_shared_legacy",
+      "sources": [
+        {"repository": "black_edition", "path": "src/SH/assemble_gradSH_exact.c"},
+        {"repository": "black_edition", "path": "src/SH/update_v_PML_SH.c"},
+        {"repository": "denise_sh", "path": "src/denise.c"},
+        {"repository": "denise_sh", "path": "src/update_v_PML.c"}
+      ]
+    }
+  ],
+  "numeric_source_comparisons": [
+    {"left": {"repository": "black_edition", "path": "src/SH/update_v_PML_SH.c"}, "right": {"repository": "denise_sh", "path": "src/update_v_PML.c"}, "token_similarity": 0.787493, "interpretation": "genealogy evidence only"},
+    {"left": {"repository": "black_edition", "path": "src/SH/update_s_elastic_PML_SH.c"}, "right": {"repository": "denise_sh", "path": "src/update_s_elastic_PML.c"}, "token_similarity": 0.837226, "interpretation": "genealogy evidence only"},
+    {"left": {"repository": "black_edition", "path": "src/SH/update_s_visc_PML_SH.c"}, "right": {"repository": "denise_sh", "path": "src/update_s_visc_PML.c"}, "token_similarity": 0.901920, "interpretation": "genealogy evidence only"},
+    {"left": {"repository": "black_edition", "path": "src/SH/prepare_update_s_visc_SH.c"}, "right": {"repository": "denise_sh", "path": "src/prepare_update_s.c"}, "token_similarity": 0.997666, "interpretation": "genealogy evidence only"},
+    {"left": {"repository": "black_edition", "path": "src/SH/PML_pro_SH.c"}, "right": {"repository": "denise_sh", "path": "src/PML_pro.c"}, "token_similarity": 0.999459, "interpretation": "genealogy evidence only"},
+    {"left": {"repository": "black_edition", "path": "src/SH/exchange_v_SH.c"}, "right": {"repository": "denise_sh", "path": "src/exchange_v.c"}, "token_similarity": 0.987310, "interpretation": "genealogy evidence only"},
+    {"left": {"repository": "black_edition", "path": "src/SH/exchange_s_SH.c"}, "right": {"repository": "denise_sh", "path": "src/exchange_s.c"}, "token_similarity": 0.986129, "interpretation": "genealogy evidence only"},
+    {"left": {"repository": "black_edition", "path": "src/SH/readmod_visc_SH.c"}, "right": {"repository": "denise_sh", "path": "src/readmod.c"}, "token_similarity": 0.973319, "interpretation": "genealogy evidence only"},
+    {"left": {"repository": "black_edition", "path": "src/SH/store_LBFGS_SH.c"}, "right": {"repository": "denise_sh", "path": "src/store_LBFGS_SH.c"}, "token_similarity": 0.937365, "interpretation": "genealogy evidence only"},
+    {"left": {"repository": "black_edition", "path": "src/SH/extract_PCG_SH.c"}, "right": {"repository": "denise_sh", "path": "src/extract_PCG_SH.c"}, "token_similarity": 1.0, "interpretation": "genealogy evidence only"}
+  ],
+  "capability_matrix": [
+    {"capability": "elastic SH forward", "black_edition": "IMPLEMENTATION VERIFIED", "denise_sh": "IMPLEMENTATION WIRED", "classification": "IMPLEMENTATION VERIFIED"},
+    {"capability": "viscoelastic SH forward", "black_edition": "IMPLEMENTATION VERIFIED", "denise_sh": "IMPLEMENTATION WIRED", "classification": "IMPLEMENTATION VERIFIED"},
+    {"capability": "SH CPML", "black_edition": "IMPLEMENTATION VERIFIED", "denise_sh": "IMPLEMENTATION WIRED", "classification": "IMPLEMENTATION VERIFIED"},
+    {"capability": "elastic SH free surface", "black_edition": "IMPLEMENTATION ABSENT", "denise_sh": "IMPLEMENTATION EXISTS", "classification": "IMPLEMENTATION EXISTS"},
+    {"capability": "viscoelastic SH free surface", "black_edition": "IMPLEMENTATION ABSENT", "denise_sh": "IMPLEMENTATION INCOMPLETE", "classification": "IMPLEMENTATION INCOMPLETE"},
+    {"capability": "MPI domain decomposition", "black_edition": "IMPLEMENTATION VERIFIED", "denise_sh": "IMPLEMENTATION WIRED", "classification": "IMPLEMENTATION VERIFIED"},
+    {"capability": "DTINV forward storage", "black_edition": "IMPLEMENTATION VERIFIED", "denise_sh": "IMPLEMENTATION WIRED", "classification": "IMPLEMENTATION WIRED"},
+    {"capability": "elastic Vs gradient", "black_edition": "IMPLEMENTATION VERIFIED", "denise_sh": "IMPLEMENTATION INCOMPLETE", "classification": "IMPLEMENTATION VERIFIED"},
+    {"capability": "elastic density gradient", "black_edition": "IMPLEMENTATION VERIFIED", "denise_sh": "IMPLEMENTATION INCOMPLETE", "classification": "IMPLEMENTATION VERIFIED"},
+    {"capability": "attenuation gradient", "black_edition": "IMPLEMENTATION INCOMPLETE", "denise_sh": "IMPLEMENTATION ABSENT", "classification": "IMPLEMENTATION INCOMPLETE"},
+    {"capability": "Vs model update", "black_edition": "IMPLEMENTATION WIRED", "denise_sh": "IMPLEMENTATION WIRED", "classification": "IMPLEMENTATION WIRED"},
+    {"capability": "density model update", "black_edition": "IMPLEMENTATION WIRED", "denise_sh": "IMPLEMENTATION WIRED", "classification": "IMPLEMENTATION WIRED"},
+    {"capability": "attenuation model update", "black_edition": "IMPLEMENTATION INCOMPLETE", "denise_sh": "IMPLEMENTATION ABSENT", "classification": "IMPLEMENTATION INCOMPLETE"},
+    {"capability": "Vs/rho bounds", "black_edition": "IMPLEMENTATION WIRED", "denise_sh": "IMPLEMENTATION WIRED", "classification": "IMPLEMENTATION WIRED"},
+    {"capability": "attenuation bounds", "black_edition": "IMPLEMENTATION INCOMPLETE", "denise_sh": "IMPLEMENTATION ABSENT", "classification": "IMPLEMENTATION INCOMPLETE"},
+    {"capability": "PCG", "black_edition": "IMPLEMENTATION WIRED", "denise_sh": "IMPLEMENTATION WIRED", "classification": "IMPLEMENTATION WIRED"},
+    {"capability": "LBFGS", "black_edition": "IMPLEMENTATION WIRED", "denise_sh": "IMPLEMENTATION WIRED", "classification": "IMPLEMENTATION WIRED"},
+    {"capability": "line search", "black_edition": "IMPLEMENTATION WIRED", "denise_sh": "IMPLEMENTATION WIRED", "classification": "IMPLEMENTATION WIRED"},
+    {"capability": "Taylor verification", "black_edition": "IMPLEMENTATION VERIFIED", "denise_sh": "IMPLEMENTATION ABSENT", "classification": "IMPLEMENTATION VERIFIED"},
+    {"capability": "physical Q parameterization", "black_edition": "IMPLEMENTATION VERIFIED", "denise_sh": "IMPLEMENTATION INCOMPLETE", "classification": "IMPLEMENTATION VERIFIED"}
+  ],
+  "audit_questions": [
+    {"number": 1, "answer": "No genuinely active SH implementation was found in DENISE-SH that is absent from Black Edition."},
+    {"number": 2, "answer": "A viscoelastic SH free-surface routine exists in DENISE-SH, but its normal solver and line-search call sites are commented out."},
+    {"number": 3, "answer": "No. The routines are historical equation/state references only and need an independent staggered-grid and memory-variable derivation."},
+    {"number": 4, "answer": "No complete attenuation-gradient path exists in DENISE-SH."},
+    {"number": 5, "answer": "No attenuation optimizer-vector handling exists in DENISE-SH."},
+    {"number": 6, "answer": "No attenuation model update or Q/tau chain rule exists in DENISE-SH."},
+    {"number": 7, "answer": "Yes. DENISE-SH reads Qs using the historical taus=2/Qs mapping."},
+    {"number": 8, "answer": "The DENISE-SH elastic gradient retains receiver-metric, temporal-state, staggered-material-VJP, density-state, and DTINV-scaling defects; its local Vs chain factor is algebraically consistent but acts on the legacy material gradient."},
+    {"number": 9, "answer": "No evidence ties a current Black Edition regression to an incomplete migration from DENISE-SH; the shared ancestry explains similarity, while known gaps are shared or arose on the Black Edition branch."}
+  ],
+  "recommendations": {
+    "A_strong_candidate": ["independently derive and verify an elastic SH traction-free boundary"],
+    "B_historical_reference_only": ["DENISE-SH surface routines", "DENISE-SH legacy FWI state ordering"],
+    "C_superseded_by_black_edition": ["physical-Q mapping", "exact elastic SH gradient", "Taylor verification"],
+    "D_do_not_port": ["taus=2/Q for L>1", "legacy receiver injection", "legacy same-cell stress correlation", "missing harmonic-mu transpose", "missing DTINV quadrature"],
+    "E_requires_independent_audit": ["viscoelastic free-surface memory-variable treatment", "attenuation-gradient parameterization and update chain"]
+  },
+  "recommended_next_milestone": "M6.1: independently derive and verify elastic SH free-surface behavior before any viscoelastic extension",
+  "production_files_changed": [],
+  "final_verdict": "M6.0 SH CROSS-CODE AUDIT COMPLETE"
+}
