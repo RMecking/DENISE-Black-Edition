@@ -27,6 +27,18 @@ byte-hashed. `.gitattributes` disables end-of-line translation for them so the
 same QUICK checks run from native Linux and Windows-hosted WSL worktrees. Do
 not normalize or reformat those historical artifacts.
 
+Tracked `*.sh` files are forced to LF by `.gitattributes`. This keeps their
+shebangs directly executable in Linux and WSL even when the host Git setting
+uses CRLF conversion. In an existing Windows worktree where the runner was
+already materialized with CRLF, first confirm it has no local change and then
+rematerialize only that file:
+
+```bash
+git diff --quiet -- scripts/run_verification.sh && \
+  rm -- scripts/run_verification.sh && \
+  git -c core.autocrlf=false restore --worktree -- scripts/run_verification.sh
+```
+
 After pulling this attribute into an existing Windows worktree whose artifacts
 were already translated, rematerialize only those retained files once:
 
@@ -47,8 +59,8 @@ git -c core.autocrlf=false restore --worktree -- \
 The suite uses only the registered `integration` and `extended` markers.
 `extended` physics tests are also integration tests. The pre-change M5.6 audit
 collected 177 tests (106 QUICK, 47 MANDATORY physics, 24 EXTENDED physics).
-M5.6 adds one QUICK workflow-contract test, so the current totals are 178, 107,
-47, and 24 respectively.
+M5.6 added one QUICK workflow-contract test and M6.0 added two QUICK inventory
+tests, so the current totals are 180, 109, 47, and 24 respectively.
 
 ### Copy-pasteable commands
 

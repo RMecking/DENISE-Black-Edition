@@ -1,6 +1,25 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
+
+
+def _git_attributes(
+    repository_root: Path, path: str, *attributes: str
+) -> dict[str, str]:
+    result = subprocess.run(
+        ["git", "check-attr", *attributes, "--", path],
+        cwd=repository_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    parsed: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        reported_path, attribute, value = line.split(": ", 2)
+        assert reported_path == path
+        parsed[attribute] = value
+    return parsed
 
 
 def test_developer_verification_contract(repository_root: Path) -> None:
@@ -9,7 +28,7 @@ def test_developer_verification_contract(repository_root: Path) -> None:
     runner = (repository_root / "scripts/run_verification.sh").read_text(
         encoding="utf-8"
     )
-    attributes = (repository_root / ".gitattributes").read_text(encoding="utf-8")
+    runner_bytes = (repository_root / "scripts/run_verification.sh").read_bytes()
 
     for level in ("QUICK", "MANDATORY", "EXTENDED", "TARGETED"):
         assert level in guide
@@ -35,5 +54,16 @@ def test_developer_verification_contract(repository_root: Path) -> None:
     assert "-m 'not extended'" in runner
     assert "-m extended" in runner
     assert "--require-denise" in runner
-    assert "tests/m5*.patch -text" in attributes
-    assert "tests/m5*.json  -text" in attributes
+    assert runner_bytes.startswith(b"#!/usr/bin/env bash\n")
+    assert not runner_bytes.startswith(b"#!/usr/bin/env bash\r\n")
+
+    assert _git_attributes(
+        repository_root, "scripts/run_verification.sh", "text", "eol"
+    ) == {"text": "set", "eol": "lf"}
+    for retained_path in (
+        "tests/m5_provenance_contract.patch",
+        "tests/m5_provenance_contract.json",
+    ):
+        assert _git_attributes(repository_root, retained_path, "text") == {
+            "text": "unset"
+        }
