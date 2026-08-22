@@ -1304,3 +1304,22 @@ physics command, wrapper QUICK mode, extended collection, and a representative
 extended test. The matrix explicitly retains missing or limited coverage for
 acoustic, VTI, TTI, RTM, SH free-surface behavior, optimizer convergence,
 attenuation inversion, and PSV parameterizations outside the verified scope.
+
+## M6.0: Black Edition / DENISE-SH SH cross-code audit
+
+M6.0 compares the maintained SH implementation with the historical DENISE-SH
+repository as source-genealogy evidence, never as a numerical oracle. The audit
+records immutable repository snapshots, source/blob provenance, a capability
+matrix, free-surface reachability, forward-rheology ancestry, elastic-gradient
+divergence, and the incomplete attenuation-inversion paths in
+`docs/m6.0_sh_cross_code_audit.md` and
+`tests/m6.0_sh_cross_code_inventory.json`.
+
+The main finding is that many forward and optimizer modules share strong
+ancestry, but DENISE-SH provides no active missing feature or verified repair
+to port. Its SH free-surface files are disconnected from the normal driver,
+its `tau=2/Q` mapping is superseded by the verified Black Edition physical-Q
+path, and its legacy elastic gradient predates the exact M5.1/M5.2 repair.
+Attenuation inversion is incomplete in Black Edition and absent as an
+end-to-end path in DENISE-SH. The recommended next scope is an independently
+derived and verified elastic SH free-surface implementation.
