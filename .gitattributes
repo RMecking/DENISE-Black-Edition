@@ -1,6 +1,9 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 
+# Keep tracked shell scripts directly executable in Linux and WSL checkouts.
+*.sh text eol=lf
+
 # Custom for Visual Studio
 *.cs     diff=csharp
 
