@@ -160,11 +160,19 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
 		}
 	      }
 
+	      if(FREE_SURF && (POS[2]==0)){
+		surface_elastic_SH_velocity((*waveSH).pvz, NX, FDORDER/2);
+	      }
+
               /* stress update */
 	      update_s_elastic_PML_SH(1, NX, 1, NY, (*waveSH).pvz, (*waveSH).uz, (*waveSH).uzx, (*waveSH).psyz, (*waveSH).psxz, (*matSH).pujp, (*matSH).puip, (*matSH).prho, hc,infoout,
 				     (*waveSH_PML).K_x, (*waveSH_PML).a_x, (*waveSH_PML).b_x, (*waveSH_PML).K_x_half, (*waveSH_PML).a_x_half, (*waveSH_PML).b_x_half,
         			     (*waveSH_PML).K_y, (*waveSH_PML).a_y, (*waveSH_PML).b_y, (*waveSH_PML).K_y_half, (*waveSH_PML).a_y_half, (*waveSH_PML).b_y_half,
         			     (*waveSH_PML).psi_vzx, (*waveSH_PML).psi_vzy, mode);
+
+	   if(FREE_SURF && (POS[2]==0)){
+		surface_elastic_SH_stress((*waveSH).psyz, NX, FDORDER/2);
+	   }
 
 
 	   /*if ((FREE_SURF) && (POS[2]==0)){
