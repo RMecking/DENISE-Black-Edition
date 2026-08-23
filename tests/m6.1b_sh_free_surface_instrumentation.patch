@@ -1,0 +1,134 @@
+diff --git a/src/SH/sh.c b/src/SH/sh.c
+index bb63248..3400aed 100644
+--- a/src/SH/sh.c
++++ b/src/SH/sh.c
+@@ -31,6 +31,13 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
+ 	int exact_elastic_sh_adjoint;
+         float tmp, tmp1, muss, lamss, P3, P5;
+         float hess_rho, hess_mu;
++#ifdef M61B_SH_DIAGNOSTICS
++	int m61b_enabled, m61b_m;
++	double m61b_local_max[8], m61b_global_max[8];
++	double m61b_local_energy[2], m61b_global_energy[2];
++	double m61b_previous_potential = 0.0;
++	FILE *m61b_stream = NULL;
++#endif
+ 
+         nd = FDORDER/2 + 1;
+ 	exact_elastic_sh_adjoint = ((MODE==1)&&(mode==1)&&(INVMAT1==1));
+@@ -66,6 +73,21 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
+ 
+         }	                                                        	
+ 		    
++#ifdef M61B_SH_DIAGNOSTICS
++	m61b_m = FDORDER/2;
++	m61b_enabled = ((mode==0) && (getenv("M61B_SH_DIAGNOSTICS")!=NULL));
++	if(m61b_enabled && (MYID==0)){
++		m61b_stream = fopen(getenv("M61B_SH_DIAGNOSTICS"), "w");
++		if(m61b_stream==NULL){
++			err("M6.1b diagnostic output could not be opened");
++		}
++		fprintf(m61b_stream,
++		        "timestep,max_abs_syz0,max_abs_dplus_vz0,"
++		        "max_vz_parity_residual,max_syz_parity_residual,"
++		        "max_abs_interior_stress,max_impedance_vz,"
++		        "max_abs_dx_vz,max_abs_vz,centered_energy\n");
++	}
++#endif
+ 	/* initialize SH wavefields with zero */
+ 	zero_denise_elast_SH(-nd+1,NY+nd,-nd+1,NX+nd, (*waveSH).pvz, (*waveSH).psxz, (*waveSH).psyz, (*waveSH).pvzm1, (*waveSH).pvzp1, (*waveSH_PML).psi_sxz_x, (*waveSH_PML).psi_syz_y, (*waveSH_PML).psi_vzx,  (*waveSH_PML).psi_vzy);
+ 			                                                        	     
+@@ -182,1 +204,83 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
++#ifdef M61B_SH_DIAGNOSTICS
++	   if(m61b_enabled){
++	      int m61b_index;
++	      for(m61b_index=0;m61b_index<8;m61b_index++){
++	         m61b_local_max[m61b_index] = 0.0;
++	      }
++	      m61b_local_energy[0] = 0.0;
++	      m61b_local_energy[1] = 0.0;
++	      if(POS[2]==0){
++	         for(i=1;i<=NX;i++){
++	            double dplus = 0.0;
++	            double value = fabs((double)(*waveSH).psyz[0][i]);
++	            if(value>m61b_local_max[0]) m61b_local_max[0]=value;
++	            for(l=1;l<=m61b_m;l++){
++	               dplus += hc[l] *
++	                   ((*waveSH).pvz[l][i]-(*waveSH).pvz[1-l][i]) / DH;
++	               value=fabs((*waveSH).pvz[1-l][i]-(*waveSH).pvz[l][i]);
++	               if(value>m61b_local_max[2]) m61b_local_max[2]=value;
++	            }
++	            for(l=1;l<m61b_m;l++){
++	               value=fabs((*waveSH).psyz[-l][i]+(*waveSH).psyz[l][i]);
++	               if(value>m61b_local_max[3]) m61b_local_max[3]=value;
++	            }
++	            value=fabs(dplus);
++	            if(value>m61b_local_max[1]) m61b_local_max[1]=value;
++	         }
++	      }
++	      for(i=1;i<=NX;i++){
++	         for(j=1;j<=NY;j++){
++	            double velocity = (*waveSH).pvz[j][i];
++	            double sxz = (*waveSH).psxz[j][i];
++	            double syz = (*waveSH).psyz[j][i];
++	            double dx_vz = 0.0;
++	            double mu_center = 0.0;
++	            double value;
++	            for(l=1;l<=m61b_m;l++){
++	               dx_vz += hc[l] *
++	                   ((*waveSH).pvz[j][i+l]-(*waveSH).pvz[j][i-(l-1)]) / DH;
++	            }
++	            value=fmax(fabs(sxz),fabs(syz));
++	            if(value>m61b_local_max[4]) m61b_local_max[4]=value;
++	            if(INVMAT1==1){
++	               mu_center=(*matSH).prho[j][i] * (*matSH).pu[j][i]
++	                   * (*matSH).pu[j][i];
++	            }else if(INVMAT1==3){
++	               mu_center=(*matSH).pu[j][i];
++	            }
++	            value=sqrt((*matSH).prho[j][i]*mu_center) * fabs(velocity);
++	            if(value>m61b_local_max[5]) m61b_local_max[5]=value;
++	            value=fabs(dx_vz);
++	            if(value>m61b_local_max[6]) m61b_local_max[6]=value;
++	            value=fabs(velocity);
++	            if(value>m61b_local_max[7]) m61b_local_max[7]=value;
++	            m61b_local_energy[0] +=
++	                0.5 * (*matSH).prho[j][i] * velocity * velocity;
++	            if((*matSH).puip[j][i]>0.0){
++	               m61b_local_energy[1] +=
++	                   0.5 * sxz * sxz / (*matSH).puip[j][i];
++	            }
++	            if((*matSH).pujp[j][i]>0.0){
++	               m61b_local_energy[1] +=
++	                   0.5 * syz * syz / (*matSH).pujp[j][i];
++	            }
++	         }
++	      }
++	      MPI_Reduce(m61b_local_max, m61b_global_max, 8, MPI_DOUBLE,
++	                 MPI_MAX, 0, MPI_COMM_WORLD);
++	      MPI_Reduce(m61b_local_energy, m61b_global_energy, 2, MPI_DOUBLE,
++	                 MPI_SUM, 0, MPI_COMM_WORLD);
++	      if(MYID==0){
++	         double centered_energy = m61b_global_energy[0]
++	             + 0.5*(m61b_previous_potential+m61b_global_energy[1]);
++	         fprintf(m61b_stream,
++	                 "%d,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g\n", nt,
++	                 m61b_global_max[0], m61b_global_max[1],
++	                 m61b_global_max[2], m61b_global_max[3],
++	                 m61b_global_max[4], m61b_global_max[5],
++	                 m61b_global_max[6], m61b_global_max[7], centered_energy);
++	         m61b_previous_potential=m61b_global_energy[1];
++	      }
++	   }
++#endif
+ 	   exchange_s_SH((*waveSH).psxz,(*waveSH).psyz, (*mpiPSV).bufferlef_to_rig, (*mpiPSV).bufferrig_to_lef, (*mpiPSV).buffertop_to_bot, (*mpiPSV).bufferbot_to_top, req_send, req_rec);
+@@ -293,4 +397,9 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
+ 
+ 	   }/*--------------------  End  of loop over timesteps ----------*/		
+ 
++#ifdef M61B_SH_DIAGNOSTICS
++	if(m61b_stream!=NULL){
++		fclose(m61b_stream);
++	}
++#endif
+ }
