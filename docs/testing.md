@@ -57,10 +57,13 @@ git -c core.autocrlf=false restore --worktree -- \
 | TARGETED | Minimum feedback for a changed subsystem | Depends | explicit test files listed below |
 
 The suite uses only the registered `integration` and `extended` markers.
-`extended` physics tests are also integration tests. The pre-change M5.6 audit
-collected 177 tests (106 QUICK, 47 MANDATORY physics, 24 EXTENDED physics).
-M5.6 added one QUICK workflow-contract test and M6.0 added two QUICK inventory
-tests, so the current totals are 180, 109, 47, and 24 respectively.
+`extended` physics tests are also integration tests. The current M6.1
+collection contains 284 tests: 195 selected by QUICK, 56 selected by the
+MANDATORY physics command, and 42 selected by EXTENDED. These selection counts
+are not additive: nine pure configuration/mathematics tests live under
+`tests/physics/` and are selected by both QUICK and the non-extended physics
+command. The counts were recomputed with pytest collection at the M6.1 closure
+head rather than carried forward from M5.6/M6.0.
 
 ### Copy-pasteable commands
 
@@ -137,7 +140,7 @@ Status words refer only to evidence in the current repository:
 
 | Physics / feature | Forward | Boundary | MPI | Viscoelastic | Gradient FD | Taylor | End-to-end inversion | Status / limitations |
 |---|---|---|---|---|---|---|---|---|
-| SH elastic | VERIFIED: homogeneous velocity | PARTIALLY VERIFIED: CPML; SH free surface not covered | VERIFIED: homogeneous and CPML decompositions | n/a | VERIFIED: Vs and density, including heterogeneous/DTINV diagnostics | VERIFIED: Vs/rho production gradient | PARTIALLY VERIFIED: successful GF1/GF2 FWI smokes, not optimization convergence | **VERIFIED within listed scope**; no SH free-surface test |
+| SH elastic | VERIFIED: homogeneous velocity; flat free-surface normal/oblique reflection and forward hold-outs | VERIFIED: CPML and flat grid-aligned free surface at FDORDER 2/4/6/8/10/12 | VERIFIED: selected homogeneous, CPML, free-surface, corner, and FWI 1x1/2x1/1x2 decompositions | n/a | VERIFIED: Vs/rho, including heterogeneous/DTINV diagnostics and FREE_SURF=1 direct FD | VERIFIED: Vs/rho production gradients and FREE_SURF=1 GF1/GF2 Taylor closure | PARTIALLY VERIFIED: successful GF1/GF2 FWI smokes and gradient closure, not optimizer convergence | **VERIFIED within the listed elastic flat-surface scope**; not a claim for viscoelastic free surfaces, topography, anisotropy, attenuation inversion, or optimizer convergence |
 | SH viscoelastic | VERIFIED: Q sensitivity, attenuation, phase, high-Q convergence | NOT COVERED by a separate visco boundary oracle | NOT COVERED beyond single-rank execution | VERIFIED for reviewed forward GSLS/Q mappings | UNVERIFIED for attenuation parameters | NOT COVERED | UNVERIFIED; attenuation update path appears incomplete | **FORWARD VERIFIED ONLY** |
 | PSV elastic | VERIFIED: P/SV velocity, polarization, symmetry, reciprocity, interfaces | VERIFIED: CPML, free surface, elastic interfaces | VERIFIED: forward, boundaries, heterogeneous gradient seams | n/a | VERIFIED: physical Vp/Vs/rho, homogeneous and heterogeneous | VERIFIED: five predefined GF1/GF2 cases | PARTIALLY VERIFIED: successful gradient runs, not optimizer convergence | **VERIFIED within INVMAT1=1 scope** |
 | PSV viscoelastic | VERIFIED: Qp/Qs sensitivity, attenuation, phase, high-Q convergence | NOT COVERED by a separate visco boundary oracle | VERIFIED for selected P/SV decompositions; broader matrix is extended | VERIFIED for reviewed forward GSLS/Q mappings | UNVERIFIED for attenuation parameters | NOT COVERED | UNVERIFIED | **FORWARD VERIFIED ONLY** |
@@ -151,7 +154,11 @@ Status words refer only to evidence in the current repository:
 | Q / attenuation inversion | Forward Q-to-GSLS initialization VERIFIED | NOT COVERED | NOT COVERED | Forward rheology VERIFIED | UNVERIFIED | NOT COVERED | UNVERIFIED and apparently incomplete | **UNVERIFIED legacy capability**; no Q-to-tau chain rule |
 
 CPML tests cover SH and elastic PSV incidence, negative controls, and selected
-MPI decomposition. Free-surface and elastic-interface tests are PSV-only.
+MPI decompositions. Elastic-interface tests remain PSV-only. Free-surface
+coverage includes the PSV cases plus the M6.1 flat grid-aligned elastic SH
+boundary, reflection, stability, hold-out, gradient, and Taylor tests. M6.1
+does not cover a viscoelastic SH free surface, topography, an anisotropic free
+surface, attenuation/Q inversion, or optimizer convergence.
 Provenance tests lock retained M5 production patches and diagnostic artifacts;
 they establish reproducibility, not additional physics coverage.
 
@@ -164,11 +171,11 @@ column provides earlier feedback; it does not replace the mandatory gate.
 |---|---|---|---|
 | PSV forward kernel | `test_homogeneous_psv.py`, `test_cpml.py`, `test_free_surface.py`, `test_elastic_interface.py` | Required | Run PSV rheology extended MPI if exchange/visco code is touched; no acoustic/VTI/TTI inference |
 | PSV FWI / gradient | QUICK: `test_psv_gradient_math.py`, `test_psv_gradient_production_math.py`, `test_psv_taylor_math.py` | Required | Required: production gradient, heterogeneous hold-out, protected paths, and PSV Taylor files |
-| SH forward kernel | `test_homogeneous_sh.py`, SH selections in `test_cpml.py` | Required | Run SH rheology for visco changes; SH free-surface coverage is missing |
-| SH FWI / gradient | QUICK: `test_sh_fwi_gradient_math.py`, `test_sh_density_gradient_math.py`, `test_sh_taylor_math.py`; mandatory `test_sh_fwi_gradient.py` | Required | Required: production gradient and SH Taylor; use retained diagnostics when temporal, density, averaging, or scaling code changes |
+| SH forward kernel | `test_homogeneous_sh.py`, SH selections in `test_cpml.py`; for a flat elastic free-surface change also run `test_sh_free_surface.py`, `test_sh_free_surface_runtime.py`, and `test_sh_free_surface_holdouts.py` | Required | Run the full M6.1 free-surface families for boundary/CPML interaction changes and SH rheology for visco changes; do not infer viscoelastic or topographic free-surface coverage |
+| SH FWI / gradient | QUICK: `test_sh_fwi_gradient_math.py`, `test_sh_density_gradient_math.py`, `test_sh_taylor_math.py`; mandatory `test_sh_fwi_gradient.py`; for FREE_SURF=1 run `test_sh_free_surface_fwi_gradient.py` and `test_sh_free_surface_fwi_taylor.py` | Required | Required: production gradient and SH Taylor relevant to the changed boundary; use retained diagnostics when temporal, density, averaging, or scaling code changes |
 | Viscoelastic / rheology | QUICK: `test_attenuation.py`, `test_rheology.py`; physics: `test_viscoelastic_q.py`, SH and PSV rheology files | Required | Run extended multi-mechanism SH and PSV MPI cases when their paths are affected; attenuation inversion remains unverified |
 | CPML | `test_cpml.py` | Required | No separate extended CPML suite exists; add a new oracle for uncovered physics families |
-| Free surface | `test_free_surface.py` | Required | Current tests are PSV-only; an SH change needs a new targeted test before claiming coverage |
+| Free surface | PSV: `test_free_surface.py`; elastic SH: `test_sh_free_surface.py`, `test_sh_free_surface_runtime.py`, and `test_sh_free_surface_holdouts.py` | Required | For SH adjoint/FWI changes additionally run `test_sh_free_surface_fwi_gradient.py` and `test_sh_free_surface_fwi_taylor.py`; M6.1 is limited to a flat grid-aligned elastic SH surface |
 | MPI exchange | MPI cases in homogeneous SH/PSV, CPML, free-surface, interface, and rheology tests | Required | Run extended PSV rheology MPI matrix and heterogeneous gradient seam tests relevant to the changed exchange path |
 | Model reading / parameterization | QUICK harness, attenuation, rheology, and `test_psv_invmat2_contract.py`; physics `test_viscoelastic_q.py` and `test_psv_invmat2_rejected.py` | Required | Run protected paths and quantitative rheology for affected modes; do not reinterpret quarantined `INVMAT1=2` |
 | Objective / residual | QUICK SH/PSV gradient math and Taylor math; mandatory `test_sh_fwi_gradient.py` | Required | Run both SH and PSV production-gradient/Taylor tests for affected GF forms |
