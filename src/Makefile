@@ -250,6 +250,7 @@ DENISE += alloc_fwiSH.c \
 	  saveseis_glob_SH.c \
 	  sh.c \
 	  sh_visc.c \
+	  surface_elastic_SH.c \
           step_length_est_sh.c \
 	  stf_sh.c \
 	  store_LBFGS_SH.c \

@@ -706,6 +706,10 @@ void store_PCG_SH_visc(float * PCG_old, float ** waveconv_u, float ** waveconv_r
 
 void store_pseudo_hess_SH(struct fwiSH *fwiSH);
 
+void surface_elastic_SH_velocity(float **vz, int nx, int half_order);
+
+void surface_elastic_SH_stress(float **syz, int nx, int half_order);
+
 void update_s_elastic_PML_SH(int nx1, int nx2, int ny1, int ny2,
 	float ** vz, float **  uz, float **  uzx, float **   syz, float **   sxz,
 	float ** ujp, float ** uip, float **rho, float *hc, int infoout,

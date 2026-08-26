@@ -1323,3 +1323,115 @@ path, and its legacy elastic gradient predates the exact M5.1/M5.2 repair.
 Attenuation inversion is incomplete in Black Edition and absent as an
 end-to-end path in DENISE-SH. The recommended next scope is an independently
 derived and verified elastic SH free-surface implementation.
+
+## M6.1: elastic SH flat free surface and FWI/adjoint closure
+
+M6.1 independently derives, implements, and verifies the isotropic elastic SH
+free surface for a flat grid-aligned upper boundary. It does not use the
+historical DENISE-SH implementation as an oracle. The scope is `FREE_SURF=1`,
+elastic SH, `INVMAT1=1`, and the physical Vs/rho parameterization; it does not
+cover a viscoelastic SH free surface, topography, anisotropic free surfaces,
+attenuation/Q inversion, or optimizer convergence.
+
+### M6.1a: discrete boundary design
+
+The reviewed staggered-grid boundary is the physical traction row
+`syz[0][i]=0` at `y=0`. The image extension is even for `vz` and odd for
+`syz`:
+
+```text
+vz[1-k][i] =  vz[k][i],  k=1..FDORDER/2
+syz[-k][i] = -syz[k][i], k=1..FDORDER/2-1
+```
+
+The corresponding surface spatial operators satisfy the discrete contract
+`D- = -(D+)^T`. The design distinguishes the minimum ghost rows consumed by
+the active stress stencil from the complete boundary state required by the
+surface diagnostic. It covers FDORDER 2, 4, 6, 8, 10, and 12 and applies the
+physical operation only on MPI ranks owning the upper boundary.
+
+### M6.1b/M6.1b.2: test-first oracle and runtime baseline
+
+The reflection, traction, parity, image-closure, MPI, and compatible-energy
+oracles were locked before the production repair. The forward contract checks
+the native staggered source/receiver coordinates, distinguishes the `y=0`
+surface from half- and full-cell alternatives, and compares the free-surface
+reflection directly with an equal-vector homogeneous calibration. A
+`FREE_SURF=0` upper-CPML run is an independent negative control rather than a
+subtracted amplitude correction.
+
+The final central production gate passes normal reflection at FDORDER 2/4/12,
+oblique reflection, boundary residuals, selected 1x1/2x1/1x2 MPI
+decompositions, and the FDORDER=12 post-source stability check (`6 passed`).
+The extended FDORDER 2/4/6/8/10/12 definition also passes (`6 passed`). The
+traction, velocity/stress parity, and image-closure residuals remain within
+their predeclared roundoff-scaled bounds without changing the locked oracle.
+
+### M6.1c: production implementation
+
+The production repair consists of two small SH-specific elastic helpers. The
+first completes the even `vz` ghosts after velocity exchange and before the
+stress update. The second enforces `syz[0]=0` and completes the odd `syz`
+ghosts after the stress update and before stress exchange. The shared elastic
+SH timestep therefore applies the same boundary operator to forward and
+adjoint propagation. Upper CPML behavior for `FREE_SURF=0`, lateral/bottom
+CPML, viscoelastic SH, PSV, acoustic, VTI, and TTI paths are outside this
+change.
+
+### M6.1d: independent forward hold-outs
+
+The strong near-surface heterogeneous hold-out passes at FDORDER 4 and 12,
+including 1x1/2x1/1x2 decomposition coverage across the heterogeneous seam.
+The left and right lateral-CPML/free-surface corner hold-outs also pass,
+including their selected MPI comparisons and compatible-energy checks
+(`2 passed`). Their wide-domain waveform comparisons remain diagnostic only:
+M6.1d introduces no new waveform threshold and makes no heterogeneous
+wavefield-accuracy claim.
+
+### M6.1e: FREE_SURF=1 FWI and adjoint closure
+
+The locked broad shallow direct-FD gate exercises Vs and rho independently
+under both GF1 and GF2. All four rows pass. The measured relative gradient
+errors are `2.78e-7` and `1.64e-6` for Vs GF1/GF2 and `4.73e-6` and `4.06e-6`
+for rho GF1/GF2, all below their unchanged M5.1 uncertainty ceilings.
+
+The formal Taylor-v2 matrix contains eight accepted rows:
+
+| case | GF1 R1 slope | GF2 R1 slope |
+|---|---:|---:|
+| homogeneous Vs only | 1.9918 | 1.9913 |
+| homogeneous rho only | 1.9973 | 1.9979 |
+| homogeneous joint Vs/rho | 1.9911 | 1.9906 |
+| heterogeneous joint hold-out | 1.9921 | 1.9916 |
+
+Thus the locked FREE_SURF=1 R1 slopes span approximately 1.9906--1.9979.
+Every baseline is exactly repeatable. The parameter-only formal cases require
+both Taylor-v2 acceptance and the unchanged same-direction M5.1 five-point FD
+acceptance; all four satisfy both contracts. No fitted sign or scale is used.
+
+For GF1 and GF2, the FREE_SURF=1 FWI gradient MPI comparisons cover Vs and rho
+on 2x1 and 1x2 decompositions against 1x1. Every reported relative L2 and
+directional-product relative error is zero; the gradient files are also byte
+identical as a diagnostic. The GF2 DTINV=1 and DTINV=3 objectives are exactly
+equal. Their gradient relative L2 values are approximately `3.68e-7` for Vs
+and `8.15e-7` for rho.
+
+### Historical SH-FWI nonregression and provenance distinction
+
+The historical M5.1 production-gradient suite remains green (`3 passed`). The
+historical M5.2 artifact remains anchored to its original exact
+`BASE_SHA=91bbfdc772e4d1d7973428145e5c2aa005c419a8`; neither its guard nor
+`tests/m5.2_sh_taylor_validation.json` was changed or regenerated.
+
+Separately, an external disposable runner imported the unchanged current-HEAD
+M5.2 cases, objectives, epsilon ladder, analyzer, and acceptance logic while
+intentionally omitting only the historical exact-HEAD wrapper and artifact
+writer. All 8/8 current-production rows pass the unchanged physics contract,
+with exact baseline repeatability and R1 slopes of approximately
+1.9904--2.0007. This is current-head M5.2 physics nonregression, not a new
+historical M5.2 provenance verification or byte-for-byte output requirement.
+
+The final documentation-era QUICK run selected 195 tests and reported
+`195 passed, 89 deselected, 0 failed`. No claim in M6.1 extends beyond the
+elastic flat-grid SH surface and the explicitly tested forward, MPI, Vs/rho
+gradient, Taylor, and DTINV configurations above.
