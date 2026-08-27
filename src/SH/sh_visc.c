@@ -127,6 +127,10 @@ void sh_visc(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH 
 		/* exchange of particle velocities between PEs */
 		exchange_v_SH((*waveSH).pvz, (*mpiPSV).bufferlef_to_rig, (*mpiPSV).bufferrig_to_lef, (*mpiPSV).buffertop_to_bot, (*mpiPSV).bufferbot_to_top, req_send, req_rec);
 		                                                                                                                                            	
+		if(FREE_SURF && (POS[2]==0)){
+			surface_elastic_SH_velocity((*waveSH).pvz, NX, FDORDER/2);
+		}
+
                 /* stress update */
 		update_s_visc_PML_SH(1, NX, 1, NY, (*waveSH).pvz, (*waveSH).uz, (*waveSH).uzx, (*waveSH).psyz, (*waveSH).psxz, (*matSH).pujp, (*matSH).puip, (*matSH).prho, hc, infoout,
 				    (*waveSH).pr, (*waveSH).pp, (*waveSH).pq, (*matSH).fipjp, (*matSH).f, (*matSH).g, (*matSH).bip, (*matSH).bjm, (*matSH).cip, (*matSH).cjm, (*matSH).d, 
@@ -134,6 +138,9 @@ void sh_visc(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH 
         			    (*waveSH_PML).K_y, (*waveSH_PML).a_y, (*waveSH_PML).b_y, (*waveSH_PML).K_y_half, (*waveSH_PML).a_y_half, (*waveSH_PML).b_y_half,
         			    (*waveSH_PML).psi_vzx, (*waveSH_PML).psi_vzy, fwiSH, mode);
 
+	   if(FREE_SURF && (POS[2]==0)){
+		surface_elastic_SH_stress((*waveSH).psyz, NX, FDORDER/2);
+	   }
 
 
 	   /*if ((FREE_SURF) && (POS[2]==0)){
