@@ -1,0 +1,83 @@
+diff --git a/src/SH/sh_visc.c b/src/SH/sh_visc.c
+index 2cc9e80..5cc8a1d 100644
+--- a/src/SH/sh_visc.c
++++ b/src/SH/sh_visc.c
+@@ -35,0 +36,5 @@ void sh_visc(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH
++#ifdef M62B_SH_DIAGNOSTICS
++        int m62b_enabled, m62b_m, m62b_index;
++        double m62b_local[9], m62b_global[9];
++        FILE *m62b_stream = NULL;
++#endif
+@@ -67,0 +73,13 @@ void sh_visc(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH
++#ifdef M62B_SH_DIAGNOSTICS
++        m62b_m = FDORDER/2;
++        m62b_enabled = ((mode==0) && (getenv("M62B_SH_DIAGNOSTICS")!=NULL));
++        if(m62b_enabled && (MYID==0)){
++                m62b_stream = fopen(getenv("M62B_SH_DIAGNOSTICS"), "w");
++                if(m62b_stream==NULL) err("M6.2b diagnostic output could not be opened");
++                fprintf(m62b_stream,
++                        "timestep,max_abs_syz0,max_abs_dplus_vz0,"
++                        "max_vz_parity_residual,max_syz_parity_residual,"
++                        "max_abs_q0,max_q_parity_residual,"
++                        "max_abs_interior_stress,max_abs_vz,max_abs_active_q\n");
++        }
++#endif
+@@ -150,0 +169,54 @@ void sh_visc(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH
++#ifdef M62B_SH_DIAGNOSTICS
++           if(m62b_enabled){
++              for(m62b_index=0;m62b_index<9;m62b_index++) m62b_local[m62b_index]=0.0;
++              if(POS[2]==0){
++                 for(i=1;i<=NX;i++){
++                    double value=fabs((double)(*waveSH).psyz[0][i]);
++                    double dplus=0.0;
++                    if(value>m62b_local[0]) m62b_local[0]=value;
++                    for(l=1;l<=m62b_m;l++){
++                       dplus += hc[l]*((*waveSH).pvz[l][i]-(*waveSH).pvz[1-l][i])/DH;
++                       value=fabs((*waveSH).pvz[1-l][i]-(*waveSH).pvz[l][i]);
++                       if(value>m62b_local[2]) m62b_local[2]=value;
++                    }
++                    value=fabs(dplus);
++                    if(value>m62b_local[1]) m62b_local[1]=value;
++                    for(l=1;l<m62b_m;l++){
++                       value=fabs((*waveSH).psyz[-l][i]+(*waveSH).psyz[l][i]);
++                       if(value>m62b_local[3]) m62b_local[3]=value;
++                    }
++                    for(l=1;l<=L;l++){
++                       value=fabs((*waveSH).pq[0][i][l]);
++                       if(value>m62b_local[4]) m62b_local[4]=value;
++                    }
++                    for(j=1;j<m62b_m;j++){
++                       for(l=1;l<=L;l++){
++                          value=fabs((*waveSH).pq[-j][i][l]+(*waveSH).pq[j][i][l]);
++                          if(value>m62b_local[5]) m62b_local[5]=value;
++                       }
++                    }
++                 }
++              }
++              for(j=1;j<=NY;j++){
++                 for(i=1;i<=NX;i++){
++                    double value=fmax(fabs((*waveSH).psxz[j][i]),fabs((*waveSH).psyz[j][i]));
++                    if(value>m62b_local[6]) m62b_local[6]=value;
++                    value=fabs((*waveSH).pvz[j][i]);
++                    if(value>m62b_local[7]) m62b_local[7]=value;
++                    for(l=1;l<=L;l++){
++                       value=fmax(fabs((*waveSH).pr[j][i][l]),fabs((*waveSH).pq[j][i][l]));
++                       if(value>m62b_local[8]) m62b_local[8]=value;
++                    }
++                 }
++              }
++              MPI_Reduce(m62b_local,m62b_global,9,MPI_DOUBLE,MPI_MAX,0,MPI_COMM_WORLD);
++              if(MYID==0){
++                 fprintf(m62b_stream,
++                         "%d,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g\n",
++                         nt,m62b_global[0],m62b_global[1],m62b_global[2],
++                         m62b_global[3],m62b_global[4],m62b_global[5],
++                         m62b_global[6],m62b_global[7],m62b_global[8]);
++              }
++           }
++#endif
++
+@@ -243,0 +316,3 @@ void sh_visc(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH
++#ifdef M62B_SH_DIAGNOSTICS
++        if(m62b_stream!=NULL) fclose(m62b_stream);
++#endif
