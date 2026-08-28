@@ -1,0 +1,89 @@
+{
+  "baseline_commit": "8c1bfc9c5a5c9f39396b9be5030464f683d3ab5d",
+  "directional_gradient": {
+    "dtinv_1_relative_max": 0.005,
+    "q_order": [
+      "native_staggered_g_tau",
+      "av_tau_transpose",
+      "cell_centered_g_tau",
+      "q_chain_rule",
+      "g_q"
+    ],
+    "requires_five_point_q_fd": true,
+    "requires_five_point_tau_fd": true
+  },
+  "frozen_m6.3b": {
+    "instrumentation_sha256": "84a821686303b9b8166ec884b381348900e7158f074dc57259d12142a0d991cd",
+    "validation_sha256": "15a8b21077f03e902d2edc735941442b384935431b749540401a0d018e5e0552"
+  },
+  "global_production_dot_product": {
+    "cases": [
+      {"free_surface": 0, "nprocx": 1, "nprocy": 1},
+      {"free_surface": 0, "nprocx": 1, "nprocy": 2},
+      {"free_surface": 0, "nprocx": 2, "nprocy": 1},
+      {"free_surface": 1, "nprocx": 1, "nprocy": 1}
+    ],
+    "no_fitted_scale_sign_or_time_shift": true,
+    "relative_residual_max": 1e-05
+  },
+  "operator_order": {
+    "forward": [
+      "source_injection",
+      "velocity_update",
+      "mpi_velocity_exchange",
+      "free_surface_velocity_completion",
+      "strain_spatial_derivative_and_cpml",
+      "gsls_stress_memory_update",
+      "free_surface_stress_completion",
+      "mpi_stress_exchange",
+      "receiver_sampling"
+    ],
+    "not_assumed_self_adjoint": [
+      "mpi_velocity_exchange",
+      "free_surface_velocity_completion",
+      "free_surface_stress_completion",
+      "mpi_stress_exchange"
+    ],
+    "reverse": [
+      "receiver_sampling_transpose",
+      "mpi_stress_exchange_transpose",
+      "free_surface_stress_completion_transpose",
+      "gsls_stress_memory_update_transpose",
+      "strain_spatial_derivative_and_cpml_transpose",
+      "free_surface_velocity_completion_transpose",
+      "mpi_velocity_exchange_transpose",
+      "velocity_update_transpose",
+      "source_injection_transpose"
+    ]
+  },
+  "physics_consistency": {
+    "base_and_zero_step_trial_same_viscoelastic_forward": true,
+    "no_fitted_scale_sign_or_time_shift": true,
+    "relative_objective_max": 1e-12
+  },
+  "q_chain_rule": {
+    "legacy": {
+      "dtau_dq": "-2/Q^2",
+      "tau": "2/Q"
+    },
+    "physical": {
+      "dtau_dq": "-a*tau^2",
+      "tau": "1/(a*Q+b)"
+    }
+  },
+  "tau_vjp": {
+    "decompositions": [
+      [1, 1],
+      [1, 2],
+      [2, 1],
+      [2, 2]
+    ],
+    "four_cell_scatter_weight": 0.25,
+    "requires_corner_case": true
+  },
+  "temporal_quadrature": {
+    "convention": "DT*DTINV",
+    "dtinv_1_is_gradient_acceptance_gate": true,
+    "dtinv_greater_than_1_exactness_requires_separate_proof": true
+  }
+}
