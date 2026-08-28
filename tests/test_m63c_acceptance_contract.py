@@ -42,11 +42,11 @@ M63B_INSTRUMENTATION_SHA = "84a821686303b9b8166ec884b381348900e7158f074dc57259d1
 
 
 class KnownM63cProductionDotDefect(AssertionError):
-    """Raised only for the frozen current-production dot-product violation."""
+    """Raised only for frozen M6.3b baseline production dot-product evidence."""
 
 
 class KnownM63cProductionGradientDisconnected(AssertionError):
-    """Raised only when nonzero FD sensitivity lacks a production tau/Q gradient."""
+    """Raised only for frozen M6.3b baseline production gradient evidence."""
 
 
 def _inner(left, right):
@@ -383,9 +383,9 @@ def test_directional_and_zero_step_acceptance_thresholds_are_unfitted():
 @pytest.mark.xfail(
     strict=True,
     raises=KnownM63cProductionDotDefect,
-    reason="M63C-CURRENT-PRODUCTION-DOT: frozen nominal adjoint misses GREEN target",
+    reason="M63C-FROZEN-M63B-PRODUCTION-DOT: nominal adjoint misses GREEN target",
 )
-def test_current_production_dot_product_is_red_against_m63c_target(repository_root):
+def test_frozen_m63b_production_dot_is_red_against_m63c_target(repository_root):
     report = _frozen_report(repository_root)
     rows = report["production_adjoint_dot_product"]["cases"]
     assert set(rows) == {"fs0_1x1", "fs0_1x2", "fs0_2x1", "fs1_1x1"}
@@ -405,9 +405,9 @@ def test_current_production_dot_product_is_red_against_m63c_target(repository_ro
 @pytest.mark.xfail(
     strict=True,
     raises=KnownM63cProductionGradientDisconnected,
-    reason="M63C-CURRENT-PRODUCTION-GRADIENT: Q/tau sensitivities are not wired",
+    reason="M63C-FROZEN-M63B-PRODUCTION-GRADIENT: Q/tau sensitivities are not wired",
 )
-def test_current_production_directional_gradients_are_red(repository_root):
+def test_frozen_m63b_production_directional_gradients_are_disconnected(repository_root):
     report = _frozen_report(repository_root)
     q_fd = report["q_directional_derivatives"]["fs0_1x1"]["five_point"]
     tau_fd = report["tau_directional_derivative"]["five_point"]
