@@ -667,6 +667,21 @@ void prepare_update_s_visc_SH(float *etajm, float *etaip, float *peta, float **f
 		float **puip, float **prho, float **ptaus, float **ptausipjp, float **f, float **g, 
 		float *bip, float *bjm, float *cip, float *cjm, float ***dip, float ***d, float ***e);
 
+int visco_sh_gsls_local_derivatives(
+        int mechanisms, double dt, double unrelaxed_modulus, double tau,
+        double reference_sum, const double *eta, const double *b,
+        double *f_tau, double *f_modulus, double *c_tau,
+        double *c_modulus);
+
+int visco_sh_gsls_local_vjp(
+        int mechanisms, double dt, double strain, double bar_s_next,
+        const double *bar_r_next, double forward_f,
+        const double *forward_a, const double *forward_c,
+        double f_tau, double f_modulus, const double *c_tau,
+        const double *c_modulus, double *bar_s_prev,
+        double *bar_r_prev, double *bar_strain, double *g_tau,
+        double *g_modulus);
+
 void readmod_elastic_SH(float  **rho, float **u);
 
 void readmod_visc_SH(float  **rho, float **u, float **taus, float *eta);
