@@ -682,6 +682,47 @@ int visco_sh_gsls_local_vjp(
         double *bar_r_prev, double *bar_strain, double *g_tau,
         double *g_modulus);
 
+int visco_sh_stress_cpml_select_x(
+        int i, int nx2, int fw, int boundary, int pos_x, int nproc_x,
+        const float *K_x_half, const float *a_x_half,
+        const float *b_x_half, int *active, int *aux_index,
+        double *K, double *a, double *b);
+
+int visco_sh_stress_cpml_select_y(
+        int j, int ny2, int fw, int free_surface, int pos_y, int nproc_y,
+        const float *K_y, const float *a_y, const float *b_y,
+        const float *K_y_half, const float *a_y_half,
+        const float *b_y_half, int *active, int *aux_index,
+        double *K, double *a, double *b);
+
+int visco_sh_stress_cpml_local_vjp(
+        int active, double K, double a, double b, double bar_e,
+        double bar_psi_next, double *bar_e_raw, double *bar_psi_prev);
+
+int visco_sh_stress_spatial_local_vjp(
+        int fdorder, double dh, const float *hc, double bar_e_raw_x,
+        double bar_e_raw_y, double *bar_vz_patch, int patch_rows,
+        int patch_stride, int center_row, int center_col);
+
+int update_s_visc_PML_SH_adjoint_point(
+        int fdorder, int mechanisms, double dh, double dt,
+        const float *hc, const int cpml_active[2],
+        const double cpml_K[2], const double cpml_a[2],
+        const double cpml_b[2], const double strain[2],
+        const double bar_stress_next[2],
+        const double *bar_memory_x_next,
+        const double *bar_memory_y_next, const double forward_f[2],
+        const double *forward_a_x, const double *forward_a_y,
+        const double *forward_c_x, const double *forward_c_y,
+        const double f_tau[2], const double f_modulus[2],
+        const double *c_tau_x, const double *c_tau_y,
+        const double *c_modulus_x, const double *c_modulus_y,
+        const double bar_psi_next[2], double bar_stress_prev[2],
+        double *bar_memory_x_prev, double *bar_memory_y_prev,
+        double bar_psi_prev[2], double *bar_vz_patch, int patch_rows,
+        int patch_stride, int center_row, int center_col,
+        double g_tau[2], double g_modulus[2]);
+
 void readmod_elastic_SH(float  **rho, float **u);
 
 void readmod_visc_SH(float  **rho, float **u, float **taus, float *eta);
