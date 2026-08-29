@@ -25,7 +25,7 @@ history.
 - Integration branch: `modernization`
 - Current feature branch: `codex/m6.3c-visco-sh-discrete-adjoint-gradient`
 - Status current through locked implementation checkpoint:
-  `M6.3c-2 @ cd7ffc82f6e6e87483c868d509d24b734bbd9f9f`
+  `M6.3c-3 @ fa58413fdb2ce0f1c5cca7af8fe2e50dc4ee8696`
 - Current milestone: **M6.3c — exact discrete viscoelastic SH
   adjoint/gradient repair**
 
@@ -40,6 +40,7 @@ history.
 | M6.3c-1 | `0782cc30e011f62065436435c22a6516c79a9045` | Exact local viscoelastic GSLS VJP |
 | M6.3c-1p | `22a2dec5bb415f87f2534fc71b8203885b2939dd` | Anchor M6.3b provenance guard to its historical publication snapshot |
 | M6.3c-2 | `cd7ffc82f6e6e87483c868d509d24b734bbd9f9f` | Exact stress-side spatial derivative and CPML transpose |
+| M6.3c-3 | `fa58413fdb2ce0f1c5cca7af8fe2e50dc4ee8696` | Exact velocity-side adjoint primitives |
 
 M6.3c-2 composes the locked C1 GSLS VJP with the exact staggered FD
 transpose and stress-side CPML temporal-state transpose. Its coverage includes
@@ -61,6 +62,36 @@ Publication-gate evidence maxima:
 | Standalone spatial dot residual | `3.866498983147064e-16` |
 | Full stress-side block dot residual | `3.900895271804678e-14` |
 | C vs independent-reference relative error | `2.7209690178180662e-16` |
+
+M6.3c-3 provides the locked velocity-side discrete-adjoint primitives for
+the velocity-update transpose, velocity-side CPML temporal-state transpose,
+receiver-sampling transpose, and source-injection transpose. It does not yet
+close or activate the full global production adjoint: MPI and free-surface
+transposes are not integrated, full-state adjoint integration follows later,
+and material-map/Q-gradient work and active-path unification remain later
+checkpoints.
+
+## Open integration risks / preconditions
+
+The current local adjoint CPML helpers do not treat simultaneous CPML
+activation on both sides of the same axis as a normal case and reject such
+same-axis overlap configurations. The current production forward code can in
+principle execute both corresponding CPML `if` branches sequentially when the
+opposing CPML activation regions overlap. The existing geometry check only
+verifies that `FW` does not exceed the minimum local domain dimension; it does
+not guarantee that opposing CPML activation regions on an axis are disjoint.
+
+Before a final global-exactness claim, one of the following must therefore be
+decided and verified explicitly:
+
+1. prohibit such domain-decomposition geometries as a production
+   precondition; or
+2. implement the exact sequential transpose of the overlapping forward CPML
+   operations.
+
+This remains an open integration/precondition issue, not a retrospective
+M6.3c-2 publication blocker. It is not repaired in this documentation-only
+checkpoint.
 
 ## Frozen M6.3 provenance hashes
 
@@ -103,14 +134,15 @@ post-repair GREEN tests do not rewrite this frozen baseline.
 - C0 acceptance contract
 - C1 local GSLS VJP
 - C2 stress-side spatial derivative and CPML transpose
+- C3 velocity-side transpose and receiver-sampling/source-injection transpose
+  primitives
 
 ### Next
 
-- C3 velocity-side transpose and receiver-sampling/source-injection transpose
+- C4 MPI and free-surface transpose
 
 ### Planned
 
-- C4 MPI and free-surface transpose
 - C5 full-state adjoint integration, without active FWI-path switch
 - C6 material-map VJPs, including `av_mu^T` / `av_tau^T` and MPI seam/corner
   handling
