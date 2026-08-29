@@ -723,6 +723,43 @@ int update_s_visc_PML_SH_adjoint_point(
         int patch_stride, int center_row, int center_col,
         double g_tau[2], double g_modulus[2]);
 
+int visco_sh_velocity_cpml_select_x(
+        int i, int nx2, int fw, int boundary, int pos_x, int nproc_x,
+        const float *K_x, const float *a_x, const float *b_x,
+        int *active, int *aux_index, double *K, double *a, double *b);
+
+int visco_sh_velocity_cpml_select_y(
+        int j, int ny2, int fw, int free_surface, int pos_y, int nproc_y,
+        const float *K_y, const float *a_y, const float *b_y,
+        int *active, int *aux_index, double *K, double *a, double *b);
+
+int visco_sh_velocity_cpml_local_vjp(
+        int active, double K, double a, double b, double bar_q,
+        double bar_psi_next, double *bar_d_raw, double *bar_psi_prev);
+
+int visco_sh_velocity_spatial_local_vjp(
+        int fdorder, const float *hc, double bar_dx, double bar_dy,
+        double *bar_sxz_patch, double *bar_syz_patch, int patch_rows,
+        int patch_stride, int center_row, int center_col);
+
+int update_v_PML_SH_adjoint_point(
+        int fdorder, double dt, double dh, float rhoi, const float *hc,
+        const int cpml_active[2], const double cpml_K[2],
+        const double cpml_a[2], const double cpml_b[2],
+        double bar_vz_next, const double bar_psi_next[2],
+        double *bar_vz_prev, double bar_psi_prev[2],
+        double *bar_sxz_patch, double *bar_syz_patch, int patch_rows,
+        int patch_stride, int center_row, int center_col);
+
+int visco_sh_receiver_velocity_sampling_vjp(
+        int nrec, const int *rec_x, const int *rec_y,
+        const double *bar_data, double *bar_vz, int rows, int stride);
+
+int visco_sh_velocity_source_injection_vjp(
+        int rows, int stride, const double *bar_vz_after,
+        double *bar_vz_before, int nsrc, const int *src_x,
+        const int *src_y, const int *source_type, double *bar_signal);
+
 void readmod_elastic_SH(float  **rho, float **u);
 
 void readmod_visc_SH(float  **rho, float **u, float **taus, float *eta);
