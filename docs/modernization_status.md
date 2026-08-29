@@ -25,7 +25,7 @@ history.
 - Integration branch: `modernization`
 - Current feature branch: `codex/m6.3c-visco-sh-discrete-adjoint-gradient`
 - Status current through locked implementation checkpoint:
-  `M6.3c-3 @ fa58413fdb2ce0f1c5cca7af8fe2e50dc4ee8696`
+  `M6.3c-4 @ 6281219308731bd5e251a3226a372506cd137ba1`
 - Current milestone: **M6.3c — exact discrete viscoelastic SH
   adjoint/gradient repair**
 
@@ -41,6 +41,7 @@ history.
 | M6.3c-1p | `22a2dec5bb415f87f2534fc71b8203885b2939dd` | Anchor M6.3b provenance guard to its historical publication snapshot |
 | M6.3c-2 | `cd7ffc82f6e6e87483c868d509d24b734bbd9f9f` | Exact stress-side spatial derivative and CPML transpose |
 | M6.3c-3 | `fa58413fdb2ce0f1c5cca7af8fe2e50dc4ee8696` | Exact velocity-side adjoint primitives |
+| M6.3c-4 | `6281219308731bd5e251a3226a372506cd137ba1` | Exact MPI-exchange and free-surface adjoint primitives |
 
 M6.3c-2 composes the locked C1 GSLS VJP with the exact staggered FD
 transpose and stress-side CPML temporal-state transpose. Its coverage includes
@@ -66,10 +67,12 @@ Publication-gate evidence maxima:
 M6.3c-3 provides the locked velocity-side discrete-adjoint primitives for
 the velocity-update transpose, velocity-side CPML temporal-state transpose,
 receiver-sampling transpose, and source-injection transpose. It does not yet
-close or activate the full global production adjoint: MPI and free-surface
-transposes are not integrated, full-state adjoint integration follows later,
-and material-map/Q-gradient work and active-path unification remain later
-checkpoints.
+close or activate the full global production adjoint. M6.3c-4 provides the
+exact transposes for MPI velocity and stress exchange and for velocity and
+stress free-surface completion. Its verification includes actual multi-rank
+MPI dot-product tests and comparisons with an independent reference. Full-state
+adjoint integration, material-map/Q-gradient work, and active-path unification
+remain later checkpoints.
 
 ## Open integration risks / preconditions
 
@@ -136,14 +139,15 @@ post-repair GREEN tests do not rewrite this frozen baseline.
 - C2 stress-side spatial derivative and CPML transpose
 - C3 velocity-side transpose and receiver-sampling/source-injection transpose
   primitives
+- C4 MPI-exchange and free-surface transpose primitives
 
 ### Next
 
-- C4 MPI and free-surface transpose
+- C5 full-state viscoelastic SH adjoint integration, without active FWI-path
+  switch
 
 ### Planned
 
-- C5 full-state adjoint integration, without active FWI-path switch
 - C6 material-map VJPs, including `av_mu^T` / `av_tau^T` and MPI seam/corner
   handling
 - C7 production parameter gradients and temporal quadrature
