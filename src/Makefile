@@ -219,7 +219,9 @@ DENISE += alloc_fwiSH.c \
 	  dealloc_SH.c \
 	  eprecond_SH.c \
 	  exchange_s_SH.c \
+	  exchange_s_SH_adjoint.c \
 	  exchange_v_SH.c \
+	  exchange_v_SH_adjoint.c \
 	  extract_LBFGS_SH.c \
 	  extract_LBFGS_SH_visc.c \
 	  extract_PCG_SH.c \
@@ -251,6 +253,7 @@ DENISE += alloc_fwiSH.c \
 	  sh.c \
 	  sh_visc.c \
 	  surface_elastic_SH.c \
+	  surface_elastic_SH_adjoint.c \
           step_length_est_sh.c \
 	  stf_sh.c \
 	  store_LBFGS_SH.c \

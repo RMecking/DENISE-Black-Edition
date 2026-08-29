@@ -606,6 +606,21 @@ void exchange_v_SH(float ** vz, float ** bufferlef_to_rig, float ** bufferrig_to
 		   float ** buffertop_to_bot, float ** bufferbot_to_top,
 	           MPI_Request * req_send, MPI_Request * req_rec);
 
+int visco_sh_exchange_field_adjoint(
+        float **bar_field, int nx, int ny, int vertical_depth,
+        int horizontal_depth, int boundary, const int pos[3],
+        int nproc_x, int nproc_y, const int index[5], MPI_Comm comm);
+
+int exchange_v_SH_adjoint(
+        float **bar_vz, int nx, int ny, int fdorder, int boundary,
+        const int pos[3], int nproc_x, int nproc_y,
+        const int index[5], MPI_Comm comm);
+
+int exchange_s_SH_adjoint(
+        float **bar_sxz, float **bar_syz, int nx, int ny, int fdorder,
+        int boundary, const int pos[3], int nproc_x, int nproc_y,
+        const int index[5], MPI_Comm comm);
+
 void extract_LBFGS_SH( int iter, float ** waveconv_u, float ** gradp_u, float ** waveconv_rho, float ** gradp_rho, float ** pu, float ** prho, float * r_LBFGS);
 
 void extract_LBFGS_SH_visc( int iter, float ** waveconv_u, float ** gradp_u, float ** waveconv_rho, float ** gradp_rho, float ** waveconv_ts, float ** gradp_ts, float ** pu, float ** prho,  float ** ptaus, float * r_LBFGS);
@@ -802,6 +817,12 @@ void store_pseudo_hess_SH(struct fwiSH *fwiSH);
 void surface_elastic_SH_velocity(float **vz, int nx, int half_order);
 
 void surface_elastic_SH_stress(float **syz, int nx, int half_order);
+
+void surface_elastic_SH_velocity_adjoint(
+        float **bar_vz, int nx, int half_order);
+
+void surface_elastic_SH_stress_adjoint(
+        float **bar_syz, int nx, int half_order);
 
 void update_s_elastic_PML_SH(int nx1, int nx2, int ny1, int ny2,
 	float ** vz, float **  uz, float **  uzx, float **   syz, float **   sxz,
