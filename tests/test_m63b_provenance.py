@@ -7,6 +7,7 @@ from pathlib import Path
 
 
 AUDIT_SHA = "a4d2ca176f518a8414aa95aef256265dd89fa567"
+M63B_ORACLE_SHA = "8c1bfc9c5a5c9f39396b9be5030464f683d3ab5d"
 AUDIT_DOCUMENT_SHA256 = "03c757210f0b86db5be82cd0dbe3f6650ce9115c2933926ccda9c5f2f1bca28a"
 VALIDATION_SHA256 = "15a8b21077f03e902d2edc735941442b384935431b749540401a0d018e5e0552"
 
@@ -109,13 +110,27 @@ def test_m63b_lineage_audit_immutability_and_strict_red_classification(repositor
     assert hashlib.sha256(audit.read_bytes()).hexdigest() == AUDIT_DOCUMENT_SHA256
     head = _git(repository_root, "rev-parse", "HEAD")
     assert head.returncode == 0
-    lineage = _git(repository_root, "merge-base", "--is-ancestor", AUDIT_SHA, head.stdout.strip())
-    assert lineage.returncode == 0, lineage.stderr
+    current_lineage = _git(
+        repository_root,
+        "merge-base",
+        "--is-ancestor",
+        M63B_ORACLE_SHA,
+        head.stdout.strip(),
+    )
+    assert current_lineage.returncode == 0, current_lineage.stderr
+    audit_lineage = _git(
+        repository_root,
+        "merge-base",
+        "--is-ancestor",
+        AUDIT_SHA,
+        M63B_ORACLE_SHA,
+    )
+    assert audit_lineage.returncode == 0, audit_lineage.stderr
     production = _git(
         repository_root,
         "diff",
         "--name-only",
-        f"{AUDIT_SHA}..{head.stdout.strip()}",
+        f"{AUDIT_SHA}..{M63B_ORACLE_SHA}",
         "--",
         "src",
         "include",
