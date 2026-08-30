@@ -25,7 +25,7 @@ history.
 - Integration branch: `modernization`
 - Current feature branch: `codex/m6.3c-visco-sh-discrete-adjoint-gradient`
 - Status current through locked implementation checkpoint:
-  `M6.3c-4 @ 6281219308731bd5e251a3226a372506cd137ba1`
+  `M6.3c-5a @ 52fcc03c8bbdb2fbae3c40c6b7fc9cf67d2c1e54`
 - Current milestone: **M6.3c — exact discrete viscoelastic SH
   adjoint/gradient repair**
 
@@ -42,6 +42,7 @@ history.
 | M6.3c-2 | `cd7ffc82f6e6e87483c868d509d24b734bbd9f9f` | Exact stress-side spatial derivative and CPML transpose |
 | M6.3c-3 | `fa58413fdb2ce0f1c5cca7af8fe2e50dc4ee8696` | Exact velocity-side adjoint primitives |
 | M6.3c-4 | `6281219308731bd5e251a3226a372506cd137ba1` | Exact MPI-exchange and free-surface adjoint primitives |
+| M6.3c-5a | `52fcc03c8bbdb2fbae3c40c6b7fc9cf67d2c1e54` | Exact full-state transpose of one fixed-material viscoelastic SH timestep |
 
 M6.3c-2 composes the locked C1 GSLS VJP with the exact staggered FD
 transpose and stress-side CPML temporal-state transpose. Its coverage includes
@@ -70,9 +71,22 @@ receiver-sampling transpose, and source-injection transpose. It does not yet
 close or activate the full global production adjoint. M6.3c-4 provides the
 exact transposes for MPI velocity and stress exchange and for velocity and
 stress free-surface completion. Its verification includes actual multi-rank
-MPI dot-product tests and comparisons with an independent reference. Full-state
-adjoint integration, material-map/Q-gradient work, and active-path unification
-remain later checkpoints.
+MPI dot-product tests and comparisons with an independent reference.
+
+M6.3c-5a composes the locked C1--C4 primitives into the exact transpose of one
+complete fixed-material viscoelastic SH propagation timestep. The propagated
+state comprises `vz`, `sxz`, `syz`, the GSLS memory variables `r` and `q`, and
+the stress-side and velocity-side CPML states. In reverse order, the composed
+operator covers receiver sampling, stress MPI exchange, free-surface stress
+completion, the viscoelastic GSLS/stress update with spatial-derivative and
+CPML transposes, free-surface velocity completion, velocity MPI exchange, the
+velocity update, and source injection.
+
+C5a is not the active production FWI adjoint. It provides neither a reverse-
+time driver over the full time axis nor a switch of `grad_obj_sh` or the
+existing FWI path to the new operator. Material gradients and the complete
+`mu`/`rho`/`tau`/`Q` chain, optimizer integration, and model update remain
+later work.
 
 ## Open integration risks / preconditions
 
@@ -140,11 +154,14 @@ post-repair GREEN tests do not rewrite this frozen baseline.
 - C3 velocity-side transpose and receiver-sampling/source-injection transpose
   primitives
 - C4 MPI-exchange and free-surface transpose primitives
+- C5a exact full-state transpose of one fixed-material viscoelastic SH
+  propagation timestep
 
 ### Next
 
-- C5 full-state viscoelastic SH adjoint integration, without active FWI-path
-  switch
+- C5b full reverse-time viscoelastic SH adjoint driver composed from the
+  locked C5a single-step operator, with multi-step transpose verification and
+  without active FWI-path switch
 
 ### Planned
 
