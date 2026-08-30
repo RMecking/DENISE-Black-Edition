@@ -40,6 +40,28 @@ void init_q_tau_mapping(struct q_tau_mapping *mapping, int mode, int mechanisms,
                         const float *relaxation_frequencies_hz,
                         float fmin_hz, float fmax_hz, float df_hz);
 float q_to_tau(float target_q, const struct q_tau_mapping *mapping);
+double q_to_tau_derivative(float target_q,
+                           const struct q_tau_mapping *mapping);
+
+double visco_sh_harmonic_pair(double left, double right);
+int visco_sh_harmonic_pair_vjp(double left, double right, double bar_value,
+                               double *bar_left, double *bar_right);
+void visco_sh_av_tau_local_vjp(double bar_tau_x, double bar_tau_y,
+                               double bar_tau_cells[4]);
+double visco_sh_rhoi_value(double rho);
+double visco_sh_rhoi_vjp(double rho, double bar_rhoi);
+double visco_sh_velocity_rhoi_vjp(double dt, double dh,
+                                  double corrected_qx, double corrected_qy,
+                                  double bar_v_next);
+int visco_sh_material_patch_forward(
+        int invmat1, const struct q_tau_mapping *mapping,
+        const double primary[4], const double rho[4], const double q[4],
+        double output[5]);
+int visco_sh_material_patch_vjp(
+        int invmat1, const struct q_tau_mapping *mapping,
+        const double primary[4], const double rho[4], const double q[4],
+        const double bar_output[5], double bar_primary[4],
+        double bar_rho[4], double bar_q[4]);
 
 /* ---------------------------------- */
 /* declaration of PSV data-structures */
