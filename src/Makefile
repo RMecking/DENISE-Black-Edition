@@ -266,6 +266,7 @@ DENISE += alloc_fwiSH.c \
 	  update_s_visc_PML_SH_adjoint.c \
 	  update_v_PML_SH.c \
 	  update_v_PML_SH_adjoint.c \
+	  visco_sh_full_state_adjoint_step.c \
 	  visco_sh_gsls_vjp.c \
 	  zero_denise_elast_SH.c \
 	  zero_denise_visc_SH.c

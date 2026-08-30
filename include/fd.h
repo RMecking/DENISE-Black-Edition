@@ -210,6 +210,37 @@ struct waveSH_PML{
    float  **  absorb_coeff;
 } waveSH_PML;
 
+/* Propagating state and fixed coefficients for one exact viscoelastic SH
+ * full-state transpose step.  Input and output cotangent states must be
+ * distinct.  Rows/columns include the allocated SH halo range; CPML fields
+ * use their native NY x 2*FW / 2*FW x NX layouts. */
+struct visco_sh_full_state {
+   float **vz, **sxz, **syz;
+   float ***r, ***q;
+   float **psi_sxz_x, **psi_syz_y;
+   float **psi_vzx, **psi_vzy;
+};
+
+struct visco_sh_full_step_config {
+   int nx, ny, fdorder, mechanisms, fw, free_surface, boundary;
+   int pos[3], nproc_x, nproc_y, index[5];
+   float dt, dh;
+   const float *hc;
+   float **rhoi, **fipjp, **f;
+   const float *bip, *bjm, *cip, *cjm;
+   float ***dip, ***d;
+   const float *K_x, *a_x, *b_x;
+   const float *K_x_half, *a_x_half, *b_x_half;
+   const float *K_y, *a_y, *b_y;
+   const float *K_y_half, *a_y_half, *b_y_half;
+   int nrec;
+   const int *rec_x, *rec_y;
+   const double *bar_receiver;
+   int nsrc;
+   const int *src_x, *src_y, *source_type;
+   MPI_Comm comm;
+};
+
 /* ------------- */
 /* PSV functions */
 /* ------------- */
@@ -774,6 +805,12 @@ int visco_sh_velocity_source_injection_vjp(
         int rows, int stride, const double *bar_vz_after,
         double *bar_vz_before, int nsrc, const int *src_x,
         const int *src_y, const int *source_type, double *bar_signal);
+
+int visco_sh_full_state_adjoint_step(
+        const struct visco_sh_full_step_config *config,
+        struct visco_sh_full_state *bar_next_work,
+        struct visco_sh_full_state *bar_prev,
+        double *bar_signal);
 
 void readmod_elastic_SH(float  **rho, float **u);
 
