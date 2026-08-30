@@ -25,7 +25,7 @@ history.
 - Integration branch: `modernization`
 - Current feature branch: `codex/m6.3c-visco-sh-discrete-adjoint-gradient`
 - Status current through locked implementation checkpoint:
-  `M6.3c-7a @ 8f711dfbe1bb32af34120a5cb80800082ce76e41`
+  `M6.3c-7b @ f128dfa0a563f334116da1c58c746da9eaf2b6fa`
 - Current milestone: **M6.3c — exact discrete viscoelastic SH
   adjoint/gradient repair**
 
@@ -47,6 +47,7 @@ history.
 | M6.3c-6a | `e855d1b2feb9dc468ad3af3303727e5a52ce3007` | Exact local SH material-map VJPs and physical parameter-chain verification |
 | M6.3c-6b | `8a708de5c9a03a9c3d22bf199d3697f047ca7d5a` | Exact distributed SH material-map transpose across MPI seams and corners |
 | M6.3c-7a | `8f711dfbe1bb32af34120a5cb80800082ce76e41` | Exact forward material-observable trajectory from the viscoelastic SH forward path |
+| M6.3c-7b | `f128dfa0a563f334116da1c58c746da9eaf2b6fa` | Exact local per-timestep native material sensitivities |
 
 M6.3c-2 composes the locked C1 GSLS VJP with the exact staggered FD
 transpose and stress-side CPML temporal-state transpose. Its coverage includes
@@ -139,6 +140,20 @@ the three frozen forward-observable sampling contracts in the real
 viscoelastic SH forward timestep. C7a neither assembles a material gradient
 nor changes the active FWI or gradient paths.
 
+M6.3c-7b combines the locked C7a observables `qsum`, `strain_x`, and
+`strain_y` with the time-aligned reverse-time cotangents at the outputs of
+the material-dependent velocity and constitutive updates. For one physical
+timestep it returns the native sensitivities `bar_rhoi`, `bar_mu_x`,
+`bar_mu_y`, `bar_tau_x`, and `bar_tau_y`. The density contribution is exactly
+`(DT / DH) * qsum * bar_v_post-velocity`, with no additional `rhoi` factor.
+The stress and memory contributions reuse the locked C1 GSLS VJP rather than
+deriving a second GSLS adjoint.
+
+C7b performs no multi-step temporal accumulation or `DT * DTINV` gradient
+quadrature, no C6 mapping to owned physical `Vs`/`mu`, `rho`, and `Q`
+parameters, no model-level tau-to-Q composition, no objective directional-FD
+verification, and no integration into the active FWI or line-search path.
+
 ## Open integration risks / preconditions
 
 The current local adjoint CPML helpers do not treat simultaneous CPML
@@ -211,23 +226,24 @@ post-repair GREEN tests do not rewrite this frozen baseline.
 - C6a exact local material-map VJPs and physical parameter-chain verification
 - C6b exact distributed material-map transpose across MPI seams and corners
 - C7a exact forward material-observable trajectory
+- C7b exact local per-timestep native material sensitivities
 
 ### Next
 
-- **C7b local per-timestep native material sensitivities**: combine the
-  locked C7a forward material observables with the time-aligned reverse-time
-  adjoint cotangents to produce the native `rhoi`, staggered `mu`, and
-  staggered `tau` sensitivities for one physical timestep. C7b does not yet
-  perform temporal accumulation or map these sensitivities to the final
-  physical model parameters. C7b has not started.
+- **C7c multi-step temporal accumulation and physical-parameter mapping**:
+  apply the frozen temporal gradient quadrature and the locked C6 material
+  transpose to map the accumulated native sensitivities to owned `Vs`,
+  `rho`, and `Q` parameters for `INVMAT1==1`, or owned `mu`, `rho`, and `Q`
+  parameters for `INVMAT1==3`, including the verified tau-to-Q chain rule.
+  Exact gradient verification initially remains restricted to `DTINV==1`.
+  C7c has not started.
 
 ### Planned
 
-- C7c multi-step temporal accumulation and locked C6 material mapping to
-  owned Vs/mu, rho, and Q parameters, including the verified tau-to-Q chain
-  rule; not started
 - C7d end-to-end directional finite-difference gradient verification,
-  initially for `DTINV==1`; not started
+  initially for `DTINV==1`, with separate and/or combined `Vs` or `mu`,
+  `rho`, and `Q` channels, relative error at most `5e-3`, and no fitted sign
+  or scale; not started
 - C8 active-path unification; remove elastic-base versus visco-trial physics
   split; not started
 
