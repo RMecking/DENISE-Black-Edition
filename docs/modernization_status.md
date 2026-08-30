@@ -25,7 +25,7 @@ history.
 - Integration branch: `modernization`
 - Current feature branch: `codex/m6.3c-visco-sh-discrete-adjoint-gradient`
 - Status current through locked implementation checkpoint:
-  `M6.3c-6b @ 8a708de5c9a03a9c3d22bf199d3697f047ca7d5a`
+  `M6.3c-7a @ 8f711dfbe1bb32af34120a5cb80800082ce76e41`
 - Current milestone: **M6.3c — exact discrete viscoelastic SH
   adjoint/gradient repair**
 
@@ -46,6 +46,7 @@ history.
 | M6.3c-5b | `39be93f1c817ced7489d036f22001cf8437434e3` | Exact reverse-time composition of the fixed-material viscoelastic SH adjoint over the full time axis |
 | M6.3c-6a | `e855d1b2feb9dc468ad3af3303727e5a52ce3007` | Exact local SH material-map VJPs and physical parameter-chain verification |
 | M6.3c-6b | `8a708de5c9a03a9c3d22bf199d3697f047ca7d5a` | Exact distributed SH material-map transpose across MPI seams and corners |
+| M6.3c-7a | `8f711dfbe1bb32af34120a5cb80800082ce76e41` | Exact forward material-observable trajectory from the viscoelastic SH forward path |
 
 M6.3c-2 composes the locked C1 GSLS VJP with the exact staggered FD
 transpose and stress-side CPML temporal-state transpose. Its coverage includes
@@ -130,6 +131,14 @@ transpose from staggered viscoelastic SH coefficient sensitivities to owned
 and MPI corners. This is not yet the production FWI gradient because temporal
 integration with the forward trajectory remains to be implemented.
 
+M6.3c-7a provides the exact forward material-observable trajectory required
+by the later material VJP. It passively captures the corrected stress
+divergence `qsum` at the velocity update and the CPML-corrected strains
+`strain_x` and `strain_y` at the viscoelastic constitutive update. These are
+the three frozen forward-observable sampling contracts in the real
+viscoelastic SH forward timestep. C7a neither assembles a material gradient
+nor changes the active FWI or gradient paths.
+
 ## Open integration risks / preconditions
 
 The current local adjoint CPML helpers do not treat simultaneous CPML
@@ -201,21 +210,26 @@ post-repair GREEN tests do not rewrite this frozen baseline.
 - C5b full reverse-time fixed-material viscoelastic SH adjoint driver
 - C6a exact local material-map VJPs and physical parameter-chain verification
 - C6b exact distributed material-map transpose across MPI seams and corners
+- C7a exact forward material-observable trajectory
 
 ### Next
 
-- **C7 production parameter-gradient assembly and temporal quadrature**:
-  compose the locked full reverse-time adjoint with forward-state-dependent
-  material sensitivities over time, then validate the actual viscoelastic SH
-  parameter gradient with directional finite differences. Exact gradient
-  validation initially applies to `DTINV==1`; temporal accumulation uses
-  `DT * DTINV`, and no exactness claim is made for `DTINV>1` until separately
-  demonstrated.
+- **C7b local per-timestep native material sensitivities**: combine the
+  locked C7a forward material observables with the time-aligned reverse-time
+  adjoint cotangents to produce the native `rhoi`, staggered `mu`, and
+  staggered `tau` sensitivities for one physical timestep. C7b does not yet
+  perform temporal accumulation or map these sensitivities to the final
+  physical model parameters. C7b has not started.
 
 ### Planned
 
+- C7c multi-step temporal accumulation and locked C6 material mapping to
+  owned Vs/mu, rho, and Q parameters, including the verified tau-to-Q chain
+  rule; not started
+- C7d end-to-end directional finite-difference gradient verification,
+  initially for `DTINV==1`; not started
 - C8 active-path unification; remove elastic-base versus visco-trial physics
-  split
+  split; not started
 
 ### Follow-up
 
