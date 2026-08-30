@@ -63,6 +63,35 @@ int visco_sh_material_patch_vjp(
         const double bar_output[5], double bar_primary[4],
         double bar_rho[4], double bar_q[4]);
 
+/* C7b consumes cotangents at the outputs of the material-dependent velocity
+ * and constitutive operations of one physical timestep.  It returns native
+ * coefficient sensitivities only; no time accumulation or physical-model
+ * parameter mapping is performed here. */
+struct visco_sh_material_timestep_vjp_input {
+   int mechanisms;
+   double dt, dh;
+   double qsum, strain_x, strain_y;
+   double bar_v_post_velocity;
+   double bar_sxz_next, bar_syz_next;
+   const double *bar_r_next, *bar_q_next;
+   double mu_x, tau_x, mu_y, tau_y;
+   double reference_sum;
+   const double *eta_x, *b_x, *eta_y, *b_y;
+   double forward_f_x, forward_f_y;
+   const double *forward_a_x, *forward_c_x;
+   const double *forward_a_y, *forward_c_y;
+};
+
+struct visco_sh_material_timestep_vjp_output {
+   double g_rhoi;
+   double g_mu_x, g_mu_y;
+   double g_tau_x, g_tau_y;
+};
+
+int visco_sh_material_timestep_vjp(
+        const struct visco_sh_material_timestep_vjp_input *input,
+        struct visco_sh_material_timestep_vjp_output *output);
+
 /* ---------------------------------- */
 /* declaration of PSV data-structures */
 /* ---------------------------------- */
