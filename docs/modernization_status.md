@@ -25,7 +25,7 @@ history.
 - Integration branch: `modernization`
 - Current feature branch: `codex/m6.3c-visco-sh-discrete-adjoint-gradient`
 - Status current through locked implementation checkpoint:
-  `M6.3c-5a @ 52fcc03c8bbdb2fbae3c40c6b7fc9cf67d2c1e54`
+  `M6.3c-5b @ 39be93f1c817ced7489d036f22001cf8437434e3`
 - Current milestone: **M6.3c — exact discrete viscoelastic SH
   adjoint/gradient repair**
 
@@ -43,6 +43,7 @@ history.
 | M6.3c-3 | `fa58413fdb2ce0f1c5cca7af8fe2e50dc4ee8696` | Exact velocity-side adjoint primitives |
 | M6.3c-4 | `6281219308731bd5e251a3226a372506cd137ba1` | Exact MPI-exchange and free-surface adjoint primitives |
 | M6.3c-5a | `52fcc03c8bbdb2fbae3c40c6b7fc9cf67d2c1e54` | Exact full-state transpose of one fixed-material viscoelastic SH timestep |
+| M6.3c-5b | `39be93f1c817ced7489d036f22001cf8437434e3` | Exact reverse-time composition of the fixed-material viscoelastic SH adjoint over the full time axis |
 
 M6.3c-2 composes the locked C1 GSLS VJP with the exact staggered FD
 transpose and stress-side CPML temporal-state transpose. Its coverage includes
@@ -87,6 +88,15 @@ time driver over the full time axis nor a switch of `grad_obj_sh` or the
 existing FWI path to the new operator. Material gradients and the complete
 `mu`/`rho`/`tau`/`Q` chain, optimizer integration, and model update remain
 later work.
+
+M6.3c-5b composes the locked C5a single-step operator over multiple timesteps
+in reverse temporal order and propagates the complete cotangent state backward
+over the full time axis. Receiver cotangents are injected at their associated
+timesteps, while source cotangents are returned for every chronological
+forward timestep. The initial-state cotangent is placed unambiguously in the
+designated output state for both even and odd timestep counts. C5b remains a
+fixed-material operator: it accumulates no material gradients and is not yet
+connected to the active SH FWI path.
 
 ## Open integration risks / preconditions
 
@@ -156,17 +166,21 @@ post-repair GREEN tests do not rewrite this frozen baseline.
 - C4 MPI-exchange and free-surface transpose primitives
 - C5a exact full-state transpose of one fixed-material viscoelastic SH
   propagation timestep
+- C5b full reverse-time fixed-material viscoelastic SH adjoint driver
 
 ### Next
 
-- C5b full reverse-time viscoelastic SH adjoint driver composed from the
-  locked C5a single-step operator, with multi-step transpose verification and
-  without active FWI-path switch
+- **C6a local material-map VJPs and parameter-chain verification**: exact
+  transposes/VJPs of the local `av_mu_SH` and `av_tau` maps, the
+  `rhoi = 1/rho` VJP, the exact `Q -> tau` VJP for legacy and physical-Q
+  parameterizations, the correct `Vs/rho -> mu` chain for `INVMAT1==1`, and
+  the direct `mu` parameterization for `INVMAT1==3`, without MPI-seam
+  composition
 
 ### Planned
 
-- C6 material-map VJPs, including `av_mu^T` / `av_tau^T` and MPI seam/corner
-  handling
+- **C6b distributed material-map transpose**, including `matcopy_SH` MPI
+  seams/corners
 - C7 production parameter gradients and temporal quadrature
 - C8 active-path unification; remove elastic-base versus visco-trial physics
   split
