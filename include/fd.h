@@ -263,6 +263,47 @@ struct visco_sh_full_step_config {
    MPI_Comm comm;
 };
 
+/* Minimal forward observables required by the exact viscoelastic SH material
+ * VJPs.  Each channel is defined only on the owned 1..ny, 1..nx domain. */
+struct visco_sh_material_observable_step {
+   float **qsum;
+   float **strain_x;
+   float **strain_y;
+};
+
+/* Physical-timestep-major storage.  C7 initially requires dtinv == 1. */
+struct visco_sh_material_observable_trajectory {
+   int nx, ny, nsteps, dtinv;
+   struct visco_sh_material_observable_step *steps;
+};
+
+int visco_sh_material_observable_trajectory_init(
+        struct visco_sh_material_observable_trajectory *trajectory,
+        int nx, int ny, int nsteps, int dtinv, int fw, int free_surface,
+        int boundary, int nproc_x, int nproc_y);
+void visco_sh_material_observable_trajectory_release(
+        struct visco_sh_material_observable_trajectory *trajectory);
+int visco_sh_material_observable_begin_step(
+        struct visco_sh_material_observable_trajectory *trajectory, int step);
+void visco_sh_material_observable_end_step(void);
+#if defined(__GNUC__)
+int visco_sh_material_observable_is_active(void) __attribute__((weak));
+void visco_sh_material_observable_capture_qsum(
+        int j, int i, float qsum) __attribute__((weak));
+void visco_sh_material_observable_capture_strain(
+        int j, int i, float strain_x, float strain_y) __attribute__((weak));
+#else
+int visco_sh_material_observable_is_active(void);
+void visco_sh_material_observable_capture_qsum(int j, int i, float qsum);
+void visco_sh_material_observable_capture_strain(
+        int j, int i, float strain_x, float strain_y);
+#endif
+#if defined(M63C_MATERIAL_OBSERVABLE_TEST_COUNTERS)
+void visco_sh_material_observable_test_reset_counts(void);
+size_t visco_sh_material_observable_test_qsum_count(void);
+size_t visco_sh_material_observable_test_strain_count(void);
+#endif
+
 /* ------------- */
 /* PSV functions */
 /* ------------- */

@@ -20,6 +20,7 @@ void update_s_visc_PML_SH(int nx1, int nx2, int ny1, int ny2,
         float ** psi_vzx, float ** psi_vzy, struct fwiSH *fwiSH, int mode){
 
 	int i,j, m, h, h1, l;
+	int capture_material_observable = 0;
 	float  vzx, vzy;
 	float  dhi, dthalbe;	
 	extern float DT, DH;
@@ -33,6 +34,11 @@ void update_s_visc_PML_SH(int nx1, int nx2, int ny1, int ny2,
 	
 	dhi=1.0/DH;
 	dthalbe = DT/2.0;
+
+	/* Resolve the optional C7a capture state once per kernel invocation. */
+	if (visco_sh_material_observable_is_active != NULL)
+		capture_material_observable =
+			visco_sh_material_observable_is_active();
 
 	
 	if (infoout && (MYID==0)){
@@ -92,6 +98,9 @@ void update_s_visc_PML_SH(int nx1, int nx2, int ny1, int ny2,
         			}
 			}	
 	
+			if (capture_material_observable)
+				visco_sh_material_observable_capture_strain(j, i, vzx, vzy);
+
 			/* computing sums of the old memory variables */
 			sumr=sumq=0.0;
 			for (l=1;l<=L;l++){
@@ -174,6 +183,9 @@ void update_s_visc_PML_SH(int nx1, int nx2, int ny1, int ny2,
         
         		}
 
+			if (capture_material_observable)
+				visco_sh_material_observable_capture_strain(j, i, vzx, vzy);
+
 			/* computing sums of the old memory variables */
 			sumr=sumq=0.0;
 			for (l=1;l<=L;l++){
@@ -255,6 +267,9 @@ void update_s_visc_PML_SH(int nx1, int nx2, int ny1, int ny2,
         
         		}
 			
+			if (capture_material_observable)
+				visco_sh_material_observable_capture_strain(j, i, vzx, vzy);
+
 			/* computing sums of the old memory variables */
 			sumr=sumq=0.0;
 			for (l=1;l<=L;l++){
@@ -343,6 +358,9 @@ void update_s_visc_PML_SH(int nx1, int nx2, int ny1, int ny2,
         
         		}
 			
+			if (capture_material_observable)
+				visco_sh_material_observable_capture_strain(j, i, vzx, vzy);
+
 			/* computing sums of the old memory variables */
 			sumr=sumq=0.0;
 			for (l=1;l<=L;l++){
@@ -433,6 +451,9 @@ void update_s_visc_PML_SH(int nx1, int nx2, int ny1, int ny2,
 				vzy = vzy / K_y_half[h1] + psi_vzy[h1][i];
         
         		}
+
+			if (capture_material_observable)
+				visco_sh_material_observable_capture_strain(j, i, vzx, vzy);
 
 			/* computing sums of the old memory variables */
 			sumr=sumq=0.0;
@@ -526,6 +547,9 @@ void update_s_visc_PML_SH(int nx1, int nx2, int ny1, int ny2,
         
         		}
 	
+			if (capture_material_observable)
+				visco_sh_material_observable_capture_strain(j, i, vzx, vzy);
+
 			/* computing sums of the old memory variables */
 			sumr=sumq=0.0;
 			for (l=1;l<=L;l++){
