@@ -703,6 +703,7 @@ double grad_obj_sh_visc(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, st
 void matcopy_elastic_SH(float ** rho, float ** u);
 
 void matcopy_SH(float ** rho, float ** u, float ** taus);
+int matcopy_SH_adjoint(float **bar_rho, float **bar_u, float **bar_taus);
 
 void mem_SH(int nseismograms,int ntr, int ns, int fdo3, int nd, float buffsize);
 

@@ -234,6 +234,7 @@ DENISE += alloc_fwiSH.c \
 	  grad_obj_sh_visc.c \
 	  matcopy_elastic_SH.c \
 	  matcopy_SH.c \
+	  matcopy_SH_adjoint.c \
 	  mem_SH.c \
 	  model_freq_out_SH.c \
 	  model_freq_out_SH_visc.c \
