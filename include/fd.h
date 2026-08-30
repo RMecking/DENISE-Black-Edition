@@ -812,6 +812,22 @@ int visco_sh_full_state_adjoint_step(
         struct visco_sh_full_state *bar_prev,
         double *bar_signal);
 
+/* Exact reverse-time composition of the fixed-material full-state step.
+ * Receiver and source cotangent series are time-major:
+ *   bar_receiver_series[n * nrec + receiver]
+ *   bar_signal_series[n * nsrc + source]
+ * for chronological forward indices n = 0, ..., nsteps - 1.  The terminal
+ * and scratch states are mutable workspaces; bar_initial is overwritten and
+ * owns the result for every positive nsteps, independent of parity. */
+int visco_sh_reverse_time_adjoint(
+        const struct visco_sh_full_step_config *base_config,
+        int nsteps,
+        const double *bar_receiver_series,
+        struct visco_sh_full_state *bar_terminal_work,
+        struct visco_sh_full_state *bar_initial,
+        struct visco_sh_full_state *scratch,
+        double *bar_signal_series);
+
 void readmod_elastic_SH(float  **rho, float **u);
 
 void readmod_visc_SH(float  **rho, float **u, float **taus, float *eta);
