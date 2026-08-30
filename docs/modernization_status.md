@@ -25,7 +25,7 @@ history.
 - Integration branch: `modernization`
 - Current feature branch: `codex/m6.3c-visco-sh-discrete-adjoint-gradient`
 - Status current through locked implementation checkpoint:
-  `M6.3c-5b @ 39be93f1c817ced7489d036f22001cf8437434e3`
+  `M6.3c-6a @ e855d1b2feb9dc468ad3af3303727e5a52ce3007`
 - Current milestone: **M6.3c — exact discrete viscoelastic SH
   adjoint/gradient repair**
 
@@ -44,6 +44,7 @@ history.
 | M6.3c-4 | `6281219308731bd5e251a3226a372506cd137ba1` | Exact MPI-exchange and free-surface adjoint primitives |
 | M6.3c-5a | `52fcc03c8bbdb2fbae3c40c6b7fc9cf67d2c1e54` | Exact full-state transpose of one fixed-material viscoelastic SH timestep |
 | M6.3c-5b | `39be93f1c817ced7489d036f22001cf8437434e3` | Exact reverse-time composition of the fixed-material viscoelastic SH adjoint over the full time axis |
+| M6.3c-6a | `e855d1b2feb9dc468ad3af3303727e5a52ce3007` | Exact local SH material-map VJPs and physical parameter-chain verification |
 
 M6.3c-2 composes the locked C1 GSLS VJP with the exact staggered FD
 transpose and stress-side CPML temporal-state transpose. Its coverage includes
@@ -97,6 +98,17 @@ forward timestep. The initial-state cotangent is placed unambiguously in the
 designated output state for both even and odd timestep counts. C5b remains a
 fixed-material operator: it accumulates no material gradients and is not yet
 connected to the active SH FWI path.
+
+M6.3c-6a closes the local material-parameter transpose for the viscoelastic
+SH path. It provides the exact harmonic-average VJP used by `av_mu_SH`, the
+`av_tau` transpose, the piecewise `rho -> rhoi` VJP, velocity-update
+coefficient sensitivity with respect to `rhoi`, and the exact legacy and
+physical-Q `Q -> tau` derivatives. The complete local 2x2 parameter map is
+verified by dot-product tests, an independent analytic reference, and finite
+differences for the audited `INVMAT1==1` (`Vs`, `rho`, `Q`) and `INVMAT1==3`
+(`mu`, `rho`, `Q`) material modes. C6a is local only: it does not transpose
+the distributed `matcopy_SH` operation or accumulate production gradients
+over time.
 
 ## Open integration risks / preconditions
 
@@ -167,20 +179,18 @@ post-repair GREEN tests do not rewrite this frozen baseline.
 - C5a exact full-state transpose of one fixed-material viscoelastic SH
   propagation timestep
 - C5b full reverse-time fixed-material viscoelastic SH adjoint driver
+- C6a exact local material-map VJPs and physical parameter-chain verification
 
 ### Next
 
-- **C6a local material-map VJPs and parameter-chain verification**: exact
-  transposes/VJPs of the local `av_mu_SH` and `av_tau` maps, the
-  `rhoi = 1/rho` VJP, the exact `Q -> tau` VJP for legacy and physical-Q
-  parameterizations, the correct `Vs/rho -> mu` chain for `INVMAT1==1`, and
-  the direct `mu` parameterization for `INVMAT1==3`, without MPI-seam
-  composition
+- **C6b distributed material-map transpose**, including the exact transpose
+  of `matcopy_SH` across MPI seams and corners and composition with the locked
+  C6a local material VJPs. C6b must preserve the actual distributed
+  material-preparation graph, including the existing ordering of `Q -> tau`
+  and MPI material exchange; it is not yet implemented.
 
 ### Planned
 
-- **C6b distributed material-map transpose**, including `matcopy_SH` MPI
-  seams/corners
 - C7 production parameter gradients and temporal quadrature
 - C8 active-path unification; remove elastic-base versus visco-trial physics
   split
