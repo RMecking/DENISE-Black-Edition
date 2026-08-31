@@ -92,6 +92,29 @@ int visco_sh_material_timestep_vjp(
         const struct visco_sh_material_timestep_vjp_input *input,
         struct visco_sh_material_timestep_vjp_output *output);
 
+/* C7c-a keeps the operator-level dt factors already present in C7b separate
+ * from the temporal gradient quadrature.  The latter is applied exactly once
+ * as dt * dtinv while reducing a supplied time-major C7b series. */
+int visco_sh_temporal_native_gradient_accumulate(
+        int timesteps, int points, double dt, int dtinv,
+        const struct visco_sh_material_timestep_vjp_output *series,
+        struct visco_sh_material_timestep_vjp_output *accumulated);
+
+struct visco_sh_native_material_gradient_fields {
+   double **g_rhoi;
+   double **g_mu_x, **g_mu_y;
+   double **g_tau_x, **g_tau_y;
+};
+
+/* Exact transpose of the locked distributed C6 material graph.  primary_post
+ * and rho_post are the post-matcopy fields; owned_q is differentiated only
+ * after H^T then V^T has returned tau cotangents to owned cells. */
+int visco_sh_distributed_material_gradient_vjp(
+        int invmat1, const struct q_tau_mapping *mapping,
+        float **primary_post, float **rho_post, float **owned_q,
+        const struct visco_sh_native_material_gradient_fields *native,
+        float **grad_primary, float **grad_rho, float **grad_q);
+
 /* ---------------------------------- */
 /* declaration of PSV data-structures */
 /* ---------------------------------- */

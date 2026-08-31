@@ -271,6 +271,7 @@ DENISE += alloc_fwiSH.c \
 	  visco_sh_gsls_vjp.c \
 	  visco_sh_material_vjp.c \
 	  visco_sh_material_observable.c \
+	  visco_sh_material_gradient_assembly.c \
 	  visco_sh_material_timestep_vjp.c \
 	  visco_sh_reverse_time_adjoint.c \
 	  zero_denise_elast_SH.c \
