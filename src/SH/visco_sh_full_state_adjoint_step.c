@@ -7,7 +7,9 @@
  * workspace; bar_prev is overwritten on the complete relevant state range.
  */
 
+#ifndef M63C_FULL_STATE_ADJOINT_EMBEDDED
 #include "fd.h"
+#endif
 
 #include <math.h>
 #include <stddef.h>
@@ -15,6 +17,13 @@
 
 #define M63C_MAX_PATCH 13
 #define M63C_PATCH_CELLS (M63C_MAX_PATCH * M63C_MAX_PATCH)
+
+#if defined(__GNUC__)
+extern int visco_sh_material_timestep_vjp(
+        const struct visco_sh_material_timestep_vjp_input *input,
+        struct visco_sh_material_timestep_vjp_output *output)
+        __attribute__((weak));
+#endif
 
 static int state_complete(
         const struct visco_sh_full_state *state, int fw) {
@@ -194,6 +203,218 @@ static int validate_config(const struct visco_sh_full_step_config *cfg) {
     if ((cfg->fw > 0) && (!cfg->free_surface) &&
             (cfg->nproc_y == 1) && (cfg->ny <= 2 * cfg->fw)) return -2;
     return 0;
+}
+
+static int validate_material_context(
+        const struct visco_sh_full_step_config *cfg,
+        const struct visco_sh_material_adjoint_step_context *material) {
+    const struct visco_sh_native_material_gradient_fields *output;
+
+    if (material == NULL) return 0;
+#if defined(__GNUC__)
+    if (visco_sh_material_timestep_vjp == NULL) return -1;
+#endif
+    output = material->native_output;
+    if ((material->observable == NULL) ||
+            (material->observable->qsum == NULL) ||
+            (material->observable->strain_x == NULL) ||
+            (material->observable->strain_y == NULL) ||
+            (material->mu_x == NULL) || (material->tau_x == NULL) ||
+            (material->mu_y == NULL) || (material->tau_y == NULL) ||
+            !isfinite(material->reference_sum) ||
+            (material->eta_x == NULL) || (material->eta_y == NULL) ||
+            (output == NULL) || (output->g_rhoi == NULL) ||
+            (output->g_mu_x == NULL) || (output->g_mu_y == NULL) ||
+            (output->g_tau_x == NULL) || (output->g_tau_y == NULL)) return -1;
+    if ((cfg->bip == NULL) || (cfg->bjm == NULL)) return -1;
+    return 0;
+}
+
+static void zero_native_material_output(
+        const struct visco_sh_full_step_config *cfg,
+        struct visco_sh_native_material_gradient_fields *output) {
+    int i, j;
+    for (j = 1; j <= cfg->ny; ++j) {
+        for (i = 1; i <= cfg->nx; ++i) {
+            output->g_rhoi[j][i] = 0.0;
+            output->g_mu_x[j][i] = 0.0;
+            output->g_mu_y[j][i] = 0.0;
+            output->g_tau_x[j][i] = 0.0;
+            output->g_tau_y[j][i] = 0.0;
+        }
+    }
+}
+
+static int capture_material_stress_cotangents(
+        const struct visco_sh_full_step_config *cfg,
+        const struct visco_sh_full_state *work,
+        const struct visco_sh_material_adjoint_step_context *material) {
+    struct visco_sh_material_timestep_vjp_input input;
+    struct visco_sh_material_timestep_vjp_output result;
+    double *bar_r = NULL, *bar_q = NULL, *eta_x = NULL, *eta_y = NULL;
+    double *b_x = NULL, *b_y = NULL, *a_x = NULL, *a_y = NULL;
+    double *c_x = NULL, *c_y = NULL;
+    int i, j, l, status = -1;
+
+    bar_r = (double *)calloc((size_t)cfg->mechanisms, sizeof(double));
+    bar_q = (double *)calloc((size_t)cfg->mechanisms, sizeof(double));
+    eta_x = (double *)calloc((size_t)cfg->mechanisms, sizeof(double));
+    eta_y = (double *)calloc((size_t)cfg->mechanisms, sizeof(double));
+    b_x = (double *)calloc((size_t)cfg->mechanisms, sizeof(double));
+    b_y = (double *)calloc((size_t)cfg->mechanisms, sizeof(double));
+    a_x = (double *)calloc((size_t)cfg->mechanisms, sizeof(double));
+    a_y = (double *)calloc((size_t)cfg->mechanisms, sizeof(double));
+    c_x = (double *)calloc((size_t)cfg->mechanisms, sizeof(double));
+    c_y = (double *)calloc((size_t)cfg->mechanisms, sizeof(double));
+    if ((bar_r == NULL) || (bar_q == NULL) || (eta_x == NULL) ||
+            (eta_y == NULL) || (b_x == NULL) || (b_y == NULL) ||
+            (a_x == NULL) || (a_y == NULL) || (c_x == NULL) ||
+            (c_y == NULL)) goto cleanup;
+
+    for (l = 0; l < cfg->mechanisms; ++l) {
+        eta_x[l] = material->eta_x[l + 1];
+        eta_y[l] = material->eta_y[l + 1];
+        b_x[l] = cfg->bip[l + 1];
+        b_y[l] = cfg->bjm[l + 1];
+        a_x[l] = (double)cfg->bip[l + 1] * cfg->cip[l + 1];
+        a_y[l] = (double)cfg->bjm[l + 1] * cfg->cjm[l + 1];
+    }
+
+    memset(&input, 0, sizeof(input));
+    input.mechanisms = cfg->mechanisms;
+    input.dt = cfg->dt;
+    input.dh = cfg->dh;
+    input.reference_sum = material->reference_sum;
+    input.eta_x = eta_x;
+    input.b_x = b_x;
+    input.eta_y = eta_y;
+    input.b_y = b_y;
+    input.forward_a_x = a_x;
+    input.forward_a_y = a_y;
+    input.forward_c_x = c_x;
+    input.forward_c_y = c_y;
+    input.bar_r_next = bar_r;
+    input.bar_q_next = bar_q;
+
+    for (j = 1; j <= cfg->ny; ++j) {
+        for (i = 1; i <= cfg->nx; ++i) {
+            input.qsum = material->observable->qsum[j][i];
+            input.strain_x = material->observable->strain_x[j][i];
+            input.strain_y = material->observable->strain_y[j][i];
+            input.bar_v_post_velocity = 0.0;
+            input.bar_sxz_next = work->sxz[j][i];
+            input.bar_syz_next = work->syz[j][i];
+            input.mu_x = material->mu_x[j][i];
+            input.tau_x = material->tau_x[j][i];
+            input.mu_y = material->mu_y[j][i];
+            input.tau_y = material->tau_y[j][i];
+            input.forward_f_x = cfg->fipjp[j][i];
+            input.forward_f_y = cfg->f[j][i];
+            for (l = 0; l < cfg->mechanisms; ++l) {
+                bar_r[l] = work->r[j][i][l + 1];
+                bar_q[l] = work->q[j][i][l + 1];
+                c_x[l] = -(double)cfg->bip[l + 1] *
+                        cfg->dip[j][i][l + 1];
+                c_y[l] = -(double)cfg->bjm[l + 1] *
+                        cfg->d[j][i][l + 1];
+            }
+            status = visco_sh_material_timestep_vjp(&input, &result);
+            if (status != 0) goto cleanup;
+            material->native_output->g_mu_x[j][i] = result.g_mu_x;
+            material->native_output->g_mu_y[j][i] = result.g_mu_y;
+            material->native_output->g_tau_x[j][i] = result.g_tau_x;
+            material->native_output->g_tau_y[j][i] = result.g_tau_y;
+        }
+    }
+    status = 0;
+cleanup:
+    free(bar_r);
+    free(bar_q);
+    free(eta_x);
+    free(eta_y);
+    free(b_x);
+    free(b_y);
+    free(a_x);
+    free(a_y);
+    free(c_x);
+    free(c_y);
+    return status;
+}
+
+static int capture_material_velocity_cotangent(
+        const struct visco_sh_full_step_config *cfg,
+        const struct visco_sh_full_state *work,
+        const struct visco_sh_material_adjoint_step_context *material) {
+    struct visco_sh_material_timestep_vjp_input input;
+    struct visco_sh_material_timestep_vjp_output result;
+    double *zero = NULL, *eta_x = NULL, *eta_y = NULL;
+    double *b_x = NULL, *b_y = NULL, *a_x = NULL, *a_y = NULL;
+    int i, j, l, status = -1;
+
+    zero = (double *)calloc((size_t)cfg->mechanisms, sizeof(double));
+    eta_x = (double *)calloc((size_t)cfg->mechanisms, sizeof(double));
+    eta_y = (double *)calloc((size_t)cfg->mechanisms, sizeof(double));
+    b_x = (double *)calloc((size_t)cfg->mechanisms, sizeof(double));
+    b_y = (double *)calloc((size_t)cfg->mechanisms, sizeof(double));
+    a_x = (double *)calloc((size_t)cfg->mechanisms, sizeof(double));
+    a_y = (double *)calloc((size_t)cfg->mechanisms, sizeof(double));
+    if ((zero == NULL) || (eta_x == NULL) || (eta_y == NULL) ||
+            (b_x == NULL) || (b_y == NULL) || (a_x == NULL) ||
+            (a_y == NULL)) goto cleanup;
+    for (l = 0; l < cfg->mechanisms; ++l) {
+        eta_x[l] = material->eta_x[l + 1];
+        eta_y[l] = material->eta_y[l + 1];
+        b_x[l] = cfg->bip[l + 1];
+        b_y[l] = cfg->bjm[l + 1];
+        a_x[l] = (double)cfg->bip[l + 1] * cfg->cip[l + 1];
+        a_y[l] = (double)cfg->bjm[l + 1] * cfg->cjm[l + 1];
+    }
+
+    memset(&input, 0, sizeof(input));
+    input.mechanisms = cfg->mechanisms;
+    input.dt = cfg->dt;
+    input.dh = cfg->dh;
+    input.reference_sum = material->reference_sum;
+    input.eta_x = eta_x;
+    input.b_x = b_x;
+    input.eta_y = eta_y;
+    input.b_y = b_y;
+    input.forward_a_x = a_x;
+    input.forward_a_y = a_y;
+    input.forward_c_x = zero;
+    input.forward_c_y = zero;
+    input.bar_r_next = zero;
+    input.bar_q_next = zero;
+
+    for (j = 1; j <= cfg->ny; ++j) {
+        for (i = 1; i <= cfg->nx; ++i) {
+            input.qsum = material->observable->qsum[j][i];
+            input.strain_x = material->observable->strain_x[j][i];
+            input.strain_y = material->observable->strain_y[j][i];
+            input.bar_v_post_velocity = work->vz[j][i];
+            input.bar_sxz_next = 0.0;
+            input.bar_syz_next = 0.0;
+            input.mu_x = material->mu_x[j][i];
+            input.tau_x = material->tau_x[j][i];
+            input.mu_y = material->mu_y[j][i];
+            input.tau_y = material->tau_y[j][i];
+            input.forward_f_x = cfg->fipjp[j][i];
+            input.forward_f_y = cfg->f[j][i];
+            status = visco_sh_material_timestep_vjp(&input, &result);
+            if (status != 0) goto cleanup;
+            material->native_output->g_rhoi[j][i] = result.g_rhoi;
+        }
+    }
+    status = 0;
+cleanup:
+    free(zero);
+    free(eta_x);
+    free(eta_y);
+    free(b_x);
+    free(b_y);
+    free(a_x);
+    free(a_y);
+    return status;
 }
 
 static int reverse_stress_block(
@@ -377,14 +598,17 @@ static int reverse_velocity_block(
     return 0;
 }
 
-int visco_sh_full_state_adjoint_step(
+static int visco_sh_full_state_adjoint_step_internal(
         const struct visco_sh_full_step_config *cfg,
         struct visco_sh_full_state *bar_next_work,
         struct visco_sh_full_state *bar_prev,
-        double *bar_signal) {
+        double *bar_signal,
+        const struct visco_sh_material_adjoint_step_context *material) {
     int h, row_min, row_max, col_min, col_max, status;
 
     status = validate_config(cfg);
+    if (status != 0) return status;
+    status = validate_material_context(cfg, material);
     if (status != 0) return status;
     if (!state_complete(bar_next_work, cfg->fw) ||
             !state_complete(bar_prev, cfg->fw) ||
@@ -419,6 +643,8 @@ int visco_sh_full_state_adjoint_step(
         for (source = 0; source < cfg->nsrc; ++source)
             bar_signal[source] = 0.0;
     }
+    if (material != NULL)
+        zero_native_material_output(cfg, material->native_output);
 
     status = receiver_transpose(
             cfg, bar_next_work, row_min, row_max, col_min, col_max);
@@ -431,6 +657,12 @@ int visco_sh_full_state_adjoint_step(
     if (cfg->free_surface && (cfg->pos[2] == 0))
         surface_elastic_SH_stress_adjoint(
                 bar_next_work->syz, cfg->nx, h);
+
+    if (material != NULL) {
+        status = capture_material_stress_cotangents(
+                cfg, bar_next_work, material);
+        if (status != 0) return status;
+    }
 
     /* The stress halo/surface maps precede the constitutive update in
      * reverse.  Only now is their transformed identity branch the input to
@@ -460,5 +692,30 @@ int visco_sh_full_state_adjoint_step(
             cfg, bar_next_work->vz, bar_prev->vz, row_min, row_max,
             col_min, col_max, bar_signal);
     if (status != 0) return status;
+    if (material != NULL) {
+        status = capture_material_velocity_cotangent(
+                cfg, bar_next_work, material);
+        if (status != 0) return status;
+    }
     return reverse_velocity_block(cfg, bar_next_work, bar_prev);
+}
+
+int visco_sh_full_state_adjoint_step(
+        const struct visco_sh_full_step_config *cfg,
+        struct visco_sh_full_state *bar_next_work,
+        struct visco_sh_full_state *bar_prev,
+        double *bar_signal) {
+    return visco_sh_full_state_adjoint_step_internal(
+            cfg, bar_next_work, bar_prev, bar_signal, NULL);
+}
+
+int visco_sh_full_state_adjoint_step_material(
+        const struct visco_sh_full_step_config *cfg,
+        struct visco_sh_full_state *bar_next_work,
+        struct visco_sh_full_state *bar_prev,
+        double *bar_signal,
+        const struct visco_sh_material_adjoint_step_context *material) {
+    if (material == NULL) return -1;
+    return visco_sh_full_state_adjoint_step_internal(
+            cfg, bar_next_work, bar_prev, bar_signal, material);
 }

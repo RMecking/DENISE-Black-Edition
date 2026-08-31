@@ -323,6 +323,19 @@ struct visco_sh_material_observable_step {
    float **strain_y;
 };
 
+/* Optional passive material-gradient capture for one full-state adjoint step.
+ * Material and observable inputs are read-only.  native_output is overwritten
+ * on owned cells only; no temporal accumulation or physical-model mapping is
+ * performed by this interface. */
+struct visco_sh_material_adjoint_step_context {
+   const struct visco_sh_material_observable_step *observable;
+   float **mu_x, **tau_x;
+   float **mu_y, **tau_y;
+   double reference_sum;
+   const float *eta_x, *eta_y;
+   struct visco_sh_native_material_gradient_fields *native_output;
+};
+
 /* Physical-timestep-major storage.  C7 initially requires dtinv == 1. */
 struct visco_sh_material_observable_trajectory {
    int nx, ny, nsteps, dtinv;
@@ -927,6 +940,13 @@ int visco_sh_full_state_adjoint_step(
         struct visco_sh_full_state *bar_next_work,
         struct visco_sh_full_state *bar_prev,
         double *bar_signal);
+
+int visco_sh_full_state_adjoint_step_material(
+        const struct visco_sh_full_step_config *config,
+        struct visco_sh_full_state *bar_next_work,
+        struct visco_sh_full_state *bar_prev,
+        double *bar_signal,
+        const struct visco_sh_material_adjoint_step_context *material);
 
 /* Exact reverse-time composition of the fixed-material full-state step.
  * Receiver and source cotangent series are time-major:
