@@ -106,7 +106,7 @@ def _prepare(directory, layout, npx, npy, invmat1, qmode, series, dt, dtinv):
         7700 + 100 * invmat1 + 10 * qmode + npx + 7 * npy,
     )
     mapping = _mapping(qmode)
-    accumulated = temporal_accumulate(series, dt, dtinv)
+    accumulated = temporal_accumulate(series, dtinv)
     gradients = distributed_gradient(
         invmat1, mapping, primary, rho_values, q_values, accumulated,
         layout, npx, npy,
@@ -171,32 +171,45 @@ def _run(harness, directory, npx, npy, layout, invmat1, qmode,
 
 
 @pytest.mark.parametrize("nsteps", (1, 2, 5))
-@pytest.mark.parametrize("dtinv", (1, 2, 4))
-def test_independent_temporal_contract_impulses_cancellation_and_scaling(nsteps, dtinv):
+def test_independent_temporal_contract_is_direct_discrete_sum(nsteps):
     dt = 0.0017
+    dtinv = 1
     series = [[[[0.0] for _ in CHANNELS]] for _ in range(nsteps)]
     for step in range(nsteps):
         for channel in range(5):
             series[step][0][channel][0] = (step + 1) * (channel - 1.5)
     original = json.dumps(series)
-    actual = temporal_accumulate(series, dt, dtinv)
+    actual = temporal_accumulate(series, dtinv)
     assert json.dumps(series) == original
     for channel in range(5):
-        expected = dt * dtinv * math.fsum(
+        expected = math.fsum(
             series[step][0][channel][0] for step in range(nsteps)
         )
         assert actual[0][channel][0] == pytest.approx(expected, rel=2.0e-15)
+        if expected:
+            assert actual[0][channel][0] != pytest.approx(
+                dt * expected, rel=1.0e-12, abs=1.0e-15
+            )
+        else:
+            assert actual[0][channel][0] == 0.0
     if nsteps >= 2:
         cancellation = [[[[0.0] for _ in CHANNELS]] for _ in range(nsteps)]
         cancellation[0][0][0][0] = 3.25
         cancellation[-1][0][0][0] = -3.25
-        assert temporal_accumulate(cancellation, dt, dtinv)[0][0][0] == 0.0
+        assert temporal_accumulate(cancellation, dtinv)[0][0][0] == 0.0
+
+
+@pytest.mark.parametrize("dtinv", (0, 2, 4))
+def test_independent_temporal_contract_rejects_unverified_dtinv(dtinv):
+    series = [[[[1.0] for _ in CHANNELS]]]
+    with pytest.raises(ValueError, match="only DTINV=1"):
+        temporal_accumulate(series, dtinv)
 
 
 @pytest.mark.parametrize("active_step", (0, 2, 4))
 def test_actual_temporal_first_middle_last_impulse(
         c7ca_harness, tmp_path, active_step):
-    layout, npx, npy, nsteps, dt, dtinv = Layout(), 1, 1, 5, 0.0019, 2
+    layout, npx, npy, nsteps, dt, dtinv = Layout(), 1, 1, 5, 0.0019, 1
     series = [[[[0.0] * layout.owned for _ in CHANNELS]] for _ in range(nsteps)]
     for channel in range(5):
         for point in range(layout.owned):
@@ -212,7 +225,7 @@ def test_actual_temporal_first_middle_last_impulse(
 
 @pytest.mark.parametrize("nsteps", (1, 2, 5))
 def test_actual_temporal_step_counts(c7ca_harness, tmp_path, nsteps):
-    layout, npx, npy, dt, dtinv = Layout(), 1, 1, 0.0014, 3
+    layout, npx, npy, dt, dtinv = Layout(), 1, 1, 0.0014, 1
     series = _series(layout, npx, npy, nsteps, "all", 8050 + nsteps)
     directory = tmp_path / f"step_count_{nsteps}"
     _prepare(directory, layout, npx, npy, 1, 0, series, dt, dtinv)
@@ -224,7 +237,7 @@ def test_actual_temporal_step_counts(c7ca_harness, tmp_path, nsteps):
 
 
 def test_actual_temporal_cancellation(c7ca_harness, tmp_path):
-    layout, npx, npy, nsteps, dt, dtinv = Layout(), 1, 1, 5, 0.0019, 4
+    layout, npx, npy, nsteps, dt, dtinv = Layout(), 1, 1, 5, 0.0019, 1
     series = [[[[0.0] * layout.owned for _ in CHANNELS]] for _ in range(nsteps)]
     for channel in range(5):
         for point in range(layout.owned):
@@ -241,11 +254,35 @@ def test_actual_temporal_cancellation(c7ca_harness, tmp_path):
     assert record["q_error"] == 0.0
 
 
+def test_actual_temporal_sum_is_independent_of_driver_dt(c7ca_harness, tmp_path):
+    layout, npx, npy, nsteps, dtinv = Layout(), 1, 1, 3, 1
+    series = _series(layout, npx, npy, nsteps, "all", 8177)
+    directory = tmp_path / "dt_independence"
+    _prepare(directory, layout, npx, npy, 3, 1, series, 0.0013, dtinv)
+    small = _run(c7ca_harness, directory, npx, npy, layout, 3, 1,
+                 nsteps, 0.0013, dtinv)
+    large = _run(c7ca_harness, directory, npx, npy, layout, 3, 1,
+                 nsteps, 0.37, dtinv)
+    assert small["temporal_checksum"] == large["temporal_checksum"]
+    assert small["temporal_error"] <= C7CA_MPI_REFERENCE_RELATIVE_MAX
+    assert large["temporal_error"] <= C7CA_MPI_REFERENCE_RELATIVE_MAX
+
+
+def test_actual_temporal_sum_rejects_unverified_dtinv(c7ca_harness, tmp_path):
+    layout, npx, npy, nsteps = Layout(), 1, 1, 2
+    series = _series(layout, npx, npy, nsteps, "all", 8178)
+    directory = tmp_path / "reject_dtinv2"
+    _prepare(directory, layout, npx, npy, 3, 0, series, 0.0013, 1)
+    record = _run(c7ca_harness, directory, npx, npy, layout, 3, 0,
+                  nsteps, 0.0013, 2)
+    assert record == {"temporal_status": -1, "driver_dt": 0.0013}
+
+
 @pytest.mark.parametrize("invmat1", (1, 3))
 @pytest.mark.parametrize("qmode", (0, 1))
 def test_actual_c7ca_all_channels_all_mpi_topologies(
         c7ca_harness, tmp_path, invmat1, qmode):
-    layout, dt, dtinv, nsteps = Layout(), 0.0013, 3, 5
+    layout, dt, dtinv, nsteps = Layout(), 0.0013, 1, 5
     records = []
     for npx, npy in TOPOLOGIES:
         series = _series(layout, npx, npy, nsteps, "all",
@@ -282,14 +319,14 @@ def test_c6_linearity_and_operator_dot_contract():
     dt, dtinv, nsteps = 0.0011, 1, 5
     primary, rho_values, q_values = _fields(layout, npx, npy, invmat1, 8250)
     series = _series(layout, npx, npy, nsteps, "all", 8251)
-    accumulated = temporal_accumulate(series, dt, dtinv)
+    accumulated = temporal_accumulate(series, dtinv)
     mapped_once = distributed_gradient(
         invmat1, mapping, primary, rho_values, q_values, accumulated,
         layout, npx, npy,
     )
     mapped_each = sum_mapped_per_step(
         invmat1, mapping, primary, rho_values, q_values, series,
-        dt, dtinv, layout, npx, npy,
+        dtinv, layout, npx, npy,
     )
     for left, right in zip(mapped_once, mapped_each):
         assert _field_relative_l2(left, right) <= C7CA_LINEARITY_RELATIVE_MAX
@@ -319,7 +356,8 @@ def test_c6_linearity_and_operator_dot_contract():
 
 def test_c7ca_scope_order_and_locked_files(repository_root: Path):
     source = (repository_root / "src/SH/visco_sh_material_gradient_assembly.c").read_text()
-    assert source.count("weight = dt * (double)dtinv") == 1
+    assert "dtinv != 1" in source
+    assert "weight" not in source
     assert source.index("matcopy_SH_adjoint(") < source.index("q_to_tau_derivative(")
     assert "visco_sh_harmonic_pair_vjp(" in source
     assert "visco_sh_av_tau_local_vjp(" in source

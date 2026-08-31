@@ -15,10 +15,10 @@ RELATIVE_TOLERANCE = 5.0e-3
 
 def test_production_sh_l2_objective_contract(repository_root: Path) -> None:
     """Freeze the executed SH LNORM=2/GF2 sampling and cotangent contract."""
-    sampling = (repository_root / "src/seismo_ssg.c").read_text()
+    sampling = (repository_root / "src/SH/sh_visc.c").read_text()
     wrapper = (repository_root / "src/SH/calc_res_SH.c").read_text()
     residual = (repository_root / "src/calc_res.c").read_text()
-    assert "sectionvx[itr][ins]=vx[nyrec][nxrec]" in sampling
+    assert "seismo_ssg(nt, ntr, (*acq).recpos_loc, (*seisSH).sectionvz" in sampling
     assert "(*seisSH).sectionvz" in wrapper
     assert "(*seisSHfwi).sectionvzdiff" in wrapper
     assert "intseis = (section[i][j]-sectiondata[i][j])" in residual
@@ -90,7 +90,7 @@ def test_real_forward_mu_direction_matches_locked_gradient(
         "receiver_cotangent": "r_chronological",
         "objective_dt_factor": 0,
         "receiver_dt_factor": 0,
-        "material_quadrature": "DT*DTINV_once",
+        "material_quadrature": "discrete_sum_once",
         "dtinv": 1,
     }
     assert contract["J_base"] > 0.0
@@ -106,10 +106,9 @@ def test_real_forward_mu_direction_matches_locked_gradient(
     fd_changes = [abs(rows[index + 1]["D_fd"] - rows[index]["D_fd"])
                   for index in range(len(rows) - 1)]
     assert fd_changes[1] < fd_changes[0]
-    # This typed diagnostic does not relax the frozen acceptance gate: it
-    # records that the present RED result is the DT scaling signature rather
-    # than a sign error or epsilon-dependent finite-difference failure.
-    assert max(abs(row["D_ad_over_D_fd"] - 0.0013) for row in rows) < 2.0e-6
+    # This diagnostic is separate from, and stricter in scale interpretation
+    # than, the unchanged relative-error acceptance gate below.
+    assert max(abs(row["D_ad_over_D_fd"] - 1.0) for row in rows) < 5.0e-3
     assert max(row["relative_error"] for row in rows) <= RELATIVE_TOLERANCE
 
 

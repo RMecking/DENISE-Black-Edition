@@ -29,16 +29,14 @@ static void field_release(struct local_field *field) {
 }
 
 int visco_sh_temporal_native_gradient_accumulate(
-        int timesteps, int points, double dt, int dtinv,
+        int timesteps, int points, int dtinv,
         const struct visco_sh_material_timestep_vjp_output *series,
         struct visco_sh_material_timestep_vjp_output *accumulated) {
-    double weight;
     int n, point;
 
-    if (timesteps < 1 || points < 1 || !(dt > 0.0) || dtinv < 1 ||
-            !isfinite(dt) || series == NULL || accumulated == NULL)
+    if (timesteps < 1 || points < 1 || dtinv != 1 ||
+            series == NULL || accumulated == NULL)
         return -1;
-    weight = dt * (double)dtinv;
     for (point = 0; point < points; ++point)
         memset(&accumulated[point], 0, sizeof(accumulated[point]));
     for (n = 0; n < timesteps; ++n) {
@@ -53,13 +51,6 @@ int visco_sh_temporal_native_gradient_accumulate(
             sum->g_tau_x += step->g_tau_x;
             sum->g_tau_y += step->g_tau_y;
         }
-    }
-    for (point = 0; point < points; ++point) {
-        accumulated[point].g_rhoi *= weight;
-        accumulated[point].g_mu_x *= weight;
-        accumulated[point].g_mu_y *= weight;
-        accumulated[point].g_tau_x *= weight;
-        accumulated[point].g_tau_y *= weight;
     }
     return 0;
 }

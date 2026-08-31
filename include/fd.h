@@ -92,11 +92,12 @@ int visco_sh_material_timestep_vjp(
         const struct visco_sh_material_timestep_vjp_input *input,
         struct visco_sh_material_timestep_vjp_output *output);
 
-/* C7c-a keeps the operator-level dt factors already present in C7b separate
- * from the temporal gradient quadrature.  The latter is applied exactly once
- * as dt * dtinv while reducing a supplied time-major C7b series. */
+/* Exact reduction for the verified discrete objective at DTINV == 1.
+ * Operator-level dt factors already belong to the supplied C7b per-step
+ * VJPs; the objective is an unweighted sample sum, so this helper adds no
+ * temporal scale.  DTINV > 1 has no verified end-to-end contract yet. */
 int visco_sh_temporal_native_gradient_accumulate(
-        int timesteps, int points, double dt, int dtinv,
+        int timesteps, int points, int dtinv,
         const struct visco_sh_material_timestep_vjp_output *series,
         struct visco_sh_material_timestep_vjp_output *accumulated);
 
@@ -982,7 +983,7 @@ int visco_sh_reverse_time_adjoint(
 /* Material-aware C7c-b2 companion.  It preserves the locked fixed-material
  * state transpose, uses trajectory->steps[n] at reverse step n, accumulates
  * native contributions without weight, then applies the locked C7c-a
- * dt*dtinv quadrature and distributed physical mapping exactly once.
+ * direct discrete-time sum and distributed physical mapping exactly once.
  * The integrated path is intentionally restricted to trajectory dtinv == 1. */
 int visco_sh_reverse_time_adjoint_material(
         const struct visco_sh_full_step_config *base_config,

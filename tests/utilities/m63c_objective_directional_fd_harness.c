@@ -8,7 +8,7 @@
  * Production calc_res stores the same residual in reverse-time array order;
  * that storage convention is not an extra sign or time shift.  The objective
  * and receiver cotangent contain no DT or DTINV.  The locked C7c-b material
- * assembly applies DT * DTINV exactly once, independently of this contract.
+ * assembly directly sums the discrete per-step VJPs at DTINV == 1.
  */
 
 #define main m63c_locked_c5a_harness_main
@@ -312,7 +312,7 @@ int main(int argc, char **argv) {
     printf("{\"contract\":{\"lnorm\":2,\"grad_form\":2,\"quelltypb\":1,"
            "\"residual\":\"synthetic-observed\",\"objective\":\"0.5*sum(r^2)\","
            "\"receiver_cotangent\":\"r_chronological\",\"objective_dt_factor\":0,"
-           "\"receiver_dt_factor\":0,\"material_quadrature\":\"DT*DTINV_once\","
+           "\"receiver_dt_factor\":0,\"material_quadrature\":\"discrete_sum_once\","
            "\"dtinv\":1},\"J_base\":%.17g,\"D_ad\":%.17g,"
            "\"direction_norm\":%.17g,\"max_trace\":%.17g}\n",
            j_base, d_ad, direction_norm, max_trace);

@@ -25,17 +25,18 @@ def c6_channel_order(native):
     ]
 
 
-def temporal_accumulate(series, dt, dtinv):
-    """Reduce time-major [step][rank][channel][point] contributions."""
-    weight = dt * dtinv
+def temporal_accumulate(series, dtinv):
+    """Exactly sum discrete per-step VJPs for the verified DTINV=1 path."""
+    if dtinv != 1:
+        raise ValueError("only DTINV=1 has a verified discrete objective contract")
     nsteps, ranks, channels, points = (
         len(series), len(series[0]), len(series[0][0]), len(series[0][0][0])
     )
     return [
         [
             [
-                weight * math.fsum(series[n][rank][channel][point]
-                                   for n in range(nsteps))
+                math.fsum(series[n][rank][channel][point]
+                          for n in range(nsteps))
                 for point in range(points)
             ]
             for channel in range(channels)
@@ -54,8 +55,9 @@ def distributed_gradient(invmat1, mapping, primary, rho_values, q_values,
 
 
 def sum_mapped_per_step(invmat1, mapping, primary, rho_values, q_values,
-                        series, dt, dtinv, layout, npx, npy):
-    weight = dt * dtinv
+                        series, dtinv, layout, npx, npy):
+    if dtinv != 1:
+        raise ValueError("only DTINV=1 has a verified discrete objective contract")
     mapped = [
         material_vjp(
             invmat1, mapping, primary, rho_values, q_values,
@@ -69,7 +71,7 @@ def sum_mapped_per_step(invmat1, mapping, primary, rho_values, q_values,
     for field in range(3):
         for rank in range(ranks):
             for cell in range(layout.cells):
-                output[field][rank][cell] = weight * math.fsum(
+                output[field][rank][cell] = math.fsum(
                     value[field][rank][cell] for value in mapped
                 )
     return tuple(output)

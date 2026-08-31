@@ -92,7 +92,8 @@ int main(int argc, char **argv) {
     int size, npx, npy, qmode, nsteps, dtinv, cells, owned;
     int i, j, n, channel, point, status;
     size_t count, offset;
-    double dt, temporal_diff = 0.0, temporal_scale = 0.0;
+    double driver_dt, temporal_diff = 0.0, temporal_scale = 0.0;
+    double temporal_checksum = 0.0, global_temporal_checksum;
     double map_diff[3] = {0.0}, map_scale[3] = {0.0};
     double reduced_diff[3], reduced_scale[3], wrong_diff = 0.0, wrong_scale = 0.0;
     double global_temporal_diff, global_temporal_scale;
@@ -110,7 +111,7 @@ int main(int argc, char **argv) {
     if (argc != 11) MPI_Abort(MPI_COMM_WORLD, 705);
     npx = atoi(argv[1]); npy = atoi(argv[2]); NX = atoi(argv[3]); NY = atoi(argv[4]);
     INVMAT1 = atoi(argv[5]); qmode = atoi(argv[6]); nsteps = atoi(argv[7]);
-    dt = atof(argv[8]); dtinv = atoi(argv[9]);
+    driver_dt = atof(argv[8]); dtinv = atoi(argv[9]);
     if (size != npx * npy || nsteps < 1) MPI_Abort(MPI_COMM_WORLD, 706);
     topology(MYID, npx, npy);
     FP = tmpfile(); bsend_buffer = malloc((size_t)bsend_size);
@@ -157,7 +158,18 @@ int main(int argc, char **argv) {
         }
     memcpy(series_copy, series, (size_t)nsteps * owned * sizeof(*series));
     status = visco_sh_temporal_native_gradient_accumulate(
-            nsteps, owned, dt, dtinv, series, sum);
+            nsteps, owned, dtinv, series, sum);
+    if (dtinv != 1) {
+        if (MYID == 0)
+            printf("{\"temporal_status\":%d,\"driver_dt\":%.17g}\n",
+                   status, driver_dt);
+        free(payload); free(series); free(series_copy); free(sum);
+        field_free(&primary); field_free(&rho); field_free(&q); field_free(&tau);
+        field_free(&gp); field_free(&gr); field_free(&gq);
+        for (channel = 0; channel < 5; ++channel) dfield_free(&native[channel]);
+        fclose(FP); MPI_Buffer_detach(&bsend_buffer, &bsend_size);
+        free(bsend_buffer); MPI_Finalize(); return 0;
+    }
     if (status != 0 || memcmp(series, series_copy,
                               (size_t)nsteps * owned * sizeof(*series)) != 0)
         MPI_Abort(MPI_COMM_WORLD, 710);
@@ -173,6 +185,10 @@ int main(int argc, char **argv) {
             compare(native[channel].v[j][i],
                     payload[offset + (size_t)channel * owned + point],
                     &temporal_diff, &temporal_scale);
+        temporal_checksum += (point + 1) * (
+                sum[point].g_rhoi + 2.0 * sum[point].g_mu_x +
+                3.0 * sum[point].g_mu_y + 4.0 * sum[point].g_tau_x +
+                5.0 * sum[point].g_tau_y);
     }
     offset += (size_t)5 * owned;
     native_fields.g_rhoi = native[0].v;
@@ -190,6 +206,8 @@ int main(int argc, char **argv) {
     }
     MPI_Reduce(&temporal_diff, &global_temporal_diff, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
     MPI_Reduce(&temporal_scale, &global_temporal_scale, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&temporal_checksum, &global_temporal_checksum, 1,
+               MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
     MPI_Reduce(map_diff, reduced_diff, 3, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
     MPI_Reduce(map_scale, reduced_scale, 3, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
     {
@@ -199,12 +217,13 @@ int main(int argc, char **argv) {
         if (MYID == 0) printf(
             "{\"temporal_error\":%.17g,\"primary_error\":%.17g,"
             "\"rho_error\":%.17g,\"q_error\":%.17g,"
-            "\"wrong_q_difference\":%.17g}\n",
+            "\"wrong_q_difference\":%.17g,\"temporal_checksum\":%.17g}\n",
             global_temporal_diff / fmax(global_temporal_scale, 1.0e-300),
             reduced_diff[0] / fmax(reduced_scale[0], 1.0e-300),
             reduced_diff[1] / fmax(reduced_scale[1], 1.0e-300),
             reduced_diff[2] / fmax(reduced_scale[2], 1.0e-300),
-            global_wrong_diff / fmax(global_wrong_scale, 1.0e-300));
+            global_wrong_diff / fmax(global_wrong_scale, 1.0e-300),
+            global_temporal_checksum);
     }
 
     free(payload); free(series); free(series_copy); free(sum);

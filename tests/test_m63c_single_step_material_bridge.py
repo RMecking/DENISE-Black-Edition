@@ -184,7 +184,7 @@ def test_runtime_reference_assembles_locked_c7b_without_capture_helpers(reposito
 def test_locked_production_files_outside_the_bridge_remain_untouched(repository_root: Path):
     result = subprocess.run(
         ["git", "diff", "--name-only", "--", "src/SH/visco_sh_reverse_time_adjoint.c",
-         "src/SH/visco_sh_material_timestep_vjp.c", "src/SH/visco_sh_material_gradient_assembly.c",
+         "src/SH/visco_sh_material_timestep_vjp.c",
          "src/SH/visco_sh_material_observable.c", "src/SH/matcopy_SH_adjoint.c",
          "src/SH/FWI_SH.c", "src/SH/FWI_SH_visc.c", "src/SH/grad_obj_sh.c",
          "src/SH/grad_obj_sh_visc.c"],

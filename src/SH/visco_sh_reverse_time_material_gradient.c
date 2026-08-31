@@ -220,7 +220,7 @@ int visco_sh_reverse_time_adjoint_material(
             unweighted[point].g_tau_y = sum_native.g_tau_y[j][i];
         }
     status = visco_sh_temporal_native_gradient_accumulate(
-            1, points, base_config->dt, material->trajectory->dtinv,
+            1, points, material->trajectory->dtinv,
             unweighted, weighted);
     if (status != 0) goto cleanup;
     for (j = 1; j <= base_config->ny; ++j)
