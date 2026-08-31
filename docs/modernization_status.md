@@ -25,7 +25,7 @@ history.
 - Integration branch: `modernization`
 - Current feature branch: `codex/m6.3c-visco-sh-discrete-adjoint-gradient`
 - Status current through locked implementation checkpoint:
-  `M6.3c-7c-a @ 77a20dd8d81de6f444e3292f438626bc0b2a48a3`
+  `M6.3c-7c-b2 @ dc37e0602c92c3bfc76600f2a32eac691ca69941`
 - Current milestone: **M6.3c — exact discrete viscoelastic SH
   adjoint/gradient repair**
 
@@ -49,6 +49,8 @@ history.
 | M6.3c-7a | `8f711dfbe1bb32af34120a5cb80800082ce76e41` | Exact forward material-observable trajectory from the viscoelastic SH forward path |
 | M6.3c-7b | `f128dfa0a563f334116da1c58c746da9eaf2b6fa` | Exact local per-timestep native material sensitivities |
 | M6.3c-7c-a | `77a20dd8d81de6f444e3292f438626bc0b2a48a3` | Temporal reduction and exact distributed mapping of prescribed per-timestep sensitivities to owned physical gradients |
+| M6.3c-7c-b1 | `f67daaff71f98b1f7ef048821175b56e9ea73ac8` | Exact single-step bridge from real forward observables and aligned adjoint cotangents to native material sensitivities |
+| M6.3c-7c-b2 | `dc37e0602c92c3bfc76600f2a32eac691ca69941` | Exact multi-step reverse-time assembly of distributed physical material gradients for DTINV==1 |
 
 M6.3c-2 composes the locked C1 GSLS VJP with the exact staggered FD
 transpose and stress-side CPML temporal-state transpose. Its coverage includes
@@ -165,13 +167,35 @@ uses the exact C6b distributed material transpose and the locked C6a
 native-to-physical material mapping. The Q channel uses the corresponding
 frozen tau/Q parameterization.
 
-C7c-a starts from prescribed C7b per-timestep sensitivities and is not yet a
-complete FWI material gradient. It does not combine real C7a forward
-observables with time-aligned C5b reverse-time cotangents, generate C7b
-contributions during the real reverse-time adjoint, form an end-to-end
-objective gradient, provide the C7d directional finite-difference proof, or
-integrate the gradient into the active FWI, line-search, or optimizer path.
-C7c-b, C7d, and C8 have not started.
+C7c-b is complete. C7c-b1 bridges the locked real C7a observables `qsum`,
+`strain_x`, and `strain_y` with the exactly time-aligned cotangents of the
+locked C5 reverse step. Through the locked C7b VJP it produces the five
+native sensitivities `g_rhoi`, `g_mu_x`, `g_mu_y`, `g_tau_x`, and `g_tau_y`
+for one physical timestep without changing the fixed-material C5 state
+transpose.
+
+C7c-b2 composes that bridge over the real reverse-time trajectory. At each
+physical reverse timestep it uses the corresponding C7a observable set and
+the time-aligned C5 cotangents, accumulates the resulting C7b native
+sensitivities without temporal weighting, applies the locked C7c-a temporal
+weight `DT * DTINV` exactly once after the reduction, and then applies the
+locked distributed C6 material transpose exactly once. The result is an owned
+`Vs`/`rho`/`Q` gradient for `INVMAT1==1` or an owned `mu`/`rho`/`Q` gradient
+for `INVMAT1==3`. The corresponding frozen tau/Q parameterization is applied
+only in that locked material-map chain.
+
+For a supplied receiver-cotangent series and its corresponding real C7a
+forward-observable trajectory, the multi-step viscoelastic SH reverse-time
+adjoint therefore assembles the exact temporally reduced and distributed
+owned `Vs`/`mu`, `rho`, and `Q` material gradient for `DTINV==1`, while
+preserving the locked fixed-material state transpose. C7c-a's algebraic
+support for larger positive `DTINV` values is not an end-to-end correctness
+claim for `DTINV>1`.
+
+This is not yet a validation of the complete objective derivative or an
+objective directional-FD/Taylor proof. The assembled gradient is not yet
+connected to the active SH FWI, line-search, optimizer, model-update, or
+end-to-end Q-inversion workflow. C7d and C8 have not started.
 
 ## Open integration risks / preconditions
 
@@ -248,21 +272,23 @@ post-repair GREEN tests do not rewrite this frozen baseline.
 - C7b exact local per-timestep native material sensitivities
 - C7c-a temporal reduction and exact distributed mapping of prescribed
   per-timestep sensitivities to owned physical gradients
+- C7c-b1 exact single-step bridge from real forward observables and aligned
+  adjoint cotangents to native material sensitivities
+- C7c-b2 multi-step reverse-time assembly of temporally reduced distributed
+  `Vs`/`mu`, `rho`, and `Q` material gradients for `DTINV==1`
 
 ### Next
 
-- **C7c-b real trajectory-to-gradient composition**: combine the real C7a
-  observables with correctly time-aligned C5b cotangents to produce the C7b
-  contribution at every reverse timestep, then pass those contributions
-  through the locked C7c-a temporal, distributed, and physical-parameter
-  assembly. C7c-b has not started.
+- **C7d full objective directional finite-difference validation**: for
+  `DTINV==1`, compare
+  `[J(m + eps*dm) - J(m - eps*dm)] / (2*eps)` with `grad(J)^T dm` for
+  separate `Vs` or `mu`, `rho`, and `Q` perturbations and for combined
+  perturbations. The initial relative-error acceptance target remains
+  `5e-3`, with no fitted sign, fitted scale, or temporal shift. C7d has not
+  started.
 
 ### Planned
 
-- C7d end-to-end directional finite-difference gradient verification,
-  initially for `DTINV==1`, with separate and/or combined `Vs` or `mu`,
-  `rho`, and `Q` channels, relative error at most `5e-3`, and no fitted sign
-  or scale; not started
 - C8 active-path unification; remove elastic-base versus visco-trial physics
   split; not started
 
