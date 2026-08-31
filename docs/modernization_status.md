@@ -25,7 +25,7 @@ history.
 - Integration branch: `modernization`
 - Current feature branch: `codex/m6.3c-visco-sh-discrete-adjoint-gradient`
 - Status current through locked implementation checkpoint:
-  `M6.3c-7b @ f128dfa0a563f334116da1c58c746da9eaf2b6fa`
+  `M6.3c-7c-a @ 77a20dd8d81de6f444e3292f438626bc0b2a48a3`
 - Current milestone: **M6.3c — exact discrete viscoelastic SH
   adjoint/gradient repair**
 
@@ -48,6 +48,7 @@ history.
 | M6.3c-6b | `8a708de5c9a03a9c3d22bf199d3697f047ca7d5a` | Exact distributed SH material-map transpose across MPI seams and corners |
 | M6.3c-7a | `8f711dfbe1bb32af34120a5cb80800082ce76e41` | Exact forward material-observable trajectory from the viscoelastic SH forward path |
 | M6.3c-7b | `f128dfa0a563f334116da1c58c746da9eaf2b6fa` | Exact local per-timestep native material sensitivities |
+| M6.3c-7c-a | `77a20dd8d81de6f444e3292f438626bc0b2a48a3` | Temporal reduction and exact distributed mapping of prescribed per-timestep sensitivities to owned physical gradients |
 
 M6.3c-2 composes the locked C1 GSLS VJP with the exact staggered FD
 transpose and stress-side CPML temporal-state transpose. Its coverage includes
@@ -154,6 +155,24 @@ quadrature, no C6 mapping to owned physical `Vs`/`mu`, `rho`, and `Q`
 parameters, no model-level tau-to-Q composition, no objective directional-FD
 verification, and no integration into the active FWI or line-search path.
 
+M6.3c-7c-a independently validates the temporal reduction and exact
+distributed mapping of prescribed C7b per-timestep native sensitivities to
+owned `Vs`/`rho`/`Q` gradients for `INVMAT1==1` or owned
+`mu`/`rho`/`Q` gradients for `INVMAT1==3`. The locked operator chain applies
+the separate temporal gradient weight `DT * DTINV` exactly once, without
+recreating the discrete operator-DT factors already present in C7b, then
+uses the exact C6b distributed material transpose and the locked C6a
+native-to-physical material mapping. The Q channel uses the corresponding
+frozen tau/Q parameterization.
+
+C7c-a starts from prescribed C7b per-timestep sensitivities and is not yet a
+complete FWI material gradient. It does not combine real C7a forward
+observables with time-aligned C5b reverse-time cotangents, generate C7b
+contributions during the real reverse-time adjoint, form an end-to-end
+objective gradient, provide the C7d directional finite-difference proof, or
+integrate the gradient into the active FWI, line-search, or optimizer path.
+C7c-b, C7d, and C8 have not started.
+
 ## Open integration risks / preconditions
 
 The current local adjoint CPML helpers do not treat simultaneous CPML
@@ -227,16 +246,16 @@ post-repair GREEN tests do not rewrite this frozen baseline.
 - C6b exact distributed material-map transpose across MPI seams and corners
 - C7a exact forward material-observable trajectory
 - C7b exact local per-timestep native material sensitivities
+- C7c-a temporal reduction and exact distributed mapping of prescribed
+  per-timestep sensitivities to owned physical gradients
 
 ### Next
 
-- **C7c multi-step temporal accumulation and physical-parameter mapping**:
-  apply the frozen temporal gradient quadrature and the locked C6 material
-  transpose to map the accumulated native sensitivities to owned `Vs`,
-  `rho`, and `Q` parameters for `INVMAT1==1`, or owned `mu`, `rho`, and `Q`
-  parameters for `INVMAT1==3`, including the verified tau-to-Q chain rule.
-  Exact gradient verification initially remains restricted to `DTINV==1`.
-  C7c has not started.
+- **C7c-b real trajectory-to-gradient composition**: combine the real C7a
+  observables with correctly time-aligned C5b cotangents to produce the C7b
+  contribution at every reverse timestep, then pass those contributions
+  through the locked C7c-a temporal, distributed, and physical-parameter
+  assembly. C7c-b has not started.
 
 ### Planned
 
