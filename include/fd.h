@@ -342,6 +342,21 @@ struct visco_sh_material_observable_trajectory {
    struct visco_sh_material_observable_step *steps;
 };
 
+/* C7c-b2 material inputs and owned physical-gradient outputs for the
+ * reverse-time companion driver.  All inputs are borrowed and read-only;
+ * gradient outputs are overwritten only after complete preflight. */
+struct visco_sh_reverse_time_material_context {
+   const struct visco_sh_material_observable_trajectory *trajectory;
+   float **mu_x, **tau_x;
+   float **mu_y, **tau_y;
+   double reference_sum;
+   const float *eta_x, *eta_y;
+   int invmat1;
+   const struct q_tau_mapping *mapping;
+   float **primary_post, **rho_post, **owned_q;
+   float **grad_primary, **grad_rho, **grad_q;
+};
+
 int visco_sh_material_observable_trajectory_init(
         struct visco_sh_material_observable_trajectory *trajectory,
         int nx, int ny, int nsteps, int dtinv, int fw, int free_surface,
@@ -963,6 +978,21 @@ int visco_sh_reverse_time_adjoint(
         struct visco_sh_full_state *bar_initial,
         struct visco_sh_full_state *scratch,
         double *bar_signal_series);
+
+/* Material-aware C7c-b2 companion.  It preserves the locked fixed-material
+ * state transpose, uses trajectory->steps[n] at reverse step n, accumulates
+ * native contributions without weight, then applies the locked C7c-a
+ * dt*dtinv quadrature and distributed physical mapping exactly once.
+ * The integrated path is intentionally restricted to trajectory dtinv == 1. */
+int visco_sh_reverse_time_adjoint_material(
+        const struct visco_sh_full_step_config *base_config,
+        int nsteps,
+        const double *bar_receiver_series,
+        struct visco_sh_full_state *bar_terminal_work,
+        struct visco_sh_full_state *bar_initial,
+        struct visco_sh_full_state *scratch,
+        double *bar_signal_series,
+        const struct visco_sh_reverse_time_material_context *material);
 
 void readmod_elastic_SH(float  **rho, float **u);
 
