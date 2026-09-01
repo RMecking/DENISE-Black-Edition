@@ -25,7 +25,7 @@ history.
 - Integration branch: `modernization`
 - Current feature branch: `codex/m6.3c-visco-sh-discrete-adjoint-gradient`
 - Status current through locked implementation checkpoint:
-  `M6.3c-C7c-r1 @ fe60e9b858585421f3dbaefca77e53e419b81e20`
+  `M6.3c-7d-b2 @ e0cfe59afbf9eb77ab7ea8b1fd097af6fff69de3`
 - Current milestone: **M6.3c — exact discrete viscoelastic SH
   adjoint/gradient repair**
 
@@ -53,6 +53,8 @@ history.
 | M6.3c-7c-b2 | `dc37e0602c92c3bfc76600f2a32eac691ca69941` | Historical multi-step reverse-time material-gradient assembly under the then-current temporal contract |
 | M6.3c-7d-a RED | `dd787f01f3db32bcff4c83ce5328c615fda0b19a` | Real-objective directional-FD falsification exposing an erroneous extra `DT` scaling in the assembled material gradient |
 | M6.3c-C7c-r1 | `fe60e9b858585421f3dbaefca77e53e419b81e20` | Correct discrete-objective temporal material-gradient normalization for `DTINV==1` |
+| M6.3c-7d-b1 | `f0f1516a3862c18de1b0f6378599700a4d719d82` | Single-rank end-to-end objective directional-FD validation of all physical material channels and parameterizations |
+| M6.3c-7d-b2 | `e0cfe59afbf9eb77ab7ea8b1fd097af6fff69de3` | Distributed and boundary end-to-end objective directional-FD validation across representative MPI, free-surface, and active CPML configurations |
 
 M6.3c-2 composes the locked C1 GSLS VJP with the exact staggered FD
 transpose and stress-side CPML temporal-state transpose. Its coverage includes
@@ -194,12 +196,62 @@ the locked fixed-material state transpose. No end-to-end objective-gradient
 weighting has been established for `DTINV>1`; neither `DTINV` nor
 `DT * DTINV` may be inferred as the correct weight without separate proof.
 
-C7d-a now validates the objective directional derivative for one frozen
-`DTINV==1`, `INVMAT1==3`, heterogeneous mu-only configuration. It does not
-yet validate Vs, rho, Q, combined directions, the broader MPI/boundary
-matrix, or `DTINV>1`. The assembled gradient is not yet connected to the
-active SH FWI, line-search, optimizer, model-update, or end-to-end
-Q-inversion workflow. C7d-b and C8 have not started.
+C7d is complete for the verified `DTINV==1` discrete viscoelastic SH L2
+objective. C7d-a first supplied real-objective falsification evidence:
+`D_ad / D_fd ~= DT` with `DT = 0.0013`, caused by an erroneous additional
+outer `DT` scaling in C7c. C7c-r1 removed that scaling without rewriting the
+historical RED checkpoint, after which the same frozen C7d-a gate passed
+without a fitted sign, scale, or time shift.
+
+C7d-b1 then closed the complete single-rank physical parameter matrix. For
+`INVMAT1==3`, it verifies separate `mu`, `rho`, legacy-Q, and physical-Q
+directions and combined `mu + rho + Q` directions under both Q mappings. For
+`INVMAT1==1`, it verifies the corresponding `Vs`, `rho`, legacy-Q, physical-Q,
+and combined `Vs + rho + Q` directions. The `INVMAT1==1` rho derivative
+therefore includes both `rho -> rhoi` and `rho -> mu = rho * Vs^2` end to end.
+On the FD side, owned physical Q is perturbed before `q_to_tau`; on the
+adjoint side, `bar_tau` is mapped by the locked `q_to_tau_derivative` for both
+`tau = 2/Q` and `tau = 1/(aQ+b)`.
+
+C7d-b2 extends that objective gate to representative distributed and boundary
+configurations:
+
+| Case | Configuration | Direction | Maximum acceptance-window error |
+| --- | --- | --- | ---: |
+| Horizontal MPI seam | 2x1, `INVMAT1==3`, physical Q, `FREE_SURF=0`, `FW=0` | combined `mu + rho + Q` | `2.320199816e-03` |
+| Vertical MPI seam | 1x2, `INVMAT1==1`, legacy Q, `FREE_SURF=0`, `FW=0` | rho | `9.367225066e-05` |
+| 2x2 MPI corner | 2x2, `INVMAT1==3`, physical Q, `FREE_SURF=0`, `FW=0` | Q | `1.071973111e-04` |
+| Free surface | 1x1, `INVMAT1==1`, physical Q, `FREE_SURF=1`, `FW=0` | Vs | `5.704538780e-04` |
+| Active CPML | 1x1, `INVMAT1==3`, physical Q, `FREE_SURF=0`, `FW=3` | combined `mu + rho + Q` | `3.670866203e-04` |
+| Combined integration | 2x2, `INVMAT1==1`, physical Q, `FREE_SURF=1`, `FW=3` | combined `Vs + rho + Q` | `4.073662730e-04` |
+
+The multi-rank objective is `MPI_Allreduce(sum, J_local)`, with receiver data
+owned only by the receiver rank. The adjoint directional derivative contracts
+only owned physical cells and is then globally summed; halo and ghost cells
+are excluded. Model, truth, and direction patterns use global model
+coordinates. MPI cases demonstrated nonzero remote receiver traces and
+directions on every participating rank. Free-surface cases used shallow
+sources, receivers, and nonzero near-surface directions. CPML cases used a
+representative active nontrivial coefficient configuration with finite
+coefficients, nonzero velocity- and stress-side states, and non-overlapping
+same-axis regions. The active-CPML case reached approximately `7299.8296` in
+the velocity-side state family and `3.52388e-4` in the stress-side family;
+the non-overlap margins were positive at X=`10` and Y=`12`. Each b2 case was
+run twice with identical decoded results.
+
+The CPML evidence validates the executed forward/adjoint operators under that
+representative active configuration. It does not independently validate
+`PML_pro()` or arbitrary production CPML parameter choices. C7d also makes no
+claim for `DTINV>1`, opposing same-axis CPML overlap, active FWI integration,
+line search, optimizer, model update, or a complete active-path Q-inversion
+workflow.
+
+For the verified `DTINV==1` discrete viscoelastic SH L2 objective, the
+corrected exact material-gradient chain therefore satisfies independent
+central directional finite-difference checks for the complete physical
+`Vs`/`mu`, `rho`, and Q parameterizations and for representative MPI,
+free-surface, and active nontrivial CPML configurations, without fitted sign,
+scale, or time shift.
 
 ## Open integration risks / preconditions
 
@@ -237,15 +289,27 @@ checkpoint.
   scale where applicable.
 - The eventual production global float32 adjoint-dot relative residual must
   be at most `1e-5`.
-- Directional Q/tau gradient relative disagreement must be at most `5e-3`
-  for the DTINV=1 gate.
-- For the verified `DTINV==1` discrete SH L2 objective, material
-  sensitivities are accumulated as the direct sum of the exact discrete
-  per-timestep VJPs, with no additional temporal `DT` scaling.
+- For the verified `DTINV==1`, `LNORM==2`, `GRAD_FORM==2` discrete SH L2
+  objective, `r[n] = synthetic[n] - observed[n]`,
+  `J = 0.5 * sum_receivers sum_n r[n]^2`, and
+  `bar_receiver[n] = r[n]`. The first residual sample is zero under the
+  production contract.
+- Material sensitivities are accumulated as
+  `g_total = sum_n g_step[n]`, with no additional outer `DT` or
+  `DT * DTINV` scaling. Operator-level `dt` factors inside the discrete
+  forward Jacobians remain unchanged.
+- Every objective directional-FD case evaluates epsilon values `1e-2`,
+  `3e-3`, `1e-3`, and `3e-4`. The common, non-case-specific float32
+  acceptance window is `epsilon = {1e-2, 3e-3}` with relative error at most
+  `5e-3`; the smaller values remain mandatory diagnostics rather than global
+  acceptance points.
+- C7d-b2 additionally requires demonstrated activation of the intended MPI,
+  free-surface, or CPML mechanism, not merely numerical FD agreement.
 - No exactness claim is made for DTINV>1 until separately demonstrated.
 - The viscoelastic base objective and zero-step trial objective must use the
   same physics and agree to relative `1e-12` or better.
-- No fitted sign, temporal shift, or empirical scale factor is allowed.
+- No fitted sign, temporal shift, empirical scale factor, or case-specific
+  epsilon selection is allowed.
 
 ## Resolved falsification evidence
 
@@ -317,22 +381,25 @@ post-repair GREEN tests do not rewrite this frozen baseline.
 - C7d-a real-objective mu directional-FD falsification checkpoint
 - C7c-r1 corrected discrete-objective temporal gradient normalization and
   successful rerun of the frozen C7d-a gate
+- C7d-b1 complete single-rank end-to-end physical `Vs`/`mu`, `rho`, and Q
+  objective directional-FD matrix for legacy and physical Q
+- C7d-b2 distributed and boundary objective directional-FD matrix across
+  representative MPI seams/corners, free surface, active CPML, and their
+  combined composition
+- C7d complete for the frozen `DTINV==1` discrete viscoelastic SH L2
+  objective contract
 
 ### Next
 
-- **M6.3c-7d-b broadened end-to-end objective directional-FD validation**:
-  for `DTINV==1`, compare
-  `[J(m + eps*dm) - J(m - eps*dm)] / (2*eps)` with `grad(J)^T dm` for
-  separate and combined `mu`, `rho`, and `Q` directions for `INVMAT1==3`
-  and `Vs`, `rho`, and `Q` directions for `INVMAT1==1`. Coverage must include
-  legacy and physical Q mapping, representative MPI topologies, free surface,
-  and representative CPML, while retaining the `5e-3` relative-error target
-  and prohibiting fitted sign, scale, or time shift. C7d-b has not started.
+- **M6.3c-8 active-path unification / production SH FWI integration**: connect
+  the verified exact gradient chain to the active viscoelastic SH FWI path,
+  require base and trial objectives to use identical viscoelastic physics,
+  close line-search gradient/objective consistency, and remove any remaining
+  elastic-base versus visco-trial physics split. C8 has not started.
 
 ### Planned
 
-- C8 active-path unification; remove elastic-base versus visco-trial physics
-  split; not started
+- No additional M6.3c implementation checkpoint is planned after C8.
 
 ### Follow-up
 
