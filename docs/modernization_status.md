@@ -25,7 +25,7 @@ history.
 - Integration branch: `modernization`
 - Current feature branch: `codex/m6.3c-visco-sh-discrete-adjoint-gradient`
 - Status current through locked implementation checkpoint:
-  `M6.3c-7c-b2 @ dc37e0602c92c3bfc76600f2a32eac691ca69941`
+  `M6.3c-C7c-r1 @ fe60e9b858585421f3dbaefca77e53e419b81e20`
 - Current milestone: **M6.3c — exact discrete viscoelastic SH
   adjoint/gradient repair**
 
@@ -50,7 +50,9 @@ history.
 | M6.3c-7b | `f128dfa0a563f334116da1c58c746da9eaf2b6fa` | Exact local per-timestep native material sensitivities |
 | M6.3c-7c-a | `77a20dd8d81de6f444e3292f438626bc0b2a48a3` | Temporal reduction and exact distributed mapping of prescribed per-timestep sensitivities to owned physical gradients |
 | M6.3c-7c-b1 | `f67daaff71f98b1f7ef048821175b56e9ea73ac8` | Exact single-step bridge from real forward observables and aligned adjoint cotangents to native material sensitivities |
-| M6.3c-7c-b2 | `dc37e0602c92c3bfc76600f2a32eac691ca69941` | Exact multi-step reverse-time assembly of distributed physical material gradients for DTINV==1 |
+| M6.3c-7c-b2 | `dc37e0602c92c3bfc76600f2a32eac691ca69941` | Historical multi-step reverse-time material-gradient assembly under the then-current temporal contract |
+| M6.3c-7d-a RED | `dd787f01f3db32bcff4c83ce5328c615fda0b19a` | Real-objective directional-FD falsification exposing an erroneous extra `DT` scaling in the assembled material gradient |
+| M6.3c-C7c-r1 | `fe60e9b858585421f3dbaefca77e53e419b81e20` | Correct discrete-objective temporal material-gradient normalization for `DTINV==1` |
 
 M6.3c-2 composes the locked C1 GSLS VJP with the exact staggered FD
 transpose and stress-side CPML temporal-state transpose. Its coverage includes
@@ -157,15 +159,14 @@ quadrature, no C6 mapping to owned physical `Vs`/`mu`, `rho`, and `Q`
 parameters, no model-level tau-to-Q composition, no objective directional-FD
 verification, and no integration into the active FWI or line-search path.
 
-M6.3c-7c-a independently validates the temporal reduction and exact
-distributed mapping of prescribed C7b per-timestep native sensitivities to
-owned `Vs`/`rho`/`Q` gradients for `INVMAT1==1` or owned
-`mu`/`rho`/`Q` gradients for `INVMAT1==3`. The locked operator chain applies
-the separate temporal gradient weight `DT * DTINV` exactly once, without
-recreating the discrete operator-DT factors already present in C7b, then
-uses the exact C6b distributed material transpose and the locked C6a
-native-to-physical material mapping. The Q channel uses the corresponding
-frozen tau/Q parameterization.
+M6.3c-7c-a independently validated that its then-assumed temporal reduction
+and exact distributed mapping were implemented as specified for prescribed
+C7b per-timestep native sensitivities. That historical checkpoint applied
+the assumed outer weight `DT * DTINV` before the exact C6b distributed
+material transpose and locked C6a native-to-physical mapping. C7d-a later
+falsified that temporal assumption against the real discrete objective;
+C7c-r1 corrects the verified `DTINV==1` path without rewriting the published
+C7c-a commit or its historical evidence.
 
 C7c-b is complete. C7c-b1 bridges the locked real C7a observables `qsum`,
 `strain_x`, and `strain_y` with the exactly time-aligned cotangents of the
@@ -176,26 +177,29 @@ transpose.
 
 C7c-b2 composes that bridge over the real reverse-time trajectory. At each
 physical reverse timestep it uses the corresponding C7a observable set and
-the time-aligned C5 cotangents, accumulates the resulting C7b native
-sensitivities without temporal weighting, applies the locked C7c-a temporal
-weight `DT * DTINV` exactly once after the reduction, and then applies the
-locked distributed C6 material transpose exactly once. The result is an owned
-`Vs`/`rho`/`Q` gradient for `INVMAT1==1` or an owned `mu`/`rho`/`Q` gradient
-for `INVMAT1==3`. The corresponding frozen tau/Q parameterization is applied
-only in that locked material-map chain.
+the time-aligned C5 cotangents to produce the five C7b per-step material
+VJPs. For the corrected `DTINV==1` contract, C7c-r1 sums those contributions
+directly over the discrete timesteps, with no additional temporal `DT`
+scaling, and then applies the locked distributed C6 material transpose
+exactly once. The result is an owned `Vs`/`rho`/`Q` gradient for
+`INVMAT1==1` or an owned `mu`/`rho`/`Q` gradient for `INVMAT1==3`. Q remains
+mapped only after `matcopy_SH_adjoint` through the corresponding locked
+tau/Q chain rule.
 
 For a supplied receiver-cotangent series and its corresponding real C7a
 forward-observable trajectory, the multi-step viscoelastic SH reverse-time
-adjoint therefore assembles the exact temporally reduced and distributed
-owned `Vs`/`mu`, `rho`, and `Q` material gradient for `DTINV==1`, while
-preserving the locked fixed-material state transpose. C7c-a's algebraic
-support for larger positive `DTINV` values is not an end-to-end correctness
-claim for `DTINV>1`.
+adjoint therefore assembles the directly summed and distributed owned
+`Vs`/`mu`, `rho`, and `Q` material gradient for `DTINV==1`, while preserving
+the locked fixed-material state transpose. No end-to-end objective-gradient
+weighting has been established for `DTINV>1`; neither `DTINV` nor
+`DT * DTINV` may be inferred as the correct weight without separate proof.
 
-This is not yet a validation of the complete objective derivative or an
-objective directional-FD/Taylor proof. The assembled gradient is not yet
-connected to the active SH FWI, line-search, optimizer, model-update, or
-end-to-end Q-inversion workflow. C7d and C8 have not started.
+C7d-a now validates the objective directional derivative for one frozen
+`DTINV==1`, `INVMAT1==3`, heterogeneous mu-only configuration. It does not
+yet validate Vs, rho, Q, combined directions, the broader MPI/boundary
+matrix, or `DTINV>1`. The assembled gradient is not yet connected to the
+active SH FWI, line-search, optimizer, model-update, or end-to-end
+Q-inversion workflow. C7d-b and C8 have not started.
 
 ## Open integration risks / preconditions
 
@@ -235,12 +239,46 @@ checkpoint.
   be at most `1e-5`.
 - Directional Q/tau gradient relative disagreement must be at most `5e-3`
   for the DTINV=1 gate.
-- Temporal quadrature must contain the independently verified `DT * DTINV`
-  factor.
+- For the verified `DTINV==1` discrete SH L2 objective, material
+  sensitivities are accumulated as the direct sum of the exact discrete
+  per-timestep VJPs, with no additional temporal `DT` scaling.
 - No exactness claim is made for DTINV>1 until separately demonstrated.
 - The viscoelastic base objective and zero-step trial objective must use the
   same physics and agree to relative `1e-12` or better.
 - No fitted sign, temporal shift, or empirical scale factor is allowed.
+
+## Resolved falsification evidence
+
+C7d-a at `dd787f01f3db32bcff4c83ce5328c615fda0b19a` froze a real
+single-rank, heterogeneous mu-only `INVMAT1==3`, `DTINV==1`, `LNORM==2`
+objective-directional-FD experiment. The production contract was
+`J = 0.5 * sum_n r[n]^2`, with `r[n] = synthetic[n] - observed[n]` and
+receiver cotangent `bar_receiver[n] = r[n]`; neither objective nor receiver
+cotangent contained an extra `DT`. Before C7c-r1, the complete predefined
+epsilon series reproducibly yielded `D_ad / D_fd ~= DT`, with
+`DT = 0.0013`, without a fitted sign, scale, or time shift.
+
+C7c-r1 at `fe60e9b858585421f3dbaefca77e53e419b81e20` removed that
+erroneous outer `DT` scaling. It distinguishes the operator-level `dt`
+factors already contained in the discrete C7b update Jacobians from the
+objective sample weighting: for the verified `DTINV==1` path,
+`g_total = sum_n g_step[n]`.
+
+The unchanged C7d-a acceptance gate then produced these relative errors:
+
+| Epsilon | Relative error |
+| ---: | ---: |
+| `1.0e-2` | `1.2750705797569411e-05` |
+| `3.0e-3` | `1.7147288560645724e-04` |
+| `1.0e-3` | `2.7921168943080390e-04` |
+| `3.0e-4` | `4.5648788994939954e-04` |
+
+The maximum `4.5648788994939954e-04` is below the frozen `5e-3` limit.
+Thus, for this verified configuration, the exact assembled mu material
+gradient agrees with the independently evaluated central finite-difference
+derivative of the real discrete receiver-data objective without fitted sign,
+scale, or time shift. C7d-a remains a published falsification checkpoint,
+not a permanent XFAIL and not a complete C7d matrix.
 
 ## Known intentional RED/XFAIL evidence
 
@@ -276,16 +314,20 @@ post-repair GREEN tests do not rewrite this frozen baseline.
   adjoint cotangents to native material sensitivities
 - C7c-b2 multi-step reverse-time assembly of temporally reduced distributed
   `Vs`/`mu`, `rho`, and `Q` material gradients for `DTINV==1`
+- C7d-a real-objective mu directional-FD falsification checkpoint
+- C7c-r1 corrected discrete-objective temporal gradient normalization and
+  successful rerun of the frozen C7d-a gate
 
 ### Next
 
-- **C7d full objective directional finite-difference validation**: for
-  `DTINV==1`, compare
+- **M6.3c-7d-b broadened end-to-end objective directional-FD validation**:
+  for `DTINV==1`, compare
   `[J(m + eps*dm) - J(m - eps*dm)] / (2*eps)` with `grad(J)^T dm` for
-  separate `Vs` or `mu`, `rho`, and `Q` perturbations and for combined
-  perturbations. The initial relative-error acceptance target remains
-  `5e-3`, with no fitted sign, fitted scale, or temporal shift. C7d has not
-  started.
+  separate and combined `mu`, `rho`, and `Q` directions for `INVMAT1==3`
+  and `Vs`, `rho`, and `Q` directions for `INVMAT1==1`. Coverage must include
+  legacy and physical Q mapping, representative MPI topologies, free surface,
+  and representative CPML, while retaining the `5e-3` relative-error target
+  and prohibiting fitted sign, scale, or time shift. C7d-b has not started.
 
 ### Planned
 
