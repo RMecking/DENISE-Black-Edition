@@ -87,8 +87,11 @@ def test_c7a_is_capture_only_and_does_not_switch_the_fwi_path(repository_root: P
     assert "q_to_tau" not in implementation
     assert "waveconv" not in implementation
     assert "DTINV" not in implementation
+    propagator = (repository_root / "src/SH/sh_visc.c").read_text()
+    assert "sh_visc_with_material_trajectory" in propagator
+    assert "grad_obj_sh" not in propagator
+    assert "visco_sh_reverse_time_adjoint_material" not in propagator
     for path in (
-        "src/SH/sh_visc.c",
         "src/SH/FWI_SH.c",
         "src/SH/FWI_SH_visc.c",
         "src/SH/grad_obj_sh.c",

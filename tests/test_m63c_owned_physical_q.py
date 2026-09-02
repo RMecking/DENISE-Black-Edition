@@ -123,7 +123,8 @@ def test_c8b2_trajectory_hook_analysis_is_source_supported(repository_root: Path
     propagator = _source(repository_root, "src/SH/sh_visc.c")
     velocity = _source(repository_root, "src/SH/update_v_PML_SH.c")
     stress = _source(repository_root, "src/SH/update_s_visc_PML_SH.c")
-    assert "visco_sh_material_observable_begin_step" not in propagator
-    assert "visco_sh_material_observable_end_step" not in propagator
+    assert "sh_visc_with_material_trajectory" in propagator
+    assert "visco_sh_material_observable_begin_step" in propagator
+    assert "visco_sh_material_observable_end_step" in propagator
     assert "visco_sh_material_observable_is_active" in velocity
     assert "visco_sh_material_observable_is_active" in stress

@@ -14,9 +14,10 @@
 
 #include "fd.h"
 
-void sh_visc(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matSH, struct fwiSH *fwiSH, struct mpiPSV *mpiPSV, 
+void sh_visc_with_material_trajectory(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matSH, struct fwiSH *fwiSH, struct mpiPSV *mpiPSV,
          struct seisSH *seisSH, struct seisSHfwi *seisSHfwi, struct acq *acq, float *hc, int ishot, int nshots, int nsrc_loc, 
-         int ns, int ntr, float **Ws, float **Wr, int hin, int *DTINV_help, int mode, MPI_Request * req_send, MPI_Request * req_rec){
+         int ns, int ntr, float **Ws, float **Wr, int hin, int *DTINV_help, int mode, MPI_Request * req_send, MPI_Request * req_rec,
+         struct visco_sh_material_observable_trajectory *trajectory){
 
         /* global variables */
 	extern float DT, DH, TSNAP1, TSNAP2, TSNAPINC;
@@ -33,6 +34,19 @@ void sh_visc(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH 
 	float SUMr, SUMq;
 
         nd = FDORDER/2 + 1;
+
+	/* C8b2-a exposes the already locked C7a capture hooks only for the
+	 * physical forward trajectory on which their time indexing was verified. */
+	if(trajectory!=NULL){
+	   if((mode!=0)||(DTINV!=1)||(trajectory->dtinv!=1)||
+	      (trajectory->nx!=NX)||(trajectory->ny!=NY)||
+	      (trajectory->nsteps!=NT)||(trajectory->steps==NULL)){
+	      err(" Invalid viscoelastic SH material-observable trajectory !");
+	   }
+	   if(visco_sh_material_observable_is_active()){
+	      err(" Nested viscoelastic SH material-observable trajectory !");
+	   }
+	}
 
 	/*MPI_Barrier(MPI_COMM_WORLD);*/
         
@@ -109,6 +123,12 @@ void sh_visc(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH 
 	      /*time3=MPI_Wtime();*/
 	   }
 
+	   if(trajectory!=NULL){
+	      if(visco_sh_material_observable_begin_step(trajectory,nt-1)!=0){
+	         err(" Cannot activate viscoelastic SH material-observable step !");
+	      }
+	   }
+
 	      /* particle velocity update */
               if(mode==0 || mode==2){
 		update_v_PML_SH(1, NX, 1, NY, nt, (*waveSH).pvz, (*waveSH).pvzp1, (*waveSH).pvzm1, (*waveSH).uttz, (*waveSH).psxz, (*waveSH).psyz, (*matSH).prho, (*matSH).prhoi, (*acq).srcpos_loc, (*acq).signals, nsrc_loc, 
@@ -137,6 +157,10 @@ void sh_visc(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH 
 			            (*matSH).e, (*matSH).dip, (*waveSH_PML).K_x, (*waveSH_PML).a_x, (*waveSH_PML).b_x, (*waveSH_PML).K_x_half, (*waveSH_PML).a_x_half, (*waveSH_PML).b_x_half,
         			    (*waveSH_PML).K_y, (*waveSH_PML).a_y, (*waveSH_PML).b_y, (*waveSH_PML).K_y_half, (*waveSH_PML).a_y_half, (*waveSH_PML).b_y_half,
         			    (*waveSH_PML).psi_vzx, (*waveSH_PML).psi_vzy, fwiSH, mode);
+
+	   if(trajectory!=NULL){
+	      visco_sh_material_observable_end_step();
+	   }
 
 	   if(FREE_SURF && (POS[2]==0)){
 		surface_elastic_SH_stress((*waveSH).psyz, NX, FDORDER/2);
@@ -248,4 +272,13 @@ void sh_visc(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH 
 
 	   }/*--------------------  End  of loop over timesteps ----------*/		
 
+}
+
+void sh_visc(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matSH, struct fwiSH *fwiSH, struct mpiPSV *mpiPSV,
+         struct seisSH *seisSH, struct seisSHfwi *seisSHfwi, struct acq *acq, float *hc, int ishot, int nshots, int nsrc_loc,
+         int ns, int ntr, float **Ws, float **Wr, int hin, int *DTINV_help, int mode, MPI_Request * req_send, MPI_Request * req_rec){
+
+	sh_visc_with_material_trajectory(waveSH,waveSH_PML,matSH,fwiSH,mpiPSV,
+	         seisSH,seisSHfwi,acq,hc,ishot,nshots,nsrc_loc,ns,ntr,Ws,Wr,hin,
+	         DTINV_help,mode,req_send,req_rec,NULL);
 }
