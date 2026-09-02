@@ -313,7 +313,7 @@ nsrc_glob=nsrc;
 
 
 /* create model grids */
-if (READMOD) readmod_visc_SH(matSH.prho,matSH.pu,matSH.ptaus,matSH.peta);
+if (READMOD) readmod_visc_SH(matSH.prho,matSH.pu,matSH.pqs,matSH.ptaus,matSH.peta);
 /*else model(matPSV.prho,matPSV.ppi,matPSV.pu,matPSV.ptaus,matPSV.ptaup,matPSV.peta);*/
 
 
@@ -1004,6 +1004,7 @@ if (nsrc_loc>0){
  free_ivector(DTINV_help,1,NT);
  
  /* free memory for viscoelastic modeling variables */ 
+free_matrix(matSH.pqs,-nd+1,NY+nd,-nd+1,NX+nd);
 free_matrix(matSH.ptaus,-nd+1,NY+nd,-nd+1,NX+nd);
 free_matrix(matSH.ptausipjp,-nd+1,NY+nd,-nd+1,NX+nd);
 free_vector(matSH.peta,1,L);

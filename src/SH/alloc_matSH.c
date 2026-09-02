@@ -30,6 +30,7 @@ void alloc_matSH(struct matSH *matSH){
 		(*matSH).dip = f3tensor(-nd+1,NY+nd,-nd+1,NX+nd,1,L);
 		(*matSH).d =  f3tensor(-nd+1,NY+nd,-nd+1,NX+nd,1,L);
 		(*matSH).e =  f3tensor(-nd+1,NY+nd,-nd+1,NX+nd,1,L);
+		(*matSH).pqs =  matrix(-nd+1,NY+nd,-nd+1,NX+nd);
 		(*matSH).ptaus =  matrix(-nd+1,NY+nd,-nd+1,NX+nd);
 		(*matSH).ptausipjp =  matrix(-nd+1,NY+nd,-nd+1,NX+nd);
 		(*matSH).fipjp =  matrix(-nd+1,NY+nd,-nd+1,NX+nd);

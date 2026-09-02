@@ -251,7 +251,7 @@ struct fwiSH{
 /* SH material parameters */
 struct matSH{
    float  **prho, **prhoi, **puip, **pujp, **pu, **puipjp;
-   float **ptaus, *etaip, *etajm, *peta, **ptausipjp, **fipjp, ***dip, *bip, *bjm;
+   float **pqs, **ptaus, *etaip, *etajm, *peta, **ptausipjp, **fipjp, ***dip, *bip, *bjm;
    float *cip, *cjm, ***d, ***e, **f, **g;
 } matSH;
 
@@ -997,7 +997,7 @@ int visco_sh_reverse_time_adjoint_material(
 
 void readmod_elastic_SH(float  **rho, float **u);
 
-void readmod_visc_SH(float  **rho, float **u, float **taus, float *eta);
+void readmod_visc_SH(float **rho, float **u, float **qs, float **taus, float *eta);
 
 void RTM_SH_out_shot(struct fwiSH *fwiSH, int ishot);
 
