@@ -158,10 +158,6 @@ void sh_visc_with_material_trajectory(struct waveSH *waveSH, struct waveSH_PML *
         			    (*waveSH_PML).K_y, (*waveSH_PML).a_y, (*waveSH_PML).b_y, (*waveSH_PML).K_y_half, (*waveSH_PML).a_y_half, (*waveSH_PML).b_y_half,
         			    (*waveSH_PML).psi_vzx, (*waveSH_PML).psi_vzy, fwiSH, mode);
 
-	   if(trajectory!=NULL){
-	      visco_sh_material_observable_end_step();
-	   }
-
 	   if(FREE_SURF && (POS[2]==0)){
 		surface_elastic_SH_stress((*waveSH).psyz, NX, FDORDER/2);
 	   }
@@ -182,6 +178,10 @@ void sh_visc_with_material_trajectory(struct waveSH *waveSH, struct waveSH_PML *
 	   /* stress exchange between PEs */
 	   exchange_s_SH((*waveSH).psxz,(*waveSH).psyz, (*mpiPSV).bufferlef_to_rig, (*mpiPSV).bufferrig_to_lef, 
 	      (*mpiPSV).buffertop_to_bot, (*mpiPSV).bufferbot_to_top, req_send, req_rec);
+
+	   if(trajectory!=NULL){
+	      visco_sh_material_observable_end_step();
+	   }
 
 
 	   /* store amplitudes at receivers in section-arrays */

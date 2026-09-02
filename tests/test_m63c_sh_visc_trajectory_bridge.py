@@ -88,9 +88,13 @@ def test_capture_lifecycle_brackets_real_kernel_updates(repository_root: Path):
     )
     velocity = implementation.index("update_v_PML_SH(", begin)
     stress = implementation.index("update_s_visc_PML_SH(", velocity)
-    end = implementation.index("visco_sh_material_observable_end_step()", stress)
+    surface_stress = implementation.index("surface_elastic_SH_stress(", stress)
+    stress_exchange = implementation.index("exchange_s_SH(", surface_stress)
+    end = implementation.index(
+        "visco_sh_material_observable_end_step()", stress_exchange
+    )
 
-    assert begin < velocity < stress < end
+    assert begin < velocity < stress < surface_stress < stress_exchange < end
     assert implementation.count("visco_sh_material_observable_begin_step(") == 1
     assert implementation.count("visco_sh_material_observable_end_step()") == 1
 
