@@ -1,0 +1,177 @@
+{
+  "milestone": "M6.3c-8a",
+  "classification": "active-path audit and RED contract freeze",
+  "locked_input_sha": "47caffc441c5f3862682f3e36bbb45e11997e151",
+  "status_vocabulary": ["PASS", "RED", "UNRESOLVED"],
+  "verified_objective_contract": {
+    "DTINV": 1,
+    "LNORM": 2,
+    "GRAD_FORM": 2,
+    "residual": "synthetic - observed",
+    "objective": "0.5 * sum(r^2)",
+    "material_gradient": "direct sum of exact per-step discrete VJPs"
+  },
+  "source_sha256": {
+    "include/fd.h": "c852d92ee9922b0ec7c0575acf5103b70df2bfd9b57c175dc4578b11fc807f36",
+    "src/SH/FWI_SH_visc.c": "264ee40a98dbf2f9292e20d12f10526b2dfaad1a0e688bbf2eb73993a49b3dca",
+    "src/SH/alloc_matSH.c": "6442b5ab84c2f603b56c9209abbcbc5e1505ced94f1b253337c145eb1fcf7d60",
+    "src/SH/assemble_gradSH_exact.c": "1716d7e0e27591c41d5c672704ddb5e1c7668a19ed02b07cb02400f4b34f6a90",
+    "src/SH/ass_gradSH_visc.c": "06383248f73940e210ebbfc9e147fc9e4d9a8a1cecb40a188ce331929ad83d98",
+    "src/SH/calc_mat_change_test_SH_visc.c": "c77b495f6038308cf25d9cb03adf337149a751e80f8d215cef29e8b763885efc",
+    "src/SH/extract_LBFGS_SH_visc.c": "5be89272d3a873a50472b02efeebe6deedbb6ddc75435a1559d96737692b3fb2",
+    "src/SH/extract_PCG_SH_visc.c": "1dbf37c5313b97cba839bfa93cf5a8a1a244b59ba901d91e1744362afb50f156",
+    "src/SH/grad_obj_sh.c": "aaa25f644f628cd0c16b455d7ab15d1d191f5b1ff6ddb286586e07377882f98c",
+    "src/SH/grad_obj_sh_visc.c": "dfb8d5ee336034118b960cd1a8be86366f84d93bbbad6ac4374915c4cf7bcceb",
+    "src/SH/obj_sh.c": "407b0c82672967f0beb4ea86b92bf4702371513a8f62fa6af171d05bced11532",
+    "src/SH/physics_SH.c": "7c9ccffd3f8fdf94219a1a1698d236feeffa4f875ffdf323464010f066134fd5",
+    "src/SH/readmod_visc_SH.c": "ec73d781e9f90881995a294ae8a7a80e2bcfa41c397dbcc0db7047be20cb519a",
+    "src/SH/step_length_est_sh.c": "0d8c0cdb4ab7ed87a181e611124f76f0e770e1c78c66b04610b29103ab8a6a74",
+    "src/SH/store_LBFGS_SH_visc.c": "b8665c90452945c033c29ff238b43c5e9f26ae0ca15ef78705cd1a54d17ad7df",
+    "src/SH/store_PCG_SH_visc.c": "403db8962baeb3cbd5415ae9e20133678069ce46a17091a41204cd092d2d9980",
+    "src/descent.c": "fae7ff08fa4020764bea50ccf70360ef5e5dddf9ed4e170a41b149af60e03df1"
+  },
+  "inventory": {
+    "dispatch_to_visco_fwi": {
+      "status": "PASS",
+      "evidence": {"file": "src/SH/physics_SH.c", "function": "physics_SH", "expression": "MODE==1; if(L) FWI_SH_visc()"},
+      "expected_contract": "MODE=1 with L>0 dispatches the viscoelastic SH FWI driver",
+      "observed_contract": "physics_SH dispatches L>0 to FWI_SH_visc",
+      "reason": "The top-level physics dispatch is correctly viscoelastic."
+    },
+    "base_objective_physics": {
+      "status": "RED",
+      "evidence": {"file": "src/SH/FWI_SH_visc.c", "function": "FWI_SH_visc", "expression": "L2sum = grad_obj_sh(...)"},
+      "expected_contract": "The base objective uses the same viscoelastic forward physics as the trial objective",
+      "observed_contract": "The viscoelastic FWI driver obtains L2t[1] from elastic grad_obj_sh",
+      "reason": "Base and trial objectives are evaluated with different physics."
+    },
+    "base_gradient_entry": {
+      "status": "RED",
+      "evidence": {"file": "src/SH/FWI_SH_visc.c", "function": "FWI_SH_visc", "expression": "grad_obj_sh(...) followed by ass_gradSH_visc(...)"},
+      "expected_contract": "The active base gradient enters the locked C7 exact viscoelastic material-gradient chain",
+      "observed_contract": "The active entry is the elastic grad_obj_sh result followed by legacy ass_gradSH_visc",
+      "reason": "The locked C7 trajectory and reverse-time material driver are unreachable from the active entry."
+    },
+    "base_forward_operator": {
+      "status": "RED",
+      "evidence": {"file": "src/SH/grad_obj_sh.c", "function": "grad_obj_sh", "expression": "sh(..., mode=0, ...)"},
+      "expected_contract": "The base forward uses sh_visc and captures the C7a observable trajectory",
+      "observed_contract": "The active base-gradient callee uses elastic sh in mode 0",
+      "reason": "Attenuation and GSLS memory evolution are absent from the active base forward."
+    },
+    "base_adjoint_operator": {
+      "status": "RED",
+      "evidence": {"file": "src/SH/grad_obj_sh.c", "function": "grad_obj_sh", "expression": "sh(..., mode=1, ...)"},
+      "expected_contract": "The active adjoint uses the locked exact C5/C7 reverse-time operator",
+      "observed_contract": "The active base-gradient callee uses elastic sh in mode 1",
+      "reason": "The exact viscoelastic state transpose and material VJPs are not called."
+    },
+    "exact_c7_gradient_reachable": {
+      "status": "RED",
+      "evidence": {"file": "src/SH/FWI_SH_visc.c", "function": "FWI_SH_visc", "expression": "no call to visco_sh_reverse_time_adjoint_material"},
+      "expected_contract": "The active path calls visco_sh_reverse_time_adjoint_material with C7a observables and chronological receiver cotangents",
+      "observed_contract": "No active FWI, gradient, or trial source calls the locked C7 reverse-time material driver",
+      "reason": "The independently verified exact material gradient remains disconnected."
+    },
+    "trial_model_update": {
+      "status": "RED",
+      "evidence": {"file": "src/SH/calc_mat_change_test_SH_visc.c", "function": "calc_mat_change_test_SH_visc", "expression": "unp1=u-EPSILON_u*waveconv_u; rhonp1=rho-EPSILON_rho*waveconv_rho; no tsnp1 assignment"},
+      "expected_contract": "Trial and accepted models update the chosen physical primary, rho, and Q parameters",
+      "observed_contract": "Only u and rho are updated; ts, tsnp1, waveconv_ts, Q bounds, and INV_QS_ITER are not used by an update",
+      "reason": "Attenuation trial and accepted-model updates are disconnected."
+    },
+    "trial_objective_physics": {
+      "status": "PASS",
+      "evidence": {"file": "src/SH/obj_sh.c", "function": "obj_sh", "expression": "if(L) sh_visc(..., mode=2, ...)"},
+      "expected_contract": "L>0 trial objectives propagate with viscoelastic SH physics",
+      "observed_contract": "obj_sh selects sh_visc in mode 2 when L is nonzero",
+      "reason": "The trial propagator itself is viscoelastic, although its material preparation is incomplete."
+    },
+    "trial_material_halo_exchange": {
+      "status": "RED",
+      "evidence": {"file": "src/SH/obj_sh.c", "function": "obj_sh", "expression": "matcopy_elastic_SH(prho, pu) before prepare_update_s_visc_SH(... ptaus ...)"},
+      "expected_contract": "Viscoelastic trials exchange primary, rho, and tau through matcopy_SH before derived coefficients",
+      "observed_contract": "obj_sh exchanges only rho and u; ptaus halos are not refreshed by the viscoelastic material graph",
+      "reason": "Trial material preparation differs from the locked C6/C7 forward graph."
+    },
+    "owned_q_preserved": {
+      "status": "RED",
+      "evidence": {"file": "src/SH/readmod_visc_SH.c", "function": "readmod_visc_SH", "expression": "taus[j][i] = q_to_tau(qs, mapping)"},
+      "expected_contract": "Owned physical Q remains available separately from derived cell-centred and staggered tau",
+      "observed_contract": "File-level Q is immediately converted into matSH.ptaus; matSH has no owned physical-Q array",
+      "reason": "The physical parameter required by the locked tau-to-Q VJP is not retained."
+    },
+    "q_to_tau_mapping": {
+      "status": "RED",
+      "evidence": {"file": "src/SH/readmod_visc_SH.c", "function": "readmod_visc_SH", "expression": "q_to_tau is applied only while loading .qs into ptaus"},
+      "expected_contract": "Every base, trial, and accepted physical-Q model derives tau through the selected mapping",
+      "observed_contract": "The mapping is correct at initial read but no physical Q survives for later trial or accepted updates",
+      "reason": "Initial conversion exists, but the end-to-end active parameter graph is incomplete."
+    },
+    "q_gradient_reaches_optimizer": {
+      "status": "RED",
+      "evidence": {"file": "src/SH/FWI_SH_visc.c", "function": "FWI_SH_visc", "expression": "base calls grad_obj_sh; ass_gradSH_visc produces only u/rho; PCG helpers ignore waveconv_ts"},
+      "expected_contract": "The locked physical-Q gradient enters the selected optimizer as a third parameter class",
+      "observed_contract": "The base path does not create physical bar_Q; legacy waveconv_ts is not populated by the active gradient and PCG storage/extraction omits it",
+      "reason": "Attenuation-gradient connectivity is absent despite three-class allocations."
+    },
+    "q_trial_update": {
+      "status": "RED",
+      "evidence": {"file": "src/SH/calc_mat_change_test_SH_visc.c", "function": "calc_mat_change_test_SH_visc", "expression": "ts and tsnp1 are parameters only; Q limits and INV_QS_ITER are declared but unused"},
+      "expected_contract": "Line search and accepted updates modify owned physical Q subject to the selected bounds and mapping",
+      "observed_contract": "Neither Q nor tau is modified",
+      "reason": "There is no active attenuation inversion update."
+    },
+    "optimizer_sign_contract": {
+      "status": "UNRESOLVED",
+      "evidence": {"file": "src/SH/FWI_SH_visc.c", "function": "FWI_SH_visc", "expression": "descent negates PCG inputs; calc_mat_change_test_SH_visc later subtracts waveconv; LBFGS/PCG treat the third class inconsistently"},
+      "expected_contract": "Each active array has one documented raw-gradient or descent-direction meaning before m_new = m - alpha*g",
+      "observed_contract": "u/rho ultimately feed subtractive updates, but method-specific sign transformations differ and Q has no complete path",
+      "reason": "The C7 raw-gradient sign must be locked at the optimizer boundary before C8-b integration."
+    },
+    "zero_step_same_physics": {
+      "status": "RED",
+      "evidence": {"file": "src/SH/FWI_SH_visc.c", "function": "FWI_SH_visc", "expression": "L2t[1] from grad_obj_sh while L2t[2]/L2t[3] come from obj_sh"},
+      "expected_contract": "J_base and J_trial(alpha=0) use identical viscoelastic physics and agree to relative 1e-12",
+      "observed_contract": "The base uses elastic sh while L>0 trials use sh_visc",
+      "reason": "For nontrivial attenuation, structural zero-step equality is impossible."
+    },
+    "legacy_grad_obj_sh_visc_is_exact_c7": {
+      "status": "RED",
+      "evidence": {"file": "src/SH/grad_obj_sh_visc.c", "function": "grad_obj_sh_visc", "expression": "legacy sh_visc(mode 0/1); no visco_sh_reverse_time_adjoint_material; waveconv_ts_shot is not added to waveconv_ts"},
+      "expected_contract": "Any replacement gradient entry is mathematically equivalent to the locked C7 chain",
+      "observed_contract": "The unused legacy routine runs nominal sh_visc mode 1 and omits the locked exact reverse/material driver and attenuation shot summation",
+      "reason": "Replacing grad_obj_sh by grad_obj_sh_visc alone would not close C8."
+    },
+    "elastic_exact_assembler_reusable": {
+      "status": "RED",
+      "evidence": {"file": "src/SH/assemble_gradSH_exact.c", "function": "assemble_gradSH_exact", "expression": "MODE==1 and INVMAT1==1 only; elastic Vs/rho assembly with DT/DTINV formulas"},
+      "expected_contract": "The active viscoelastic path uses the locked C7 Vs/mu, rho, and Q material VJPs",
+      "observed_contract": "assemble_gradSH_exact is an elastic INVMAT1=1 Vs/rho assembler with no GSLS-memory or Q contribution",
+      "reason": "It is not a viscoelastic C7 replacement."
+    },
+    "dynamic_elastic_visco_difference": {
+      "status": "PASS",
+      "evidence": {"file": "tests/physics/test_sh_viscoelastic_rheology.py", "function": "test_m42_high_q_converges_monotonically_to_elastic", "expression": "production elastic and finite-Q viscoelastic receiver traces are compared dynamically"},
+      "expected_contract": "Nontrivial attenuation materially changes the production receiver data",
+      "observed_contract": "The existing production-kernel rheology regression demonstrates finite-Q traces distinct from elastic and converging toward elastic as Q increases",
+      "reason": "The active base/trial call-graph split is numerical, not merely nominal."
+    }
+  },
+  "summary": {"PASS": 3, "RED": 14, "UNRESOLVED": 1},
+  "c8b_minimal_scope": [
+    "include/fd.h",
+    "src/Makefile",
+    "src/SH/alloc_matSH.c",
+    "src/SH/readmod_visc_SH.c",
+    "src/SH/FWI_SH_visc.c",
+    "src/SH/grad_obj_sh_visc_exact.c"
+  ],
+  "c8b_non_goals": [
+    "line-search and accepted-model unification (C8-c)",
+    "optimizer redesign",
+    "new bounds policy",
+    "DTINV>1 exactness",
+    "opposing same-axis CPML overlap"
+  ]
+}
