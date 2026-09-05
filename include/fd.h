@@ -413,6 +413,22 @@ struct visco_sh_exact_multi_shot_result {
    int shot_count;
 };
 
+/* Inactive C8c non-owning optimizer boundary.  Raw inputs are objective
+ * derivatives, including physical Q.  Outputs hold the subtractive step p
+ * for m_trial = m_base - alpha * p; this baseline adapter uses p = g_raw,
+ * so the mathematical trajectory direction is -p. */
+struct visco_sh_exact_optimizer_boundary {
+   int nx, ny;
+
+   float **grad_raw_primary;
+   float **grad_raw_rho;
+   float **grad_raw_q;
+
+   float **optimizer_step_primary;
+   float **optimizer_step_rho;
+   float **optimizer_step_q;
+};
+
 int visco_sh_material_observable_trajectory_init(
         struct visco_sh_material_observable_trajectory *trajectory,
         int nx, int ny, int nsteps, int dtinv, int fw, int free_surface,
@@ -1057,6 +1073,9 @@ int visco_sh_exact_objective_gradient_shot(
 int visco_sh_exact_objective_gradient(
         const struct visco_sh_exact_multi_shot_request *request,
         struct visco_sh_exact_multi_shot_result *result);
+
+int visco_sh_exact_build_steepest_subtractive_step(
+        const struct visco_sh_exact_optimizer_boundary *boundary);
 
 void readmod_elastic_SH(float  **rho, float **u);
 

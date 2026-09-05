@@ -234,6 +234,7 @@ DENISE += alloc_fwiSH.c \
 	  grad_obj_sh_visc.c \
 	  grad_obj_sh_visc_exact.c \
 	  grad_obj_sh_visc_exact_shot.c \
+	  visco_sh_exact_optimizer_boundary.c \
 	  matcopy_elastic_SH.c \
 	  matcopy_SH.c \
 	  matcopy_SH_adjoint.c \
