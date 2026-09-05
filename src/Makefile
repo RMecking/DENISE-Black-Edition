@@ -232,6 +232,7 @@ DENISE += alloc_fwiSH.c \
 	  FWI_SH_visc.c \
 	  grad_obj_sh.c \
 	  grad_obj_sh_visc.c \
+	  grad_obj_sh_visc_exact.c \
 	  grad_obj_sh_visc_exact_shot.c \
 	  matcopy_elastic_SH.c \
 	  matcopy_SH.c \

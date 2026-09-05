@@ -385,6 +385,34 @@ struct visco_sh_exact_shot_result {
    double objective;
 };
 
+/* Inactive C8b2-b2 acquisition/shot wrapper around the locked exact-shot
+ * bridge.  For RUN_MULTIPLE_SHOTS != 0, every source column is one shot;
+ * otherwise all source columns form one simultaneous-source experiment.
+ * Objective and raw owned-cell physical gradients always use this identical
+ * shot set.  Input workspaces/acquisition are borrowed; outputs are
+ * overwritten after complete preflight. */
+struct visco_sh_exact_multi_shot_request {
+   struct waveSH *wave;
+   struct waveSH_PML *pml;
+   struct matSH *material;
+   struct fwiSH *fwi;
+   struct mpiPSV *mpi;
+   struct seisSH *seismogram;
+   struct seisSHfwi *legacy_fwi_seismogram;
+   struct acq *acquisition;
+   float *hc;
+   int iter, nsrc, ns, nrec_local, nrec_global, hin;
+   int *dtinv_help;
+   float **source_energy, **receiver_energy;
+   MPI_Request *request_send, *request_receive;
+   float **grad_primary, **grad_rho, **grad_q;
+};
+
+struct visco_sh_exact_multi_shot_result {
+   double objective;
+   int shot_count;
+};
+
 int visco_sh_material_observable_trajectory_init(
         struct visco_sh_material_observable_trajectory *trajectory,
         int nx, int ny, int nsteps, int dtinv, int fw, int free_surface,
@@ -1025,6 +1053,10 @@ int visco_sh_reverse_time_adjoint_material(
 int visco_sh_exact_objective_gradient_shot(
         const struct visco_sh_exact_shot_request *request,
         struct visco_sh_exact_shot_result *result);
+
+int visco_sh_exact_objective_gradient(
+        const struct visco_sh_exact_multi_shot_request *request,
+        struct visco_sh_exact_multi_shot_result *result);
 
 void readmod_elastic_SH(float  **rho, float **u);
 
