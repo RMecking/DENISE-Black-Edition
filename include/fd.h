@@ -1141,6 +1141,10 @@ int visco_sh_exact_objective_gradient(
         const struct visco_sh_exact_multi_shot_request *request,
         struct visco_sh_exact_multi_shot_result *result);
 
+int visco_sh_exact_objective(
+        const struct visco_sh_exact_multi_shot_request *request,
+        struct visco_sh_exact_multi_shot_result *result);
+
 int visco_sh_exact_build_steepest_subtractive_step(
         const struct visco_sh_exact_optimizer_boundary *boundary);
 
