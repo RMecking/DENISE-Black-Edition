@@ -23,3 +23,8 @@
 # Preserve repository bytes on Windows/WSL checkouts instead of translating EOLs.
 tests/m5*.patch -text
 tests/m5*.json  -text
+
+# M6.3b provenance artifacts are hashed byte-for-byte by the test suite.
+tests/m6.3b_visco_sh_fwi_attenuation_validation.json text eol=lf
+docs/m6.3_visco_sh_fwi_attenuation_audit.md text eol=lf
+tests/utilities/m63b_production_adjoint_instrumentation.py text eol=lf
