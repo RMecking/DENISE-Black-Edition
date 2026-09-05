@@ -429,6 +429,34 @@ struct visco_sh_exact_optimizer_boundary {
    float **optimizer_step_q;
 };
 
+/* Inactive C8c non-owning trial-state boundary.  Physical Q is the optimized
+ * parameter; tau is derived solver state only. */
+struct visco_sh_exact_trial_state_request {
+   int nx, ny;
+
+   float alpha;
+
+   int primary_bounds_enabled;
+   float primary_lower, primary_upper;
+   float rho_lower, rho_upper;
+   float q_lower, q_upper;
+
+   const struct q_tau_mapping *q_mapping;
+
+   float **base_primary;
+   float **base_rho;
+   float **base_q;
+
+   float **optimizer_step_primary;
+   float **optimizer_step_rho;
+   float **optimizer_step_q;
+
+   float **trial_primary;
+   float **trial_rho;
+   float **trial_q;
+   float **trial_tau;
+};
+
 int visco_sh_material_observable_trajectory_init(
         struct visco_sh_material_observable_trajectory *trajectory,
         int nx, int ny, int nsteps, int dtinv, int fw, int free_surface,
@@ -1076,6 +1104,9 @@ int visco_sh_exact_objective_gradient(
 
 int visco_sh_exact_build_steepest_subtractive_step(
         const struct visco_sh_exact_optimizer_boundary *boundary);
+
+int visco_sh_exact_build_trial_parameter_state(
+        const struct visco_sh_exact_trial_state_request *request);
 
 void readmod_elastic_SH(float  **rho, float **u);
 
