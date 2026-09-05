@@ -358,6 +358,41 @@ struct visco_sh_reverse_time_material_context {
    float **grad_primary, **grad_rho, **grad_q;
 };
 
+/* Inactive C8c objective-only bridge for one prepared production shot. */
+struct visco_sh_exact_objective_shot_request {
+   struct waveSH *wave;
+   struct waveSH_PML *pml;
+   struct matSH *material;
+   struct fwiSH *fwi;
+   struct mpiPSV *mpi;
+   struct seisSH *seismogram;
+   struct seisSHfwi *legacy_fwi_seismogram;
+   struct acq *acquisition;
+
+   float *hc;
+
+   int ishot;
+   int nshots;
+   int nsrc_local;
+   int ns;
+   int nrec_local;
+   int hin;
+
+   int *dtinv_help;
+
+   float **source_energy;
+   float **receiver_energy;
+
+   MPI_Request *request_send;
+   MPI_Request *request_receive;
+
+   float **observed_vz;
+};
+
+struct visco_sh_exact_objective_shot_result {
+   double objective;
+};
+
 /* Inactive C8b2-b1 bridge for one already prepared production shot.  The
  * observed traces use the native DENISE [receiver][1..ns] layout.  Gradient
  * outputs are raw owned-cell objective derivatives and are overwritten only
@@ -1097,6 +1132,10 @@ int visco_sh_reverse_time_adjoint_material(
 int visco_sh_exact_objective_gradient_shot(
         const struct visco_sh_exact_shot_request *request,
         struct visco_sh_exact_shot_result *result);
+
+int visco_sh_exact_objective_shot(
+        const struct visco_sh_exact_objective_shot_request *request,
+        struct visco_sh_exact_objective_shot_result *result);
 
 int visco_sh_exact_objective_gradient(
         const struct visco_sh_exact_multi_shot_request *request,
