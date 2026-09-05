@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "task": "C8C-A1-ACTIVE-SWITCH-CONTRACT",
+  "baseline_sha": "67f1040549ade5a7b93a723700448cbfedb92513",
+  "contract_kind": "target scientific and architectural acceptance contract",
+  "exact_active_base_path": {
+    "exact_entrypoint": "visco_sh_exact_objective_gradient",
+    "supported_exact_c8c_configurations_use_exact_chain": true,
+    "forbidden_legacy_raw_gradient_entrypoint": "grad_obj_sh",
+    "unsupported_configurations_fail_closed": true,
+    "silent_legacy_fallback_forbidden": true
+  },
+  "raw_gradient_authority": {
+    "primary": "dJ/dm_primary",
+    "rho": "dJ/drho",
+    "q": "dJ/dQ",
+    "forbidden_additional_transforms": [
+      "legacy_-DT",
+      "mu_to_Vs_remapping",
+      "legacy_rho_coupling",
+      "Q_to_Tau_gradient_reinterpretation"
+    ]
+  },
+  "legacy_post_assembly_exclusion": {
+    "forbidden_call": "ass_gradSH_visc",
+    "applies_to": "exact raw gradients"
+  },
+  "physical_q_ownership": {
+    "optimizer_parameter": "Q",
+    "derived_solver_state": "Tau",
+    "q_and_tau_are_semantically_distinct": true,
+    "exact_q_gradient_must_not_alias_legacy_tau_gradient_storage": true
+  },
+  "trial_material_chain": {
+    "ordered_steps": [
+      "physical_Q_trial_update",
+      "Q_bounds",
+      "q_to_tau",
+      "full_viscoelastic_material_copy_and_halo_preparation",
+      "av_tau",
+      "viscoelastic_stress_update_preparation"
+    ]
+  },
+  "zero_step_identity": {
+    "trial_model_alpha_zero_equals_base_model": true,
+    "trial_objective_alpha_zero_equals_base_exact_objective": true,
+    "relative_objective_tolerance": 1e-12
+  },
+  "experiment_set_identity": {
+    "base_objective_gradient_and_trial_objective_use_same_source_shot_plan": true
+  },
+  "shot_semantics": {
+    "RUN_MULTIPLE_SHOTS_nonzero": "one experiment per physical source",
+    "RUN_MULTIPLE_SHOTS_zero": "one simultaneous experiment containing all physical sources"
+  },
+  "optimizer_sign_contract": {
+    "raw_gradient": "g_raw = dJ/dm",
+    "trial_update": "m_trial(alpha) = m_base - alpha * p",
+    "optimizer_step": "p = g_raw",
+    "model_trajectory_direction": "-p",
+    "valid_subtractive_step": "g_raw dot p > 0",
+    "directional_derivative_at_zero": "dJ/dalpha|alpha=0 = -g_raw dot p < 0"
+  },
+  "final_simultaneous_source_gate": {
+    "required": true,
+    "run_multiple_shots": 0,
+    "minimum_physical_sources": 2,
+    "kind": "real E2E scientific acceptance"
+  },
+  "frozen_strict_xfails": [
+    {
+      "id": "tests/physics/test_visco_sh_fwi_attenuation_oracle.py::test_03_current_production_adjoint_dot_product_is_red",
+      "classification": "XFAIL exposing known defect"
+    },
+    {
+      "id": "tests/physics/test_visco_sh_fwi_attenuation_oracle.py::test_04_known_active_physics_split_is_frozen",
+      "classification": "XFAIL exposing known defect"
+    },
+    {
+      "id": "tests/physics/test_visco_sh_fwi_attenuation_oracle.py::test_05_known_visco_adjoint_defect_is_frozen",
+      "classification": "XFAIL exposing known defect"
+    },
+    {
+      "id": "tests/physics/test_visco_sh_fwi_attenuation_oracle.py::test_06_known_tau_gradient_disconnect_is_frozen",
+      "classification": "XFAIL exposing known defect"
+    },
+    {
+      "id": "tests/test_m63c_acceptance_contract.py::test_frozen_m63b_production_dot_is_red_against_m63c_target",
+      "classification": "XFAIL exposing known defect"
+    },
+    {
+      "id": "tests/test_m63c_acceptance_contract.py::test_frozen_m63b_production_directional_gradients_are_disconnected",
+      "classification": "XFAIL exposing known defect"
+    }
+  ],
+  "baseline_characterization": {
+    "active_exact_integration": "UNSATISFIED",
+    "physical_q_optimizer_ownership": "UNSATISFIED",
+    "exact_multi_shot_aggregator": "PRESENT_BUT_INACTIVE",
+    "inactive_aggregator_shot_semantics": "SUPPORTED",
+    "evidence": [
+      "FWI_SH_visc routes the base derivative through grad_obj_sh",
+      "FWI_SH_visc does not call visco_sh_exact_objective_gradient",
+      "owned pqs storage exists but the optimizer and trial path still use waveconv_ts and ptaus",
+      "the trial path uses elastic material copy preparation"
+    ]
+  }
+}
