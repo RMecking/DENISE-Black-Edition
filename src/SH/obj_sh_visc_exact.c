@@ -91,6 +91,7 @@ int visco_sh_exact_objective(
 
     if ((result == NULL) || exact_objective_multi_preflight(request) != 0)
         return -1;
+    if ((RUN_MULTIPLE_SHOTS == 0) && (request->nsrc > 1)) return -1;
     nshots = RUN_MULTIPLE_SHOTS ? request->nsrc : 1;
     source_columns = RUN_MULTIPLE_SHOTS ? 1 : request->nsrc;
 

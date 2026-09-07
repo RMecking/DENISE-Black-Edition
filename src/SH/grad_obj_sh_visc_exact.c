@@ -104,6 +104,7 @@ int visco_sh_exact_objective_gradient(
     double objective = 0.0;
 
     if ((result == NULL) || exact_multi_preflight(request) != 0) return -1;
+    if ((RUN_MULTIPLE_SHOTS == 0) && (request->nsrc > 1)) return -1;
     nshots = RUN_MULTIPLE_SHOTS ? request->nsrc : 1;
     source_columns = RUN_MULTIPLE_SHOTS ? 1 : request->nsrc;
     shot_primary = matrix(0, NY + 1, 0, NX + 1);
