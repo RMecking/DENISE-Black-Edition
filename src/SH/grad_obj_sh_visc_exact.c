@@ -106,9 +106,9 @@ int visco_sh_exact_objective_gradient(
     if ((result == NULL) || exact_multi_preflight(request) != 0) return -1;
     nshots = RUN_MULTIPLE_SHOTS ? request->nsrc : 1;
     source_columns = RUN_MULTIPLE_SHOTS ? 1 : request->nsrc;
-    shot_primary = matrix(1, NY, 1, NX);
-    shot_rho = matrix(1, NY, 1, NX);
-    shot_q = matrix(1, NY, 1, NX);
+    shot_primary = matrix(0, NY + 1, 0, NX + 1);
+    shot_rho = matrix(0, NY + 1, 0, NX + 1);
+    shot_q = matrix(0, NY + 1, 0, NX + 1);
     exact_multi_zero_owned(request->grad_primary);
     exact_multi_zero_owned(request->grad_rho);
     exact_multi_zero_owned(request->grad_q);
@@ -205,8 +205,8 @@ int visco_sh_exact_objective_gradient(
     status = 0;
 
 cleanup:
-    if (shot_q != NULL) free_matrix(shot_q, 1, NY, 1, NX);
-    if (shot_rho != NULL) free_matrix(shot_rho, 1, NY, 1, NX);
-    if (shot_primary != NULL) free_matrix(shot_primary, 1, NY, 1, NX);
+    if (shot_q != NULL) free_matrix(shot_q, 0, NY + 1, 0, NX + 1);
+    if (shot_rho != NULL) free_matrix(shot_rho, 0, NY + 1, 0, NX + 1);
+    if (shot_primary != NULL) free_matrix(shot_primary, 0, NY + 1, 0, NX + 1);
     return status;
 }
