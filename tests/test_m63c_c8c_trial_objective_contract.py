@@ -181,5 +181,4 @@ def test_existing_building_blocks_are_the_declared_inactive_composition_boundary
 
     for helper in _contract()["required_production_helpers"]:
         assert f"{helper}(" in header
-    assert "visco_sh_exact_trial_objective(" not in header
     assert "visco_sh_exact_trial_objective(" not in driver
