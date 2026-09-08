@@ -1145,6 +1145,25 @@ int visco_sh_exact_objective(
         const struct visco_sh_exact_multi_shot_request *request,
         struct visco_sh_exact_multi_shot_result *result);
 
+/* Collective on MPI_COMM_WORLD with the normal model topology and Bsend
+ * buffer installed. Physical Q is authoritative; no input Tau is accepted.
+ * All input storage and target storage must be disjoint, including Base
+ * caches. Target is already allocated for NX/NY/L: pu/prho/ptaus include
+ * 0..NY+1 x 0..NX+1 halos; Q and derived fields need owned cells only.
+ * Configuration must match the immutable global L/FL/DT and physical-Q
+ * approximation settings. Target mutation starts only after global validation
+ * succeeds; validation failure leaves every target unchanged. */
+struct visco_sh_exact_material_preparation_request {
+    float **primary, **rho, **physical_q;
+    struct matSH *target;
+    int mechanisms;
+    float dt;
+    const float *frequencies_hz, *peta;
+};
+
+int visco_sh_exact_prepare_visco_material(
+        const struct visco_sh_exact_material_preparation_request *request);
+
 int visco_sh_exact_build_steepest_subtractive_step(
         const struct visco_sh_exact_optimizer_boundary *boundary);
 
