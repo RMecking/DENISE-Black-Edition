@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "task": "C8C-B4A.0-MATERIAL-PREPARATION-CONTRACT-FREEZE",
+  "baseline_sha": "15c7fbf6a8fb50397b2c4572533995693e653e52",
+  "contract_kind": "forward exact viscoelastic SH material-preparation contract",
+  "authoritative_state": {
+    "owned_primary": "authoritative SH inversion parameter",
+    "owned_rho": "authoritative",
+    "owned_physical_q": "authoritative",
+    "tau": "derived from target physical Q only",
+    "staggered_averaged_and_cache_fields": "derived solver state",
+    "optimizer_ownership_of_tau_forbidden": true
+  },
+  "canonical_preparation_graph": [
+    "validate configuration and authoritative owned state",
+    "globally reconcile validation across MPI ranks",
+    "copy owned primary/rho/Q into separate target material only after global success",
+    "derive target Tau exclusively through q_to_tau(target Q)",
+    "matcopy_SH",
+    "av_mu_SH",
+    "inv_rho_SH",
+    "av_tau",
+    "prepare_update_s_visc_SH",
+    "expose target as solver-ready"
+  ],
+  "global_fail_closed_mpi": {
+    "local_validation_permitted": true,
+    "global_reconciliation_before_target_mutation": true,
+    "global_reconciliation_before_material_halo_collectives": true,
+    "any_invalid_rank_causes_consistent_failure_on_all_ranks": true,
+    "no_rank_enters_later_material_preparation_collectives_after_global_failure": true,
+    "target_unchanged_on_every_rank_after_global_failure": true,
+    "particular_mpi_reduction_primitive_prescribed": false
+  },
+  "pre_mutation_validation": {
+    "required_nonnull_inputs_and_target_storage": true,
+    "supported_INVMAT1_only": true,
+    "physical_Q_exact_mode_required": true,
+    "minimum_relaxation_mechanisms": 1,
+    "owned_primary": "finite and valid for the supported INVMAT1 representation",
+    "owned_rho": "finite and strictly positive",
+    "owned_physical_Q": "finite and valid for the repository q_to_tau mapping",
+    "initialized_relaxation_configuration_required": true,
+    "generic_primary_positivity_without_representation_justification_forbidden": true
+  },
+  "relaxation_configuration": {
+    "ownership": "external immutable physical configuration, never optimizer state",
+    "base_and_trial_must_share": ["L", "FL", "DT", "peta-equivalent configuration"],
+    "derived_relaxation_coefficients_may_refresh": true,
+    "stale_incompatible_or_uninitialized_configuration_fails_closed": true,
+    "Q_dependent_FL_DT_or_mechanism_count_changes_forbidden": true
+  },
+  "base_trial_common_helper": {
+    "one_production_helper_prepares_authoritative_base_and_B2_trial_states": true,
+    "separate_base_only_or_trial_only_preparation_conventions_forbidden": true
+  },
+  "separate_target_ownership": {
+    "trial_target_must_not_overwrite_prepared_base_material": true,
+    "rejected_or_unsuccessful_trial_requires_no_base_restoration": [
+      "primary", "rho", "Q", "Tau", "halos", "derived viscoelastic caches"
+    ]
+  },
+  "q_tau_halo_ownership": {
+    "owned_Q_copied_into_target_pqs": true,
+    "owned_Tau_regenerated_from_target_Q": true,
+    "Tau_halos_established_by": "matcopy_SH",
+    "solver_staggered_Tau_derives_after_valid_Tau_halos": true,
+    "physical_Q_halos_not_required_by_current_solver_preparation_graph": true,
+    "invented_physical_Q_halos_for_symmetry_forbidden": true
+  },
+  "zero_step_identity": {
+    "precondition": "B2 alpha == 0 with identical Base and Trial authoritative states",
+    "authoritative_owned_exact_identity": ["primary", "rho", "Q"],
+    "derived_deterministic_equivalence": [
+      "Tau", "primary staggered fields", "reciprocal-density fields",
+      "averaged Tau", "viscoelastic stress-update coefficients",
+      "relaxation vectors from the same configuration"
+    ],
+    "same_executable_MPI_decomposition_and_configuration": true,
+    "strict_elementwise_equality_attempted_first": true,
+    "nonbitwise_exception_requires_explicit_justification_and_tight_tolerance": true
+  },
+  "sensitivity_contracts": {
+    "Q_only": {
+      "required_chain": "Q -> Tau -> averaged Tau -> Tau-dependent viscoelastic update coefficients",
+      "primary_and_rho_unchanged_when_not_perturbed": true,
+      "stale_attenuation_cache_forbidden": true
+    },
+    "primary_rho": {
+      "primary_change_updates": "appropriate staggered shear-material fields",
+      "rho_change_updates": "reciprocal and staggered density-dependent state",
+      "unchanged_Q_reproduces_corresponding_Tau": true
+    },
+    "reuse": {
+      "target_may_be_allocated_once_and_reused": true,
+      "same_state_and_configuration_is_deterministic": true,
+      "result_must_not_depend_on_stale_previous_trial_contents": true
+    }
+  },
+  "high_level_forbidden_paths": [
+    "calc_mat_change_test_SH_visc", "matcopy_elastic_SH",
+    "direct authoritative Tau mutation", "obj_sh material setup"
+  ],
+  "permitted_low_level_helpers": [
+    "q_to_tau", "matcopy_SH", "av_mu_SH", "inv_rho_SH", "av_tau",
+    "prepare_update_s_visc_SH"
+  ],
+  "scope_boundary": {
+    "responsibility": "authoritative parameter state -> solver-ready exact viscoelastic SH material",
+    "must_not": [
+      "modify FWI_SH_visc", "evaluate objective", "calculate gradient",
+      "perform optimizer updates", "choose alpha", "accept or reject a trial",
+      "change Contract-C shot semantics", "alter PCG/LBFGS",
+      "alter B2 physical-Q bounds policy"
+    ]
+  },
+  "expected_production_scope": [
+    "include/fd.h", "src/SH/visco_sh_exact_material_preparation.c", "src/Makefile"
+  ],
+  "scope_expansion_rule": "NUMERICS must stop and report any structurally required additional production file"
+}
