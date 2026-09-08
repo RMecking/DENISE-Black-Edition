@@ -492,6 +492,30 @@ struct visco_sh_exact_trial_state_request {
    float **trial_tau;
 };
 
+/* Inactive collective B4B composition boundary for exact viscoelastic SH
+ * trial objectives. Base parameter storage is borrowed and immutable. The
+ * embedded B2 request owns the subtractive convention
+ * m_trial = m_base - alpha * p and physical Q remains authoritative. Trial
+ * parameter buffers and trial_material must be preallocated, mutually
+ * separate from Base storage, and reusable; objective.material must name that
+ * same trial_material target. All ranks in MPI_COMM_WORLD call collectively
+ * with matching configuration. B3B consequently supports independent shots
+ * and the one-source simultaneous experiment, while its Contract-C rejection
+ * remains authoritative for simultaneous multi-source observations. The
+ * result is published only after B2, B4A, and B3B all succeed. */
+struct visco_sh_exact_trial_objective_request {
+   struct visco_sh_exact_trial_state_request trial_state;
+   struct matSH *trial_material;
+   int mechanisms;
+   float dt;
+   const float *frequencies_hz, *peta;
+   struct visco_sh_exact_multi_shot_request objective;
+};
+
+struct visco_sh_exact_trial_objective_result {
+   double objective;
+};
+
 int visco_sh_material_observable_trajectory_init(
         struct visco_sh_material_observable_trajectory *trajectory,
         int nx, int ny, int nsteps, int dtinv, int fw, int free_surface,
@@ -1169,6 +1193,10 @@ int visco_sh_exact_build_steepest_subtractive_step(
 
 int visco_sh_exact_build_trial_parameter_state(
         const struct visco_sh_exact_trial_state_request *request);
+
+int visco_sh_exact_trial_objective(
+        const struct visco_sh_exact_trial_objective_request *request,
+        struct visco_sh_exact_trial_objective_result *result);
 
 void readmod_elastic_SH(float  **rho, float **u);
 

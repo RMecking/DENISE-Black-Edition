@@ -236,6 +236,7 @@ DENISE += alloc_fwiSH.c \
 	  grad_obj_sh_visc_exact_shot.c \
 	  obj_sh_visc_exact.c \
 	  obj_sh_visc_exact_shot.c \
+	  obj_sh_visc_exact_trial.c \
 	  visco_sh_exact_optimizer_boundary.c \
 	  visco_sh_exact_trial_state.c \
 	  visco_sh_exact_material_preparation.c \
