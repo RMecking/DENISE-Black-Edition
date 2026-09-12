@@ -516,6 +516,26 @@ struct visco_sh_exact_trial_objective_result {
    double objective;
 };
 
+/* Inactive collective B5A exact physical-Q line-search boundary.  The
+ * embedded B4B request is borrowed as a reusable Trial evaluator; B5A changes
+ * only the alpha in a local request copy.  Base storage remains immutable and
+ * the selected Trial is not committed.  All ranks must supply identical
+ * scalar policy inputs and enter collectively. */
+struct visco_sh_exact_line_search_request {
+   struct visco_sh_exact_trial_objective_request trial_objective;
+   double base_objective;
+   float initial_alpha;
+   float scale_factor;
+   int max_retries;
+};
+
+struct visco_sh_exact_line_search_result {
+   float selected_alpha;
+   double selected_objective;
+   int candidate_count;
+   int bracketed;
+};
+
 int visco_sh_material_observable_trajectory_init(
         struct visco_sh_material_observable_trajectory *trajectory,
         int nx, int ny, int nsteps, int dtinv, int fw, int free_surface,
@@ -1197,6 +1217,10 @@ int visco_sh_exact_build_trial_parameter_state(
 int visco_sh_exact_trial_objective(
         const struct visco_sh_exact_trial_objective_request *request,
         struct visco_sh_exact_trial_objective_result *result);
+
+int step_length_est_sh_visc_exact(
+        const struct visco_sh_exact_line_search_request *request,
+        struct visco_sh_exact_line_search_result *result);
 
 void readmod_elastic_SH(float  **rho, float **u);
 
