@@ -395,6 +395,9 @@ void write_par(FILE *fp){
 	fprintf(fp,"\n\n");
 	fprintf(fp," --------------- Optimization method -------------------\n");
 	switch(GRAD_METHOD){
+		case 0:
+			fprintf(fp," GRAD_METHOD=%d: Steepest descent\n",GRAD_METHOD);
+			break;
 		case 1:
 			fprintf(fp," GRAD_METHOD=%d: PCG\n",GRAD_METHOD);
 			break;
