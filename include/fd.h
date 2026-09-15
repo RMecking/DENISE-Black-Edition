@@ -1009,11 +1009,11 @@ void mem_SH(int nseismograms,int ntr, int ns, int fdo3, int nd, float buffsize);
 
 void model_freq_out_SH(float  **  rho, float **  pu, int iter, float freq);
 
-void model_freq_out_SH_visc(float  **  rho, float **  pu, float ** ptaus, int iter, float freq);
+void model_freq_out_SH_visc(float **rho, float **primary, float **physical_q, int nstage, float freq);
 
 void model_it_out_SH(float  **  rho, float **  pu, int nstage, int iter, float freq);
 
-void model_it_out_SH_visc(float  **  rho, float **  pu, float **  ptaus, int nstage, int iter, float freq);
+void model_it_out_SH_visc(float **rho, float **primary, float **physical_q, int nstage, int iter, float freq);
 
 double obj_sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matSH, struct fwiSH *fwiSH, struct mpiPSV *mpiPSV, 
          struct seisSH *seisSH, struct seisSHfwi *seisSHfwi, struct acq *acq, float *hc, int nsrc, int nsrc_loc, int nsrc_glob, int ntr, 

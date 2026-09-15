@@ -7,45 +7,43 @@
  *  ---------------------------------------------------------------------*/
 
 #include "fd.h"
-void model_it_out_SH_visc(float  **  rho, float **  pu, float **  ptaus, int nstage, int iter, float freq){
+void model_it_out_SH_visc(float **rho, float **primary, float **physical_q, int nstage, int iter, float freq){
 
-
-	/*--------------------------------------------------------------------------*/
-	FILE *FP1;
 	/* extern variables */
-	extern int POS[3], MYID;
+	extern int POS[3], MYID, INVMAT1;
 	extern char INV_MODELFILE[STRING_SIZE];
-	
 
 	/* local variables */
-        char modfile[STRING_SIZE];
-                          
-	sprintf(modfile,"%s_vs_stage_%d_it_%d.bin",INV_MODELFILE,nstage,iter);
-	writemod(modfile,pu,3);
+	char modfile[STRING_SIZE2], model_prefix[STRING_SIZE2];
+	const char *primary_suffix;
+
+	if (INVMAT1 == 1) primary_suffix = "vs";
+	else if (INVMAT1 == 3) primary_suffix = "mu";
+	else err("model_it_out_SH_visc: INVMAT1 must be 1 (Vs) or 3 (mu)");
+
+	sprintf(model_prefix,"%s_stage_%d_it_%d",INV_MODELFILE,nstage,iter);
+	sprintf(modfile,"%s.%s",model_prefix,primary_suffix);
+	writemod(modfile,primary,3);
 	MPI_Barrier(MPI_COMM_WORLD);
-                                                                                                        
 	if (MYID==0) mergemod(modfile,3);
-	MPI_Barrier(MPI_COMM_WORLD); 
-	sprintf(modfile,"%s_vs_stage_%d_it_%d.bin.%i.%i",INV_MODELFILE,nstage,iter,POS[1],POS[2]);
-	remove(modfile);                                                                                                                        
-                                                                                                                                
-	sprintf(modfile,"%s_rho_stage_%d_it_%d.bin",INV_MODELFILE,nstage,iter);
+	MPI_Barrier(MPI_COMM_WORLD);
+	sprintf(modfile,"%s.%s.%i.%i",model_prefix,primary_suffix,POS[1],POS[2]);
+	remove(modfile);
+
+	sprintf(modfile,"%s.rho",model_prefix);
 	writemod(modfile,rho,3);
 	MPI_Barrier(MPI_COMM_WORLD);
-                                                                                                                                                                        
 	if (MYID==0) mergemod(modfile,3);
-	MPI_Barrier(MPI_COMM_WORLD); 
-	sprintf(modfile,"%s_rho_stage_%d_it_%d.bin.%i.%i",INV_MODELFILE,nstage,iter,POS[1],POS[2]);
-	remove(modfile);
-
-	sprintf(modfile,"%s_taus_stage_%d_it_%d.bin",INV_MODELFILE,nstage,iter);
-	writemod(modfile,ptaus,3);
 	MPI_Barrier(MPI_COMM_WORLD);
-                                                                                                                                                                        
-	if (MYID==0) mergemod(modfile,3);
-	MPI_Barrier(MPI_COMM_WORLD); 
-	sprintf(modfile,"%s_taus_stage_%d_it_%d.bin.%i.%i",INV_MODELFILE,nstage,iter,POS[1],POS[2]);
+	sprintf(modfile,"%s.rho.%i.%i",model_prefix,POS[1],POS[2]);
 	remove(modfile);
 
+	sprintf(modfile,"%s.qs",model_prefix);
+	writemod(modfile,physical_q,3);
+	MPI_Barrier(MPI_COMM_WORLD);
+	if (MYID==0) mergemod(modfile,3);
+	MPI_Barrier(MPI_COMM_WORLD);
+	sprintf(modfile,"%s.qs.%i.%i",model_prefix,POS[1],POS[2]);
+	remove(modfile);
 }
 

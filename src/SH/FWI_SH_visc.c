@@ -870,7 +870,7 @@ diff=fabs((L2_hist[iter-2]-L2_hist[iter])/L2_hist[iter-2]);
         
         	/* output of the model at the end of given FWI stage */
 		if(INV_MOD_OUT==0){
-        	    model_freq_out_SH_visc(matSH.prho,matSH.pu,matSH.ptaus,nstage,FC);
+		    model_freq_out_SH_visc(exact_base_rho,exact_base_primary,exact_base_q,nstage,FC);
 		}
 
 		min_iter_help=0;
@@ -892,7 +892,7 @@ diff=fabs((L2_hist[iter-2]-L2_hist[iter])/L2_hist[iter-2]);
 
 /* output of the model after each FWI iteration */
 if(INV_MOD_OUT==1){
-    model_it_out_SH_visc(matSH.prho,matSH.pu,matSH.ptaus,nstage,iter,FC);
+    model_it_out_SH_visc(exact_base_rho,exact_base_primary,exact_base_q,nstage,iter,FC);
 }
 
 iter++;
