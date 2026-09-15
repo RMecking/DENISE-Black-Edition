@@ -1,4 +1,4 @@
-"""Runtime oracle for the inactive exact physical-Q SH B5A line search."""
+"""Runtime oracle for the exact physical-Q SH B5A line search."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ def _compact(text: str) -> str:
     return re.sub(r"\s+", "", text)
 
 
-def test_b5a_is_inactive_real_b4b_composition_without_legacy_routes(
+def test_b5a_is_active_from_fwi_and_retains_real_b4b_composition_without_legacy_routes(
     repository_root: Path,
 ) -> None:
     header = (repository_root / "include/fd.h").read_text(encoding="utf-8")
@@ -35,7 +35,16 @@ def test_b5a_is_inactive_real_b4b_composition_without_legacy_routes(
     assert "calc_opt_step(" in helper
     for legacy in ("calc_mat_change_test_SH_visc(", "obj_sh(", "grad_obj_sh(", "ass_gradSH_visc("):
         assert legacy not in helper
-    assert "step_length_est_sh_visc_exact(" not in driver
+    active = driver[driver.index("exact_status=visco_sh_exact_objective_gradient("):]
+    b5a = active.index("step_length_est_sh_visc_exact(")
+    accepted_b2 = active.index("visco_sh_exact_build_trial_parameter_state(", b5a)
+    commit = active.index("exact_base_primary[exact_j][exact_i]=exact_trial_primary", accepted_b2)
+    post_acceptance_b4a = active.index("visco_sh_exact_prepare_visco_material(", commit)
+    assert b5a < accepted_b2 < commit < post_acceptance_b4a
+    supported_block = active[:post_acceptance_b4a]
+    for legacy in ("grad_obj_sh(", "ass_gradSH_visc(", "step_length_est_sh(",
+                   "calc_mat_change_test_SH_visc(", "obj_sh(", "descent("):
+        assert legacy not in supported_block
 
 
 @pytest.fixture(scope="module")

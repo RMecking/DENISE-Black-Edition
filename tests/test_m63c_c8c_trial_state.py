@@ -21,7 +21,7 @@ def _compact(text: str) -> str:
     return re.sub(r"\s+", "", text)
 
 
-def test_trial_state_api_static_legacy_exclusion_and_inactive_driver(
+def test_trial_state_api_static_legacy_exclusion_and_active_accepted_driver(
     repository_root: Path,
 ) -> None:
     header = _read(repository_root, "include/fd.h")
@@ -49,7 +49,14 @@ def test_trial_state_api_static_legacy_exclusion_and_inactive_driver(
         "prepare_update_s_visc_SH(",
     ):
         assert forbidden not in source
-    assert "visco_sh_exact_build_trial_parameter_state(" not in active_driver
+    # B5B makes B2 reachable only as the accepted-state constructor after
+    # B5A, before authoritative Base publication and material regeneration.
+    accepted = active_driver[active_driver.index("step_length_est_sh_visc_exact("):]
+    b5a = accepted.index("step_length_est_sh_visc_exact(")
+    b2 = accepted.index("visco_sh_exact_build_trial_parameter_state(")
+    commit = accepted.index("exact_base_primary[exact_j][exact_i]=exact_trial_primary")
+    rebuild = accepted.index("visco_sh_exact_prepare_visco_material(", commit)
+    assert b5a < b2 < commit < rebuild
 
     # q_to_tau either returns a finite positive tau or calls err before it can
     # return an invalid value. Consequently the helper's -13 path cannot be
