@@ -1471,6 +1471,7 @@ float **read_grav_pos(int *ngrav);
 void read_par(FILE *fp_in);
 
 void read_par_inv(FILE *fp,int nstage,int stagemax);
+void read_par_inv_silent(FILE *fp,int nstage,int stagemax);
 
 int **receiver(FILE *fp, int *ntr, int ishot);
 

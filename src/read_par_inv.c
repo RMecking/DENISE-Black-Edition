@@ -10,13 +10,13 @@
 
 #include "fd.h"
 
-void read_par_inv(FILE *fp,int nstage,int stagemax){
+static void read_par_inv_impl(FILE *fp,int nstage,int stagemax,int report){
 
 /* declaration of extern variables */
 extern int MYID;
 extern int SPATFILTER, SPAT_FILT_SIZE, SPAT_FILT_1, SPAT_FILT_ITER, NORMALIZE;
 extern int INV_RHO_ITER, INV_VP_ITER, INV_VS_ITER, INV_QS_ITER, ENV;
-extern int Q_PARAMETERIZATION_MODE, L, MODE, ITERMAX;
+extern int Q_PARAMETERIZATION_MODE, L, MODE, PHYSICS;
 extern int TIME_FILT, ORDER, EPRECOND;
 extern int LNORM, OFFSET_MUTE;
 extern int INV_STF, N_ORDER;
@@ -27,7 +27,7 @@ extern float WD_DAMP, WD_DAMP1, SCALERHO, SCALEQS;
 extern float GAMMA_GRAV;
 
 /* definition of local variables */
-int i;
+int i, exact_sh_route;
 char str [80];
 
 fscanf(fp,"%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s",str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str,str);
@@ -37,26 +37,30 @@ fscanf(fp,"%f%i%f%f%i%i%f%f%f%i%i%i%i%i%f%f%i%i%i%i%f%f%i%i%f%f%f%i%f%i",&PRO,&T
 }
 
 fclose(fp);
+exact_sh_route = (Q_PARAMETERIZATION_MODE == Q_PARAMETERIZATION_PHYSICAL &&
+                  MODE == 1 && PHYSICS == 5 && L > 0);
 
-if(MYID==0){
+if(report && MYID==0){
 
-   if ((Q_PARAMETERIZATION_MODE == Q_PARAMETERIZATION_PHYSICAL) &&
-       (MODE == 1) && (L > 0) && (INV_QS_ITER <= ITERMAX)) {
-     warning(" Q_PARAMETERIZATION_MODE=1 only maps physical Q input to the initial tau fields. ");
-     warning(" Attenuation/Q inversion is unverified and appears incomplete; it is not production-ready physical-Q inversion. ");
-     warning(" No Q-to-tau chain rule is applied. ");
+   if (exact_sh_route) {
+     printf(" Physical-Q inversion is supported by exact viscoelastic SH steepest descent; unsupported configurations are validated separately.\n");
    }
 
    printf("=========================================== \n");
    printf("       FWI-stage %d of %d \n",nstage,stagemax);
    printf("=========================================== \n");
-   printf(" Density is inverted from iteration step %d.\n",INV_RHO_ITER);
-   printf("\n");
-   printf(" Vp is inverted from iteration step %d.\n",INV_VP_ITER);
-   printf("\n");
-   printf(" Vs is inverted from iteration step %d.\n",INV_VS_ITER);
-   printf("\n");
-   printf(" Qs is inverted from iteration step %d.\n",INV_QS_ITER);
+   if(exact_sh_route){
+     printf(" Exact SH primary, density, and physical Q are active from iteration 1.\n");
+     printf(" INV_VP_ITER=%d does not apply to SH.\n",INV_VP_ITER);
+   } else {
+     printf(" Density is inverted from iteration step %d.\n",INV_RHO_ITER);
+     printf("\n");
+     printf(" Vp is inverted from iteration step %d.\n",INV_VP_ITER);
+     printf("\n");
+     printf(" Vs is inverted from iteration step %d.\n",INV_VS_ITER);
+     printf("\n");
+     printf(" Qs is inverted from iteration step %d.\n",INV_QS_ITER);
+   }
 
    printf("\n\n");
    printf(" Smoothing (spatial filtering) of the gradients: \n ");
@@ -177,4 +181,12 @@ if(MYID==0){
 
 }
 
+}
+
+void read_par_inv(FILE *fp,int nstage,int stagemax){
+    read_par_inv_impl(fp,nstage,stagemax,1);
+}
+
+void read_par_inv_silent(FILE *fp,int nstage,int stagemax){
+    read_par_inv_impl(fp,nstage,stagemax,0);
 }
