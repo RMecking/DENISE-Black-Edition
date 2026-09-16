@@ -23,9 +23,13 @@ history.
 ## Repository workflow
 
 - Integration branch: `modernization`
-- Current feature branch: `codex/m6.3c-visco-sh-discrete-adjoint-gradient`
-- Published frontier: `05a2af16e9d46cc9491296e37ef5717a740cb512`
-- Current milestone status: **M6.3 SCIENTIFICALLY COMPLETE**
+- M6.3 feature head: `c4fa6b55f246ff9bfcaa05f7c79c258fcc2de32e`
+- M6.3 was merged through PR #40 by a normal GitHub merge commit.
+- Current `modernization` frontier:
+  `26ca0b94faa8bf43200f19ca6dfc29be9e586cac`
+- M6.3 status: **SCIENTIFICALLY COMPLETE and merged into `modernization`**
+- Active next scientific milestone: **M7 — P/SV FWI Scientific Verification &
+  Repair**
 
 ## Locked M6.3 checkpoints
 
@@ -389,8 +393,8 @@ post-repair GREEN tests do not rewrite this frozen baseline.
 
 ## M6.3 scientific closeout
 
-At the published frontier `05a2af16e9d46cc9491296e37ef5717a740cb512`, M6.3
-is **SCIENTIFICALLY COMPLETE**. The completed progression comprises exact
+M6.3 is **SCIENTIFICALLY COMPLETE** and was merged into `modernization` by the
+normal GitHub merge commit for PR #40. The completed progression comprises exact
 gradient/adjoint closure; C8c active physical-Q integration; exact
 steepest-descent line search; accepted-model lifecycle with Q-to-Tau
 regeneration; physical-Q persistence/readback; and the configuration contract.
@@ -398,7 +402,8 @@ Together with the committed exact-gradient, active-driver, line-search,
 persistence, and configuration-contract oracles, this closes the scientific
 end-to-end requirement.
 
-An independent, uncommitted 32x32 synthetic experiment at that frontier
+An independent, uncommitted 32x32 synthetic experiment at the M6.3 published
+closeout frontier `05a2af16e9d46cc9491296e37ef5717a740cb512`
 provides supplementary closure evidence: eight accepted exact
 steepest-descent iterations reduced the objective from `1.394873e-05` to
 `1.221404e-06` (approximately 91%), with every accepted objective decreasing
@@ -411,14 +416,56 @@ they are historical frozen evidence superseded by the subsequently verified
 implementation. The essential physical-Q update lifecycle was delivered by
 C8c/B5, so no new mandatory M6.3d phase is required.
 
-### Non-blocking future work
+## Current high-level roadmap
 
+Only the ordering and high-level intent below are frozen; the M8, M9, and M10
+designs are not implementation contracts.
+
+### M7 — P/SV FWI Scientific Verification & Repair
+
+M7 is the active next scientific milestone. Its goal is scientifically
+trustworthy elastic and viscoelastic P/SV FWI: begin with a scientific audit
+of the existing implementation, reuse correct implementation where possible,
+and verify the active end-to-end path rather than decomposing every operator
+by default. Use targeted adjoint/gradient and directional-FD verification,
+repair only demonstrated scientific defects, and finish with small genuine
+inversion experiments. Avoid repeating M6.3's extreme checkpoint granularity
+unless a concrete numerical defect requires deeper decomposition.
+
+### M8 — Performance & Compute Modernization
+
+After the SH and P/SV scientific baselines are trustworthy, M8 will improve
+runtime efficiency through CPU-side optimization and GPU feasibility analysis
+with, where justified, incremental GPU acceleration. CPU work may cover
+profiling, data layout, cache behavior, memory traffic, SIMD/vectorization,
+OpenMP, MPI communication/overlap, redundant computation, and shared solver
+infrastructure. GPU work begins with profiling and feasibility analysis, then
+representative numerically equivalent kernel prototypes with measured
+performance, before any whole-code GPU architecture commitment.
+
+### M9 — RTM Scientific Redesign / Modernization
+
+The current simple RTM implementation is not the desired final scientific
+design. This lower-priority milestone will reassess the RTM formulation,
+including imaging-condition and wave-mode handling, before broad
+implementation work.
+
+### M10 — Reflection FWI / RWI
+
+This future research/development milestone is expected to build on verified
+P/SV and improved compute foundations. Its detailed implementation contract is
+intentionally not defined here.
+
+### Backlog / lower priority
+
+- Anisotropic FWI
 - Physical-Q-safe PCG/L-BFGS
-- True simultaneous-source inversion
-- Exact-path filters, tapers, and preconditioning
-- Time-window, filter, and STF extensions
-- Delayed-activation and scaling extensions
-- Full optimizer/workflow checkpoint-restart
+- True simultaneous-source SH inversion
+- Additional SH filters, tapers, preconditioning, and workflow hardening
+- Other optional optimizer/workflow extensions
+
+These items are outside the current main sequence and may be promoted only if
+project priorities change.
 
 ## Update policy
 
