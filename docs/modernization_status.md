@@ -24,10 +24,8 @@ history.
 
 - Integration branch: `modernization`
 - Current feature branch: `codex/m6.3c-visco-sh-discrete-adjoint-gradient`
-- Status current through locked implementation checkpoint:
-  `M6.3c-7d-b2 @ e0cfe59afbf9eb77ab7ea8b1fd097af6fff69de3`
-- Current milestone: **M6.3c — exact discrete viscoelastic SH
-  adjoint/gradient repair**
+- Published frontier: `05a2af16e9d46cc9491296e37ef5717a740cb512`
+- Current milestone status: **M6.3 SCIENTIFICALLY COMPLETE**
 
 ## Locked M6.3 checkpoints
 
@@ -389,21 +387,38 @@ post-repair GREEN tests do not rewrite this frozen baseline.
 - C7d complete for the frozen `DTINV==1` discrete viscoelastic SH L2
   objective contract
 
-### Next
+## M6.3 scientific closeout
 
-- **M6.3c-8 active-path unification / production SH FWI integration**: connect
-  the verified exact gradient chain to the active viscoelastic SH FWI path,
-  require base and trial objectives to use identical viscoelastic physics,
-  close line-search gradient/objective consistency, and remove any remaining
-  elastic-base versus visco-trial physics split. C8 has not started.
+At the published frontier `05a2af16e9d46cc9491296e37ef5717a740cb512`, M6.3
+is **SCIENTIFICALLY COMPLETE**. The completed progression comprises exact
+gradient/adjoint closure; C8c active physical-Q integration; exact
+steepest-descent line search; accepted-model lifecycle with Q-to-Tau
+regeneration; physical-Q persistence/readback; and the configuration contract.
+Together with the committed exact-gradient, active-driver, line-search,
+persistence, and configuration-contract oracles, this closes the scientific
+end-to-end requirement.
 
-### Planned
+An independent, uncommitted 32x32 synthetic experiment at that frontier
+provides supplementary closure evidence: eight accepted exact
+steepest-descent iterations reduced the objective from `1.394873e-05` to
+`1.221404e-06` (approximately 91%), with every accepted objective decreasing
+and the strongest final update inside the true Q anomaly. It is short-horizon
+evidence of stable and physically directed inversion behavior, not a claim of
+complete Q-anomaly reconstruction. Its raw runtime artifact is not committed.
 
-- No additional M6.3c implementation checkpoint is planned after C8.
+Frozen C8a/M6.3b RED inventories and their oracle meanings are unchanged;
+they are historical frozen evidence superseded by the subsequently verified
+implementation. The essential physical-Q update lifecycle was delivered by
+C8c/B5, so no new mandatory M6.3d phase is required.
 
-### Follow-up
+### Non-blocking future work
 
-- M6.3d optimizer/model update, bounds, and output integration
+- Physical-Q-safe PCG/L-BFGS
+- True simultaneous-source inversion
+- Exact-path filters, tapers, and preconditioning
+- Time-window, filter, and STF extensions
+- Delayed-activation and scaling extensions
+- Full optimizer/workflow checkpoint-restart
 
 ## Update policy
 
