@@ -28,6 +28,7 @@ def _write_sh_parameter(
     nprocx: int = 1, nprocy: int = 1, eps_scale: float = 1.0e6,
     stepmax: int = 10, invmat1: int = 1, inv_mod_out: int = 0,
     inv_model_file: str = "model/inverted", itermax: int = 1,
+    grad_form: int = 2, grad_filter: int = 0,
 ) -> None:
     """Invoke the repository's SH parameter serializer without its plotting imports."""
     serializer = repository_root / "par" / "pythonIO_SH" / "denise_sh_IO" / "denise_sh_out.py"
@@ -52,7 +53,7 @@ def _write_sh_parameter(
         "SEIS_FILE_CURL": "su/unused_curl.su", "SEIS_FILE_DIV": "su/unused_div.su", "SEIS_FILE_P": "su/unused_p.su",
         "LOG_FILE": "log/denise", "ITERMAX": itermax, "JACOBIAN": "jacobian/unused", "DATA_DIR": "su/observed",
         "TAPERLENGTH": 1, "GRADT1": 1, "GRADT2": 1, "GRADT3": 1, "GRADT4": 1,
-        "INVMAT1": 1, "GRAD_FORM": 1, "QUELLTYPB": 2, "TESTSHOT_START": 1, "TESTSHOT_END": 1,
+        "INVMAT1": 1, "GRAD_FORM": grad_form, "QUELLTYPB": 2, "TESTSHOT_START": 1, "TESTSHOT_END": 1,
         "TESTSHOT_INCR": 1, "SWS_TAPER_GRAD_VERT": 0, "SWS_TAPER_GRAD_HOR": 0,
         "EXP_TAPER_GRAD_HOR": 1.0, "SWS_TAPER_GRAD_SOURCES": 0, "SWS_TAPER_CIRCULAR_PER_SHOT": 0,
         "SRTSHAPE": 1, "SRTRADIUS": 50.0, "SWS_TAPER_FILE": 0, "TFILE": "taper/unused",
@@ -64,7 +65,7 @@ def _write_sh_parameter(
         "MODEL_FILTER": 0, "FILT_SIZE": 1, "DTINV": 1, "EPS_SCALE": eps_scale, "STEPMAX": stepmax,
         # The active B5A bracket contracts require a strictly expanding factor.
         "SCALEFAC": 2.0, "TRKILL": 0, "TRKILL_FILE": "tracekill/unused", "PICKS_FILE": "picks/unused",
-        "MISFIT_LOG_FILE": "log/misfit", "MIN_ITER": 1, "GRAD_FILTER": 0, "FILT_SIZE_GRAD": 1,
+        "MISFIT_LOG_FILE": "log/misfit", "MIN_ITER": 1, "GRAD_FILTER": grad_filter, "FILT_SIZE_GRAD": 1,
     }
     fields["INVMAT1"] = invmat1
     write = namespace["write_denise_para"]
@@ -120,6 +121,18 @@ def _write_ephemeral_sh_forward_fixture(
             "observed": root / "su" / "observed_y.su.shot1",
             "fwi_observed": root / "su" / "observed_y.su.shot1",
             "true": true_prefix, "start": start_prefix}
+
+
+def _set_workflow_controls(
+    workflow: Path, *, inv_qs_iter: int = 0, scaleqs: float = 1.0,
+) -> None:
+    """Change only the parser-owned controls covered by a configuration oracle."""
+    header, values = workflow.read_text(encoding="ascii").splitlines()
+    fields = values.split()
+    assert len(fields) == 30
+    fields[12] = str(inv_qs_iter)
+    fields[26] = str(scaleqs)
+    workflow.write_text(f"{header}\n{' '.join(fields)}\n", encoding="ascii")
 
 
 def _read_native_model(path: Path, cells: int) -> tuple[bytes, tuple[float, ...]]:
@@ -398,6 +411,49 @@ def test_real_active_fwi_rejects_unsupported_optimizers_before_model_mutation(
         suffix: fixture["start"].with_suffix(suffix).read_bytes()
         for suffix in (".vs", ".rho", ".qs")
     }
+
+
+@pytest.mark.parametrize(
+    ("name", "grad_filter", "inv_qs_iter", "scaleqs", "message"),
+    [
+        ("gradient_filter", 1, 0, 1.0,
+         "Exact viscoelastic SH FWI: GRAD_FILTER=1 at stage 0; required value: 0."),
+        ("delayed_q", 0, 2, 1.0,
+         "Exact viscoelastic SH FWI: INV_QS_ITER=2 at stage 1; supported values: 0 or 1."),
+        ("q_scaling", 0, 0, 2.0,
+         "Exact viscoelastic SH FWI: SCALEQS=2 at stage 1; required value: 1."),
+    ],
+)
+def test_real_active_fwi_rejects_representative_unsupported_controls_before_model_mutation(
+    tmp_path: Path, repository_root: Path, name: str, grad_filter: int,
+    inv_qs_iter: int, scaleqs: float, message: str,
+) -> None:
+    fixture = _write_ephemeral_sh_forward_fixture(tmp_path, repository_root)
+    forward = _run_denise(repository_root, fixture, fixture["parameter"])
+    assert forward.returncode == 0, forward.stdout
+    before = {
+        suffix: fixture["start"].with_suffix(suffix).read_bytes()
+        for suffix in (".vs", ".rho", ".qs")
+    }
+    parameter = fixture["root"] / f"unsupported_{name}.inp"
+    _write_sh_parameter(
+        repository_root, parameter, mode=1, model_prefix="model/start", grad_method=0,
+        grad_filter=grad_filter, inv_model_file="model/must_not_be_accepted",
+    )
+    _set_workflow_controls(
+        fixture["workflow"], inv_qs_iter=inv_qs_iter, scaleqs=scaleqs,
+    )
+    run = _run_denise(repository_root, fixture, parameter)
+    assert message in run.stdout
+    # Open MPI on this host may report zero from mpiexec after MPI_ABORT, so
+    # require the production abort transcript if its process status is masked.
+    assert run.returncode != 0 or "MPI_ABORT was invoked" in run.stdout
+    assert "TDFWI ITERATION" not in run.stdout
+    assert before == {
+        suffix: fixture["start"].with_suffix(suffix).read_bytes()
+        for suffix in (".vs", ".rho", ".qs")
+    }
+    assert not list((fixture["root"] / "model").glob("must_not_be_accepted*"))
 
 
 def test_real_active_fwi_completes_one_exact_iteration_with_two_ranks(
