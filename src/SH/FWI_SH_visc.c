@@ -7,68 +7,165 @@
 
 #include "fd.h"
 
+static void exact_sh_require_collective_success(int local_status,
+        char *message){
+    int local_failure = (local_status != 0);
+    int any_failure = 0;
+
+    if(MPI_Allreduce(&local_failure,&any_failure,1,MPI_INT,MPI_MAX,
+                     MPI_COMM_WORLD) != MPI_SUCCESS){
+        err("Exact SH FWI status reconciliation failed.");
+    }
+    if(any_failure){
+        err(message);
+    }
+}
+
+/* All ranks test controls in the same order, including every workflow stage.
+   An unsupported value on any rank aborts collectively before model I/O. */
+static void exact_sh_require_config_int(const char *name, int value,
+        int accepted_a, int accepted_b, int stage){
+    int local_failure = (value != accepted_a && value != accepted_b);
+    int any_failure = 0;
+    char message[STRING_SIZE2];
+    if(MPI_Allreduce(&local_failure,&any_failure,1,MPI_INT,MPI_MAX,
+                     MPI_COMM_WORLD) != MPI_SUCCESS)
+        err("Exact SH configuration reconciliation failed.");
+    if(any_failure){
+        if(strcmp(name,"GRAD_METHOD")==0)
+            snprintf(message,sizeof(message),
+                     "Exact viscoelastic SH FWI currently supports GRAD_METHOD == 0 only. Configured GRAD_METHOD=%d.",
+                     value);
+        else if(accepted_a==accepted_b)
+            snprintf(message,sizeof(message),
+                     "Exact viscoelastic SH FWI: %s=%d at stage %d; required value: %d.",
+                     name,value,stage,accepted_a);
+        else
+            snprintf(message,sizeof(message),
+                     "Exact viscoelastic SH FWI: %s=%d at stage %d; supported values: %d or %d.",
+                     name,value,stage,accepted_a,accepted_b);
+        err(message);
+    }
+}
+
+static void exact_sh_require_config_float(const char *name, float value,
+        float accepted, int stage){
+    int local_failure = (value != accepted);
+    int any_failure = 0;
+    char message[STRING_SIZE2];
+    if(MPI_Allreduce(&local_failure,&any_failure,1,MPI_INT,MPI_MAX,
+                     MPI_COMM_WORLD) != MPI_SUCCESS)
+        err("Exact SH configuration reconciliation failed.");
+    if(any_failure){
+        snprintf(message,sizeof(message),
+                 "Exact viscoelastic SH FWI: %s=%g at stage %d; required value: %g.",
+                 name,(double)value,stage,(double)accepted);
+        err(message);
+    }
+}
+
+static void exact_sh_free_material(struct matSH *material, int nd,
+        int nx, int ny, int mechanisms){
+    free_matrix(material->prho,-nd+1,ny+nd,-nd+1,nx+nd);
+    free_matrix(material->prhoi,-nd+1,ny+nd,-nd+1,nx+nd);
+    free_matrix(material->puip,-nd+1,ny+nd,-nd+1,nx+nd);
+    free_matrix(material->pujp,-nd+1,ny+nd,-nd+1,nx+nd);
+    free_matrix(material->pu,-nd+1,ny+nd,-nd+1,nx+nd);
+    free_matrix(material->puipjp,-nd+1,ny+nd,-nd+1,nx+nd);
+    free_matrix(material->pqs,-nd+1,ny+nd,-nd+1,nx+nd);
+    free_matrix(material->ptaus,-nd+1,ny+nd,-nd+1,nx+nd);
+    free_matrix(material->ptausipjp,-nd+1,ny+nd,-nd+1,nx+nd);
+    free_matrix(material->fipjp,-nd+1,ny+nd,-nd+1,nx+nd);
+    free_matrix(material->f,-nd+1,ny+nd,-nd+1,nx+nd);
+    free_matrix(material->g,-nd+1,ny+nd,-nd+1,nx+nd);
+    free_vector(material->peta,1,mechanisms);
+    free_vector(material->etaip,1,mechanisms);
+    free_vector(material->etajm,1,mechanisms);
+    free_vector(material->bip,1,mechanisms);
+    free_vector(material->bjm,1,mechanisms);
+    free_vector(material->cip,1,mechanisms);
+    free_vector(material->cjm,1,mechanisms);
+    free_f3tensor(material->dip,-nd+1,ny+nd,-nd+1,nx+nd,1,mechanisms);
+    free_f3tensor(material->d,-nd+1,ny+nd,-nd+1,nx+nd,1,mechanisms);
+    free_f3tensor(material->e,-nd+1,ny+nd,-nd+1,nx+nd,1,mechanisms);
+}
+
 void FWI_SH_visc(){
 
 /* global variables */
 /* ---------------- */
 
 /* forward modelling */
-extern int MYID, FDORDER, NX, NY, NT, L, READMOD, QUELLART, RUN_MULTIPLE_SHOTS, TIME_FILT, READREC;
-extern int LOG, SEISMO, N_STREAMER, FW, NXG, NYG, IENDX, IENDY, NTDTINV, IDXI, IDYI, NXNYI, INV_STF, DTINV;
-extern float FC_SPIKE_1, FC_SPIKE_2, FC, FC_START, TIME, DT;
-extern char LOG_FILE[STRING_SIZE], MFILE[STRING_SIZE];
+extern int MYID, FDORDER, NX, NY, NT, L, READMOD, TIME_FILT, READREC;
+extern int LOG, SEISMO, FW, NXG, NYG, IENDX, IENDY, NTDTINV, IDXI, IDYI, NXNYI, DTINV;
+extern float FC, FC_START, TIME, DT;
+extern char LOG_FILE[STRING_SIZE];
 extern FILE *FP;
 
 /* gravity modelling/inversion */
-extern int GRAVITY, NZGRAV, NGRAVB, GRAV_TYPE, BACK_DENSITY;
-extern char GRAV_DATA_OUT[STRING_SIZE], GRAV_DATA_IN[STRING_SIZE], GRAV_STAT_POS[STRING_SIZE], DFILE[STRING_SIZE];
-extern float LAM_GRAV, GAMMA_GRAV, LAM_GRAV_GRAD, L2_GRAV_IT1;
+extern int GRAVITY, NZGRAV, NGRAVB, GRAV_TYPE;
+extern char GRAV_DATA_OUT[STRING_SIZE], GRAV_DATA_IN[STRING_SIZE], GRAV_STAT_POS[STRING_SIZE];
+extern float LAM_GRAV, LAM_GRAV_GRAD;
 
 /* full waveform inversion */
-extern int GRAD_METHOD, NLBFGS, ITERMAX, IDX, IDY, INVMAT1, EPRECOND, PCG_BETA, LNORM;
-extern int GRAD_FORM, POS[3], QUELLTYPB, MIN_ITER, MODEL_FILTER, INV_MOD_OUT, ROWI;
-extern int GRAD_FILTER, MODEL_FILTER, FILT_SIZE, FILT_SIZE_GRAD;
-extern float FC_END, PRO, C_vs, C_rho, C_taus, C_vs_min, C_rho_min, C_taus_min;
-extern char MISFIT_LOG_FILE[STRING_SIZE], JACOBIAN[STRING_SIZE];
+extern int GRAD_METHOD, ITERMAX, IDX, IDY, INVMAT1, EPRECOND, LNORM;
+extern int GRAD_FORM, QUELLTYPB, MIN_ITER, INV_MOD_OUT, ROWI;
+extern int GRAD_FILTER, MODEL_FILTER, TAPER, TRKILL;
+extern int SWS_TAPER_GRAD_VERT, SWS_TAPER_GRAD_HOR;
+extern int SWS_TAPER_GRAD_SOURCES, SWS_TAPER_CIRCULAR_PER_SHOT;
+extern int SWS_TAPER_FILE;
+extern int RUN_MULTIPLE_SHOTS, NSHOTS;
+extern int TESTSHOT_START, TESTSHOT_END, TESTSHOT_INCR;
+extern int SPATFILTER, TIMEWIN, INV_STF, N_ORDER, OFFSET_MUTE;
+extern int NORMALIZE, INV_VS_ITER, INV_RHO_ITER, INV_QS_ITER;
+extern float SCALERHO, SCALEQS, GAMMA_GRAV;
+extern float FC_END, PRO, C_vs, C_rho, C_vs_min, C_rho_min, C_taus_min;
+extern float EPS_SCALE, SCALEFAC, VSUPPERLIM, VSLOWERLIM;
+extern float RHOUPPERLIM, RHOLOWERLIM, QSUPPERLIM, QSLOWERLIM, *FL;
+extern float Q_APPROX_FMIN, Q_APPROX_FMAX, Q_APPROX_DF;
+extern int STEPMAX, Q_PARAMETERIZATION_MODE;
+extern char MISFIT_LOG_FILE[STRING_SIZE];
 extern char *FILEINP1;
 
 /* local variables */
-int ns, nseismograms=0, nt, nd, fdo3, j, i, iter, h, hin, iter_true, SHOTINC, s=0;
-int buffsize, ntr=0, ntr_loc=0, ntr_glob=0, nsrc=0, nsrc_loc=0, nsrc_glob=0, ishot, nshots=0, itestshot;
+int ns, nseismograms=0, nd, fdo3, j, i, iter, iter_true;
+int buffsize, ntr=0, ntr_loc=0, ntr_glob=0, nsrc=0, ishot=1;
 
-float sum, eps_scale, opteps_vp, opteps_vs, opteps_rho, opteps_ts, Vs_max, rho_max, taus_max, Vs_sum, rho_sum, taus_sum;
+float eps_scale, opteps_vp, opteps_vs, opteps_rho, Vs_max, rho_max, taus_max, Vs_sum, rho_sum, taus_sum;
 float Vs_min, rho_min, taus_min, Vs_avg, rho_avg;
-char *buff_addr, ext[10], *fileinp, jac[225], source_signal_file[STRING_SIZE];
+char *buff_addr, ext[10];
 
-double time1, time2, time7, time8, time_av_v_update=0.0, time_av_s_update=0.0, time_av_v_exchange=0.0; 
+double time1, time8, time_av_v_update=0.0, time_av_s_update=0.0, time_av_v_exchange=0.0;
 double time_av_s_exchange=0.0, time_av_timestep=0.0;
 	
 double L2sum, *L2t;
 	
-float ** taper_coeff, * epst1, *hc=NULL;
+float * epst1, *hc=NULL;
 int * DTINV_help;
 
 MPI_Request *req_send, *req_rec;
-MPI_Status  *send_statuses, *rec_statuses;
 
-/* Variables for step length calculation */
-int step1, step3=0;
-float eps_true, tmp;
-
-/* Variables for the L-BFGS method */
-float * rho_LBFGS, * alpha_LBFGS, * beta_LBFGS; 
-float * y_LBFGS, * s_LBFGS, * q_LBFGS, * r_LBFGS;
-int NLBFGS_class, LBFGS_pointer, NLBFGS_vec;
-
-/* Variables for PCG */
-float * PCG_old, * PCG_new, * PCG_dir;
-int PCG_class, PCG_vec;
-
-/* Variables for energy weighted gradient */
-float ** Ws, **Wr, **We;
+/* Variables for exact physical-Q steepest descent. */
+int step3=0, exact_status;
+int exact_i, exact_j, exact_l;
+float **exact_base_primary, **exact_base_rho, **exact_base_q;
+float **exact_grad_primary, **exact_grad_rho, **exact_grad_q;
+float **exact_step_primary, **exact_step_rho, **exact_step_q;
+float **exact_trial_primary, **exact_trial_rho, **exact_trial_q;
+float **exact_trial_tau, *exact_peta;
+struct q_tau_mapping exact_q_mapping;
+struct visco_sh_exact_material_preparation_request exact_material_request;
+struct visco_sh_exact_multi_shot_request exact_objective_request;
+struct visco_sh_exact_multi_shot_result exact_objective_result;
+struct visco_sh_exact_optimizer_boundary exact_optimizer_boundary;
+struct visco_sh_exact_trial_state_request exact_trial_state;
+struct visco_sh_exact_trial_objective_request exact_trial_objective;
+struct visco_sh_exact_line_search_request exact_line_search;
+struct visco_sh_exact_line_search_result exact_line_search_result;
+struct matSH exact_trial_material;
 
 /* parameters for FWI-workflow */
-int stagemax=0, nstage;
+int stagemax=0, nstage, min_stagemax, max_stagemax;
 
 /*vector for abort criterion*/
 double * L2_hist=NULL;
@@ -81,33 +178,112 @@ float * gz_mod, * gz_res;
 float ** gravpos=NULL, ** rho_grav=NULL, ** rho_grav_ext=NULL;
 float ** grad_grav=NULL;
 int ngrav=0, nxgrav, nygrav;
-float L2_grav, FWImax, GRAVmax, FWImax_all, GRAVmax_all ;
-char jac_grav[STRING_SIZE];
+float L2_grav, FWImax_all, GRAVmax_all;
 
 /* parameters for random number generation */
 int ra, ra1;
 
-FILE *FPL2, *FP_stage, *FP_GRAV, *LAMBDA;
+FILE *FPL2, *FP_stage, *LAMBDA;
+
+/* Validate global exact controls before allocation, model loading, or the
+   historical GRAD_FORM assignment could hide an unsupported input value. */
+exact_sh_require_config_int("GRAD_METHOD",GRAD_METHOD,0,0,0);
+exact_sh_require_config_int("GRAD_FORM",GRAD_FORM,2,2,0);
+exact_sh_require_config_int("DTINV",DTINV,1,1,0);
+exact_sh_require_config_int("GRAD_FILTER",GRAD_FILTER,0,0,0);
+exact_sh_require_config_int("MODEL_FILTER",MODEL_FILTER,0,0,0);
+exact_sh_require_config_int("TAPER",TAPER,0,0,0);
+exact_sh_require_config_int("TRKILL",TRKILL,0,0,0);
+exact_sh_require_config_int("SEISMO",SEISMO,1,1,0);
+exact_sh_require_config_int("QUELLTYPB",QUELLTYPB,2,2,0);
+exact_sh_require_config_int("READREC",READREC,1,2,0);
+exact_sh_require_config_int("RUN_MULTIPLE_SHOTS",RUN_MULTIPLE_SHOTS,
+        NSHOTS>1 ? 1 : 0,1,0);
+exact_sh_require_config_int("TESTSHOT_START",TESTSHOT_START,1,1,0);
+exact_sh_require_config_int("TESTSHOT_END",TESTSHOT_END,NSHOTS,NSHOTS,0);
+exact_sh_require_config_int("TESTSHOT_INCR",TESTSHOT_INCR,1,1,0);
+exact_sh_require_config_int("SWS_TAPER_GRAD_VERT",SWS_TAPER_GRAD_VERT,0,0,0);
+exact_sh_require_config_int("SWS_TAPER_GRAD_HOR",SWS_TAPER_GRAD_HOR,0,0,0);
+exact_sh_require_config_int("SWS_TAPER_GRAD_SOURCES",SWS_TAPER_GRAD_SOURCES,0,0,0);
+exact_sh_require_config_int("SWS_TAPER_CIRCULAR_PER_SHOT",SWS_TAPER_CIRCULAR_PER_SHOT,0,0,0);
+exact_sh_require_config_int("SWS_TAPER_FILE",SWS_TAPER_FILE,0,0,0);
+exact_sh_require_collective_success(L<1,
+        "Exact viscoelastic SH FWI requires L >= 1 relaxation mechanism.");
+exact_sh_require_config_int("Q_PARAMETERIZATION_MODE",Q_PARAMETERIZATION_MODE,
+        Q_PARAMETERIZATION_PHYSICAL,Q_PARAMETERIZATION_PHYSICAL,0);
+exact_sh_require_config_int("INVMAT1",INVMAT1,1,3,0);
+exact_sh_require_config_int("READMOD",READMOD,1,1,0);
+exact_sh_require_config_int("GRAVITY",GRAVITY,0,0,0);
+
+/* Exact C8c activation currently supports steepest descent only.  Abort
+   before loading or changing any model state for unsupported optimizers. */
+if(GRAD_METHOD!=0){
+    err("Exact viscoelastic SH FWI currently supports GRAD_METHOD == 0 only.");
+}
+if(L<1){
+    err("Exact viscoelastic SH FWI requires at least one relaxation mechanism.");
+}
+if(Q_PARAMETERIZATION_MODE!=Q_PARAMETERIZATION_PHYSICAL){
+    err("Exact viscoelastic SH FWI requires physical-Q parameterization.");
+}
+if((INVMAT1!=1)&&(INVMAT1!=3)){
+    err("Exact viscoelastic SH FWI supports INVMAT1 == 1 or INVMAT1 == 3 only.");
+}
+if(!READMOD){
+    err("Exact viscoelastic SH FWI requires a loaded physical-Q model.");
+}
+if(GRAVITY!=0){
+    err("Exact viscoelastic SH FWI does not yet support coupled gravity inversion.");
+}
+
+/* The stage parser owns these variables.  Preflight every stage before the
+   first accepted Base can be loaded or changed. */
+FP_stage=fopen(FILEINP1,"r");
+exact_sh_require_collective_success(FP_stage==NULL,
+        "Exact viscoelastic SH FWI cannot open workflow input file.");
+while ((i=fgetc(FP_stage)) != EOF)
+    if (i=='\n') ++stagemax;
+stagemax--;
+fclose(FP_stage);
+MPI_Allreduce(&stagemax,&min_stagemax,1,MPI_INT,MPI_MIN,MPI_COMM_WORLD);
+MPI_Allreduce(&stagemax,&max_stagemax,1,MPI_INT,MPI_MAX,MPI_COMM_WORLD);
+exact_sh_require_collective_success(stagemax<1 || min_stagemax!=max_stagemax,
+        "Exact viscoelastic SH FWI requires the same nonempty workflow on every rank.");
+for(nstage=1;nstage<=stagemax;nstage++){
+    FP_stage=fopen(FILEINP1,"r");
+    exact_sh_require_collective_success(FP_stage==NULL,
+            "Exact viscoelastic SH FWI cannot reopen workflow input file.");
+    read_par_inv_silent(FP_stage,nstage,stagemax);
+    exact_sh_require_config_int("LNORM",LNORM,2,2,nstage);
+    exact_sh_require_config_int("EPRECOND",EPRECOND,0,0,nstage);
+    exact_sh_require_config_int("TIME_FILT",TIME_FILT,0,0,nstage);
+    exact_sh_require_config_int("TIMEWIN",TIMEWIN,0,0,nstage);
+    exact_sh_require_config_int("INV_STF",INV_STF,0,0,nstage);
+    exact_sh_require_config_int("N_ORDER",N_ORDER,0,0,nstage);
+    exact_sh_require_config_int("OFFSET_MUTE",OFFSET_MUTE,0,0,nstage);
+    exact_sh_require_config_int("SPATFILTER",SPATFILTER,0,0,nstage);
+    exact_sh_require_config_int("ROWI",ROWI,0,0,nstage);
+    exact_sh_require_config_int("NORMALIZE",NORMALIZE,0,0,nstage);
+    exact_sh_require_config_int("INV_VS_ITER",INV_VS_ITER,0,1,nstage);
+    exact_sh_require_config_int("INV_RHO_ITER",INV_RHO_ITER,0,1,nstage);
+    exact_sh_require_config_int("INV_QS_ITER",INV_QS_ITER,0,1,nstage);
+    exact_sh_require_config_float("SCALERHO",SCALERHO,1.0f,nstage);
+    exact_sh_require_config_float("SCALEQS",SCALEQS,1.0f,nstage);
+    exact_sh_require_config_float("GAMMA_GRAV",GAMMA_GRAV,0.0f,nstage);
+}
 
 if (MYID == 0){
-   time1=MPI_Wtime(); 
+   time1=MPI_Wtime();
    clock();
 }
 
-/* open log-file (each PE is using different file) */
-/*	fp=stdout; */
-sprintf(ext,".%i",MYID);  
+/* Open the per-rank log and decompose the grid only after configuration
+   validation has succeeded on every rank. */
+sprintf(ext,".%i",MYID);
 strcat(LOG_FILE,ext);
-
 if ((MYID==0) && (LOG==1)) FP=stdout;
 else FP=fopen(LOG_FILE,"w");
 fprintf(FP," This is the log-file generated by PE %d \n\n",MYID);
-
-/* ----------------------- */
-/* define FD grid geometry */
-/* ----------------------- */
-
-/* domain decomposition */
 initproc();
 
 NT=iround(TIME/DT); /* number of timesteps */
@@ -130,30 +306,9 @@ IDXI=1;
 IDYI=1;
 
 NXNYI=(NX/IDXI)*(NY/IDYI);
-SHOTINC=1;
 
 /* use only every DTINV time sample for the inversion */
 DTINV_help=ivector(1,NT);
-
-/* read parameters from workflow-file (stdin) */
-FP_stage=fopen(FILEINP1,"r");
-if(FP_stage==NULL) {
-	if (MYID == 0){
-		printf("\n==================================================================\n");
-		printf(" Cannot open Denise workflow input file %s \n",FILEINP1);
-		printf("\n==================================================================\n\n");
-		err(" --- ");
-	}
-}
-
-/* estimate number of lines in FWI-workflow */
-i=0;
-stagemax=0;
-while ((i=fgetc(FP_stage)) != EOF)
-if (i=='\n') ++stagemax;
-rewind(FP_stage);
-stagemax--;
-fclose(FP_stage);
 
 /* define data structures for PSV problem */
 struct waveSH;
@@ -177,8 +332,6 @@ MPI_Buffer_attach(buff_addr,buffsize);
 /* allocation for request and status arrays */
 req_send=(MPI_Request *)malloc(REQUEST_COUNT*sizeof(MPI_Request));
 req_rec=(MPI_Request *)malloc(REQUEST_COUNT*sizeof(MPI_Request));
-send_statuses=(MPI_Status *)malloc(REQUEST_COUNT*sizeof(MPI_Status));
-rec_statuses=(MPI_Status *)malloc(REQUEST_COUNT*sizeof(MPI_Status));
 
 /* --------- add different modules here ------------------------ */
 ns=NT;	/* in a FWI one has to keep all samples of the forward modeled data
@@ -223,10 +376,6 @@ case 1 : /* particle velocities only */
 /* calculate memory requirements for PSV forward problem */
 mem_fwiPSV(nseismograms,ntr,ns,fdo3,nd,buffsize,ntr_glob);
 
-/* Define gradient formulation */
-/* GRAD_FORM = 2 - stress-velocity gradients for symmetrized impedance matrix */
-GRAD_FORM = 2;
-
 if(GRAVITY==1 || GRAVITY==2){
   
   if(GRAV_TYPE == 1){
@@ -256,6 +405,7 @@ if(FW>0){PML_pro_SH(waveSH_PML.d_x, waveSH_PML.K_x, waveSH_PML.alpha_prime_x, wa
 
 /* allocate memory for SH material parameters */
 alloc_matSH(&matSH);
+alloc_matSH(&exact_trial_material);
 
 /* allocate memory for SH FWI parameters */
 alloc_fwiSH(&fwiSH);
@@ -263,35 +413,20 @@ alloc_fwiSH(&fwiSH);
 /* allocate memory for PSV MPI variables */
 alloc_mpiPSV(&mpiPSV);
 
-/* Variables for l-BFGS method */
-if(GRAD_METHOD==2){
-
-  NLBFGS_class = 3;                 /* number of parameter classes */
-
-  NLBFGS_vec = NLBFGS_class*NX*NY;  /* length of one LBFGS-parameter class */
-  LBFGS_pointer = 1;                /* initiate pointer in the cyclic LBFGS-vectors */
-  
-  y_LBFGS  =  vector(1,NLBFGS_vec*NLBFGS);
-  s_LBFGS  =  vector(1,NLBFGS_vec*NLBFGS);
-
-  q_LBFGS  =  vector(1,NLBFGS_vec);
-  r_LBFGS  =  vector(1,NLBFGS_vec);
-
-  rho_LBFGS = vector(1,NLBFGS);
-  alpha_LBFGS = vector(1,NLBFGS);
-  beta_LBFGS = vector(1,NLBFGS);
-  
-}
-
-/* Variables for PCG method */
-if(GRAD_METHOD==1){
-
-  PCG_class = 3;                 /* number of parameter classes */ 
-  PCG_vec = PCG_class*NX*NY;  	 /* length of one PCG-parameter class */  
- 
-}
-
-taper_coeff=  matrix(1,NY,1,NX);
+exact_base_primary = matrix(1,NY,1,NX);
+exact_base_rho = matrix(1,NY,1,NX);
+exact_base_q = matrix(1,NY,1,NX);
+exact_grad_primary = matrix(1,NY,1,NX);
+exact_grad_rho = matrix(1,NY,1,NX);
+exact_grad_q = matrix(1,NY,1,NX);
+exact_step_primary = matrix(1,NY,1,NX);
+exact_step_rho = matrix(1,NY,1,NX);
+exact_step_q = matrix(1,NY,1,NX);
+exact_trial_primary = matrix(1,NY,1,NX);
+exact_trial_rho = matrix(1,NY,1,NX);
+exact_trial_q = matrix(1,NY,1,NX);
+exact_trial_tau = matrix(1,NY,1,NX);
+exact_peta = vector(1,L);
 
 /* memory for source position definition */
 acq.srcpos1=fmatrix(1,8,1,1);
@@ -309,12 +444,38 @@ MPI_Barrier(MPI_COMM_WORLD);
 
 /* Reading source positions from SOURCE_FILE */ 	
 acq.srcpos=sources(&nsrc);
-nsrc_glob=nsrc;
 
 
 /* create model grids */
-if (READMOD) readmod_visc_SH(matSH.prho,matSH.pu,matSH.ptaus,matSH.peta);
+if (READMOD) readmod_visc_SH(matSH.prho,matSH.pu,matSH.pqs,matSH.ptaus,matSH.peta);
 /*else model(matPSV.prho,matPSV.ppi,matPSV.pu,matPSV.ptaus,matPSV.ptaup,matPSV.peta);*/
+
+/* Establish the disjoint authoritative Base state.  Solver Tau and all
+   material caches are derived from these primary/rho/physical-Q fields. */
+for(exact_j=1;exact_j<=NY;exact_j++){
+    for(exact_i=1;exact_i<=NX;exact_i++){
+        exact_base_primary[exact_j][exact_i]=matSH.pu[exact_j][exact_i];
+        exact_base_rho[exact_j][exact_i]=matSH.prho[exact_j][exact_i];
+        exact_base_q[exact_j][exact_i]=matSH.pqs[exact_j][exact_i];
+    }
+}
+for(exact_l=1;exact_l<=L;exact_l++){
+    exact_peta[exact_l]=matSH.peta[exact_l];
+}
+init_q_tau_mapping(&exact_q_mapping,Q_PARAMETERIZATION_PHYSICAL,L,FL,
+                   Q_APPROX_FMIN,Q_APPROX_FMAX,Q_APPROX_DF);
+
+exact_material_request.primary=exact_base_primary;
+exact_material_request.rho=exact_base_rho;
+exact_material_request.physical_q=exact_base_q;
+exact_material_request.target=&matSH;
+exact_material_request.mechanisms=L;
+exact_material_request.dt=DT;
+exact_material_request.frequencies_hz=FL;
+exact_material_request.peta=exact_peta;
+exact_status=visco_sh_exact_prepare_visco_material(&exact_material_request);
+exact_sh_require_collective_success(exact_status,
+        "Exact SH Base material initialization failed.");
 
 
 /* check if the FD run will be stable and free of numerical dispersion */
@@ -353,8 +514,6 @@ if(GRAVITY==1 || GRAVITY==2){
 
 } 
       
-SHOTINC=1;
-    
 iter_true=1;
 
 /* Begin of FWI-workflow */
@@ -364,19 +523,6 @@ for(nstage=1;nstage<=stagemax;nstage++){
 FP_stage=fopen(FILEINP1,"r");
 read_par_inv(FP_stage,nstage,stagemax);
 /*fclose(FP_stage);*/
-
-if((EPRECOND==1)||(EPRECOND==3)){
-  Ws = matrix(1,NY,1,NX); /* total energy of the source wavefield */
-  Wr = matrix(1,NY,1,NX); /* total energy of the receiver wavefield */
-  We = matrix(1,NY,1,NX); /* total energy of source and receiver wavefield */
-}
-
-/* Variables for PCG method */
-if(GRAD_METHOD==1){  
-  PCG_old  =  vector(1,PCG_vec);
-  PCG_new  =  vector(1,PCG_vec);
-  PCG_dir  =  vector(1,PCG_vec);
-}
 
 FC=FC_END;
 
@@ -416,44 +562,17 @@ while(iter<=ITERMAX){
         
       MPI_Barrier(MPI_COMM_WORLD);
 
-if(GRAD_METHOD==2){
-  
-  /* increase pointer to LBFGS-vector*/
-  if(iter>2){
-    LBFGS_pointer++;
-  }
-  
-  /* if LBFGS-pointer > NLBFGS -> set LBFGS_pointer=1 */ 
-  if(LBFGS_pointer>NLBFGS){LBFGS_pointer=1;}
-
-}
-
 if (MYID==0)
    {
-   time2=MPI_Wtime();
    fprintf(FP,"\n\n\n ------------------------------------------------------------------\n");
    fprintf(FP,"\n\n\n                   TDFWI ITERATION %d \t of %d \n",iter,ITERMAX);
    fprintf(FP,"\n\n\n ------------------------------------------------------------------\n");
    }
 
-/* For the calculation of the material parameters between gridpoints
-   they have to be averaged. For this, values lying at 0 and NX+1,
-   for example, are required on the local grid. These are now copied from the
-   neighbouring grids */
-
-matcopy_SH(matSH.prho,matSH.pu,matSH.ptaus);
-
-
-MPI_Barrier(MPI_COMM_WORLD);
-
-av_mu_SH(matSH.pu, matSH.puip, matSH.pujp, matSH.prho);
-inv_rho_SH(matSH.prho, matSH.prhoi);
-av_tau(matSH.ptaus,matSH.ptausipjp);
-
-/* Preparing memory variables for update_s (viscoelastic) */
-prepare_update_s_visc_SH(matSH.etajm, matSH.etaip, matSH.peta, matSH.fipjp, matSH.pujp, matSH.puip, 
-			 matSH.prho, matSH.ptaus, matSH.ptausipjp, matSH.f, matSH.g, matSH.bip, matSH.bjm, 
-			 matSH.cip, matSH.cjm, matSH.dip, matSH.d, matSH.e); 
+/* Rebuild solver-ready Base material from authoritative physical Q. */
+exact_status=visco_sh_exact_prepare_visco_material(&exact_material_request);
+exact_sh_require_collective_success(exact_status,
+        "Exact SH Base material preparation failed.");
 
 if(iter_true==1){
 
@@ -642,94 +761,57 @@ if(MYID==0){
 /* --------- Calculate gradient and objective function using the adjoint state method ----------------- */
 /* ---------------------------------------------------------------------------------------------------- */
 
-L2sum = grad_obj_sh(&waveSH, &waveSH_PML, &matSH, &fwiSH, &mpiPSV, &seisSH, &seisSHfwi, &acq, hc, iter, nsrc, ns, ntr, ntr_glob, 
-nsrc_glob, nsrc_loc, ntr_loc, nstage, We, Ws, Wr, taper_coeff, hin, DTINV_help, req_send, req_rec);
+memset(&exact_objective_request,0,sizeof(exact_objective_request));
+exact_objective_request.wave=&waveSH;
+exact_objective_request.pml=&waveSH_PML;
+exact_objective_request.material=&matSH;
+exact_objective_request.fwi=&fwiSH;
+exact_objective_request.mpi=&mpiPSV;
+exact_objective_request.seismogram=&seisSH;
+exact_objective_request.legacy_fwi_seismogram=&seisSHfwi;
+exact_objective_request.acquisition=&acq;
+exact_objective_request.hc=hc;
+exact_objective_request.iter=iter;
+exact_objective_request.nsrc=nsrc;
+exact_objective_request.ns=ns;
+exact_objective_request.nrec_local=ntr;
+exact_objective_request.nrec_global=ntr_glob;
+exact_objective_request.hin=1;
+exact_objective_request.dtinv_help=DTINV_help;
+exact_objective_request.source_energy=NULL;
+exact_objective_request.receiver_energy=NULL;
+exact_objective_request.request_send=req_send;
+exact_objective_request.request_receive=req_rec;
+exact_objective_request.grad_primary=exact_grad_primary;
+exact_objective_request.grad_rho=exact_grad_rho;
+exact_objective_request.grad_q=exact_grad_q;
+
+exact_status=visco_sh_exact_objective_gradient(
+        &exact_objective_request,&exact_objective_result);
+exact_sh_require_collective_success(exact_status,
+        "Exact SH objective-gradient evaluation failed.");
+L2sum=exact_objective_result.objective;
+seisSHfwi.L2=L2sum;
 
 L2t[1]=L2sum;
 L2t[4]=L2sum;
 
-/* Interpolate missing spatial gradient values in case IDXI > 1 || IDXY > 1 */
-/* ------------------------------------------------------------------------ */
-
-if((IDXI>1)||(IDYI>1)){
-
-   interpol(IDXI,IDYI,fwiSH.waveconv_u,1);
-   interpol(IDXI,IDYI,fwiSH.waveconv_rho,1);
-
-}
-
-/* assemble SH gradients */
-ass_gradSH_visc(&fwiSH,&matSH,iter);
-
-/* Apply diagonal elements of inverse Pseudo-Hessian to gradients */
-/*if(EPRECOND==4){
-   for (i=1;i<=NX;i=i+IDX){
-       for (j=1;j<=NY;j=j+IDY){
-
-             fwiSH.waveconv_u[j][i] = fwiSH.ihess_vs2[j][i] * fwiSH.waveconv_u[j][i];
-	   fwiSH.waveconv_rho[j][i] = fwiSH.ihess_rho2[j][i] * fwiSH.waveconv_rho[j][i];
-	    fwiSH.waveconv_ts[j][i] = fwiSH.ihess_ts2[j][i] * fwiSH.waveconv_ts[j][i];
-    
-       }
-   }
-}*/
-
-/* Preconditioning of gradients after shot summation and smoothing */
-precond_SH(&fwiSH,&acq,nsrc,ntr_glob,taper_coeff,FP_GRAV);
-
-/* apply 2D Median filter to gradients */
-if(GRAD_FILTER==1){
-    median_model(fwiSH.waveconv_u,FILT_SIZE_GRAD);
-    median_model(fwiSH.waveconv_rho,FILT_SIZE_GRAD);
-}
-
-/* smooth gradients using Gaussian filter */
-smooth_grad(fwiSH.waveconv_u, matSH.pu);
-smooth_grad(fwiSH.waveconv_rho, matSH.pu);
-
-/* Use preconditioned conjugate gradient optimization method */
-if(GRAD_METHOD==1){
-
-    /* calculate steepest descent direction */
-    descent(fwiSH.waveconv_u,fwiSH.gradp_u);
-    descent(fwiSH.waveconv_rho,fwiSH.gradp_rho);
-
-    /* store current gradients in PCG_new vector */
-    store_PCG_SH_visc(PCG_new,fwiSH.gradp_u,fwiSH.gradp_rho,fwiSH.gradp_ts);
-
-    /* apply PCG method */
-    PCG(PCG_new,PCG_old,PCG_dir,PCG_class);
-
-    /* extract CG-search directions */
-    extract_PCG_SH_visc(PCG_dir,fwiSH.waveconv_u,fwiSH.waveconv_rho,fwiSH.waveconv_ts);
-
-    /* store old gradients in PCG_old vector */
-    store_PCG_SH_visc(PCG_old,fwiSH.gradp_u,fwiSH.gradp_rho,fwiSH.gradp_ts);
-
-    /* steepest descent direction -> gradient direction */
-    descent(fwiSH.waveconv_u,fwiSH.waveconv_u);
-    descent(fwiSH.waveconv_rho,fwiSH.waveconv_rho);
-
-}
-
-/* Use l-BFGS optimization */
-if(GRAD_METHOD==2){ 
-
-    /* store models and gradients in l-BFGS vectors */
-    store_LBFGS_SH_visc(taper_coeff, nsrc, acq.srcpos, acq.recpos, ntr_glob, iter, fwiSH.waveconv_u, fwiSH.gradp_u, fwiSH.waveconv_rho, 
-		    fwiSH.gradp_rho, fwiSH.waveconv_ts, fwiSH.gradp_ts, y_LBFGS, s_LBFGS, q_LBFGS, matSH.pu, matSH.prho, matSH.ptaus, NXNYI, LBFGS_pointer, NLBFGS, NLBFGS_vec);
-
-    /* apply l-BFGS optimization */
-    LBFGS(iter, y_LBFGS, s_LBFGS, rho_LBFGS, alpha_LBFGS, q_LBFGS, r_LBFGS, beta_LBFGS, LBFGS_pointer, NLBFGS, NLBFGS_vec);
-
-    /* extract gradients and save old models/gradients for next l-BFGS iteration */
-    extract_LBFGS_SH_visc(iter, fwiSH.waveconv_u, fwiSH.gradp_u, fwiSH.waveconv_rho, fwiSH.gradp_rho, fwiSH.waveconv_ts, fwiSH.gradp_ts, matSH.pu, matSH.prho, matSH.ptaus, r_LBFGS);
-
-}
+memset(&exact_optimizer_boundary,0,sizeof(exact_optimizer_boundary));
+exact_optimizer_boundary.nx=NX;
+exact_optimizer_boundary.ny=NY;
+exact_optimizer_boundary.grad_raw_primary=exact_grad_primary;
+exact_optimizer_boundary.grad_raw_rho=exact_grad_rho;
+exact_optimizer_boundary.grad_raw_q=exact_grad_q;
+exact_optimizer_boundary.optimizer_step_primary=exact_step_primary;
+exact_optimizer_boundary.optimizer_step_rho=exact_step_rho;
+exact_optimizer_boundary.optimizer_step_q=exact_step_q;
+exact_status=visco_sh_exact_build_steepest_subtractive_step(
+        &exact_optimizer_boundary);
+exact_sh_require_collective_success(exact_status,
+        "Exact SH optimizer-boundary construction failed.");
 
 opteps_vs=0.0;
 opteps_rho=0.0;
-opteps_ts=0.0;
 
 /* ============================================================================================================================*/
 /* =============================================== test loop L2 ===============================================================*/
@@ -738,21 +820,80 @@ opteps_ts=0.0;
 /* set min_iter_help to initial global value of MIN_ITER */
 if(iter==1){min_iter_help=MIN_ITER;}
 
-/* Estimate optimum step length ... */
+memset(&exact_trial_state,0,sizeof(exact_trial_state));
+exact_trial_state.nx=NX;
+exact_trial_state.ny=NY;
+exact_trial_state.primary_bounds_enabled=(INVMAT1==1);
+exact_trial_state.primary_lower=VSLOWERLIM;
+exact_trial_state.primary_upper=VSUPPERLIM;
+exact_trial_state.rho_lower=RHOLOWERLIM;
+exact_trial_state.rho_upper=RHOUPPERLIM;
+exact_trial_state.q_lower=QSLOWERLIM;
+exact_trial_state.q_upper=QSUPPERLIM;
+exact_trial_state.q_mapping=&exact_q_mapping;
+exact_trial_state.base_primary=exact_base_primary;
+exact_trial_state.base_rho=exact_base_rho;
+exact_trial_state.base_q=exact_base_q;
+exact_trial_state.optimizer_step_primary=exact_step_primary;
+exact_trial_state.optimizer_step_rho=exact_step_rho;
+exact_trial_state.optimizer_step_q=exact_step_q;
+exact_trial_state.trial_primary=exact_trial_primary;
+exact_trial_state.trial_rho=exact_trial_rho;
+exact_trial_state.trial_q=exact_trial_q;
+exact_trial_state.trial_tau=exact_trial_tau;
 
-/* ... by line search (parabolic fitting) */
-eps_scale = step_length_est_sh(&waveSH,&waveSH_PML,&matSH,&fwiSH,&mpiPSV,&seisSH,&seisSHfwi,&acq,hc,iter,nsrc,ns,ntr,ntr_glob,epst1,L2t,nsrc_glob,nsrc_loc,&step1,&step3,nxgrav,nygrav,ngrav,gravpos,gz_mod,NZGRAV,
-                                ntr_loc,Ws,Wr,hin,DTINV_help,req_send,req_rec);
+memset(&exact_trial_objective,0,sizeof(exact_trial_objective));
+exact_trial_objective.trial_state=exact_trial_state;
+exact_trial_objective.trial_material=&exact_trial_material;
+exact_trial_objective.mechanisms=L;
+exact_trial_objective.dt=DT;
+exact_trial_objective.frequencies_hz=FL;
+exact_trial_objective.peta=exact_peta;
+exact_trial_objective.objective=exact_objective_request;
+exact_trial_objective.objective.material=&exact_trial_material;
+exact_trial_objective.objective.grad_primary=NULL;
+exact_trial_objective.objective.grad_rho=NULL;
+exact_trial_objective.objective.grad_q=NULL;
 
-/* no model update due to steplength estimation failed or update with the smallest steplength if the number of iteration is smaller than the minimum number of iteration per
-frequency MIN_ITER */
-if((iter>min_iter_help)&&(step1==0)){ 
-	eps_scale=0.0;
-	opteps_vp=0.0;
+memset(&exact_line_search,0,sizeof(exact_line_search));
+exact_line_search.trial_objective=exact_trial_objective;
+exact_line_search.base_objective=L2sum;
+exact_line_search.initial_alpha=EPS_SCALE;
+exact_line_search.scale_factor=SCALEFAC;
+exact_line_search.max_retries=STEPMAX;
+exact_status=step_length_est_sh_visc_exact(
+        &exact_line_search,&exact_line_search_result);
+exact_sh_require_collective_success(exact_status,
+        "Exact physical-Q SH line search failed.");
+
+/* Rebuild the selected accepted state through B2, then reconcile all ranks
+   before committing any authoritative Base cell. */
+exact_trial_state.alpha=exact_line_search_result.selected_alpha;
+exact_status=visco_sh_exact_build_trial_parameter_state(&exact_trial_state);
+exact_sh_require_collective_success(exact_status,
+        "Exact SH accepted Trial construction failed.");
+
+for(exact_j=1;exact_j<=NY;exact_j++){
+    for(exact_i=1;exact_i<=NX;exact_i++){
+        exact_base_primary[exact_j][exact_i]=exact_trial_primary[exact_j][exact_i];
+        exact_base_rho[exact_j][exact_i]=exact_trial_rho[exact_j][exact_i];
+        exact_base_q[exact_j][exact_i]=exact_trial_q[exact_j][exact_i];
+    }
 }
-else{
-	opteps_vp=eps_scale;
-}
+
+/* Regenerate accepted Tau, halos, and material caches solely from Base Q. */
+exact_status=visco_sh_exact_prepare_visco_material(&exact_material_request);
+exact_sh_require_collective_success(exact_status,
+        "Exact SH accepted Base material rebuild failed.");
+
+eps_scale=exact_line_search_result.selected_alpha;
+opteps_vp=eps_scale;
+step3=0;
+epst1[1]=0.0f;
+epst1[2]=eps_scale;
+epst1[3]=eps_scale;
+L2t[2]=exact_line_search_result.selected_objective;
+L2t[3]=exact_line_search_result.selected_objective;
 
 /* write log-parameter files */
 if(MYID==0){
@@ -784,16 +925,6 @@ else{
 
 /* saving history of final L2*/
 L2_hist[iter]=L2t[4];
-s=0;
-
-/* calculate optimal change in the material parameters */
-eps_true=calc_mat_change_test_SH_visc(fwiSH.waveconv_rho,fwiSH.waveconv_u,fwiSH.waveconv_ts,fwiSH.prho_old,matSH.prho,fwiSH.pu_old,matSH.pu,fwiSH.ptaus_old,matSH.ptaus,iter,1,eps_scale,0);
-
-/* apply 2D Median filter to velocity and density model */
-if(MODEL_FILTER==1){
-    median_model(matSH.prho,FILT_SIZE);
-    median_model(matSH.pu,FILT_SIZE);
-}
 
 if(MYID==0){	
 /*	fprintf(FPL2,"=============================================================\n");
@@ -826,22 +957,12 @@ diff=fabs((L2_hist[iter-2]-L2_hist[iter])/L2_hist[iter-2]);
         
         	/* output of the model at the end of given FWI stage */
 		if(INV_MOD_OUT==0){
-        	    model_freq_out_SH_visc(matSH.prho,matSH.pu,matSH.ptaus,nstage,FC);
+		    model_freq_out_SH_visc(exact_base_rho,exact_base_primary,exact_base_q,nstage,FC);
 		}
 
-		s=1;
 		min_iter_help=0;
 		min_iter_help=iter+MIN_ITER;
 		iter=0;
-
-        	if(GRAD_METHOD==1){
-	  		zero_PCG(PCG_old, PCG_new, PCG_dir, PCG_vec);
-		}
-
-        	if(GRAD_METHOD==2){
-	  		zero_LBFGS(NLBFGS, NLBFGS_vec, y_LBFGS, s_LBFGS, q_LBFGS, r_LBFGS, alpha_LBFGS, beta_LBFGS, rho_LBFGS);
-          		LBFGS_pointer = 1;  
-		}
 
         	if(MYID==0){
 			if(step3==1){
@@ -858,7 +979,7 @@ diff=fabs((L2_hist[iter-2]-L2_hist[iter])/L2_hist[iter-2]);
 
 /* output of the model after each FWI iteration */
 if(INV_MOD_OUT==1){
-    model_it_out_SH_visc(matSH.prho,matSH.pu,matSH.ptaus,nstage,iter,FC);
+    model_it_out_SH_visc(exact_base_rho,exact_base_primary,exact_base_q,nstage,iter,FC);
 }
 
 iter++;
@@ -868,26 +989,28 @@ iter_true++;
 } /* end of fullwaveform iteration loop*/
 /* ====================================== */
 
-/* Deallocate PCG vectors */
-if(GRAD_METHOD==1){
-  free_vector(PCG_old,1,PCG_vec);
-  free_vector(PCG_new,1,PCG_vec);
-  free_vector(PCG_dir,1,PCG_vec);
-}
-
-/* Deallocate EPRECOND matrices */
-if(EPRECOND==1 || EPRECOND==3){
-   free_matrix(Ws,1,NY,1,NX);
-   free_matrix(Wr,1,NY,1,NX);
-   free_matrix(We,1,NY,1,NX);
-}
-
 } /* End of FWI-workflow loop */
 
 /* deallocate memory for SH forward problem */
 dealloc_SH(&waveSH,&waveSH_PML);
 
 /* deallocation of memory */
+free_matrix(exact_base_primary,1,NY,1,NX);
+free_matrix(exact_base_rho,1,NY,1,NX);
+free_matrix(exact_base_q,1,NY,1,NX);
+free_matrix(exact_grad_primary,1,NY,1,NX);
+free_matrix(exact_grad_rho,1,NY,1,NX);
+free_matrix(exact_grad_q,1,NY,1,NX);
+free_matrix(exact_step_primary,1,NY,1,NX);
+free_matrix(exact_step_rho,1,NY,1,NX);
+free_matrix(exact_step_q,1,NY,1,NX);
+free_matrix(exact_trial_primary,1,NY,1,NX);
+free_matrix(exact_trial_rho,1,NY,1,NX);
+free_matrix(exact_trial_q,1,NY,1,NX);
+free_matrix(exact_trial_tau,1,NY,1,NX);
+free_vector(exact_peta,1,L);
+exact_sh_free_material(&exact_trial_material,nd,NX,NY,L);
+
 free_matrix(fwiSH.Vs0,-nd+1,NY+nd,-nd+1,NX+nd);
 free_matrix(fwiSH.Rho0,-nd+1,NY+nd,-nd+1,NX+nd);
 free_matrix(fwiSH.Taus0,-nd+1,NY+nd,-nd+1,NX+nd);
@@ -949,12 +1072,6 @@ if(EPRECOND==4){
    free_matrix(fwiSH.hess_tsrho,-nd+1,NY+nd,-nd+1,NX+nd);   
 }
 
-if (nsrc_loc>0){	
-	free_matrix(acq.signals,1,nsrc_loc,1,NT);
-	free_matrix(acq.srcpos_loc,1,8,1,nsrc_loc);
-	free_matrix(acq.srcpos_loc_back,1,6,1,nsrc_loc);
-}		   
-
  /* free memory for global source positions */
  free_matrix(acq.srcpos,1,8,1,nsrc);
 
@@ -1004,6 +1121,7 @@ if (nsrc_loc>0){
  free_ivector(DTINV_help,1,NT);
  
  /* free memory for viscoelastic modeling variables */ 
+free_matrix(matSH.pqs,-nd+1,NY+nd,-nd+1,NX+nd);
 free_matrix(matSH.ptaus,-nd+1,NY+nd,-nd+1,NX+nd);
 free_matrix(matSH.ptausipjp,-nd+1,NY+nd,-nd+1,NX+nd);
 free_vector(matSH.peta,1,L);

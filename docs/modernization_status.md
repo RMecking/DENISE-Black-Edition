@@ -1,0 +1,434 @@
+# DENISE Modernization Status
+
+## Purpose
+
+This document is the concise modernization ledger. It records published and
+locked checkpoints, the active milestone, the next planned checkpoint,
+durable acceptance criteria, intentionally unresolved RED evidence, and the
+roadmap state. It does not replace detailed design/audit documents or Git
+history.
+
+## Source-of-truth hierarchy
+
+1. Published Git objects and exact commit SHAs are authoritative for what was
+   committed.
+2. Frozen/versioned tests, validation artifacts, and acceptance contracts are
+   authoritative for the mathematical or verification claims they define.
+3. Detailed milestone design and audit documents provide rationale and
+   context.
+4. This ledger summarizes those sources.
+5. Chat and Codex reports are working context, not authoritative publication
+   evidence.
+
+## Repository workflow
+
+- Integration branch: `modernization`
+- Current feature branch: `codex/m6.3c-visco-sh-discrete-adjoint-gradient`
+- Published frontier: `05a2af16e9d46cc9491296e37ef5717a740cb512`
+- Current milestone status: **M6.3 SCIENTIFICALLY COMPLETE**
+
+## Locked M6.3 checkpoints
+
+| Checkpoint | Published SHA | Role |
+| --- | --- | --- |
+| M6.3a | `a4d2ca176f518a8414aa95aef256265dd89fa567` | Viscoelastic SH FWI attenuation-inversion audit/design |
+| M6.3b | `8c1bfc9c5a5c9f39396b9be5030464f683d3ab5d` | Frozen typed RED attenuation-FWI oracles |
+| M6.3c-0 | `b1ec01b4fe14cb7dee7f0b92bbe0592e8b16f07a` | Frozen M6.3c discrete-adjoint acceptance contract |
+| M6.3c-0a | `006c7e0df47d0f7fcd04d242a12058cc3622dc7c` | Acceptance-contract nomenclature clarification only |
+| M6.3c-1 | `0782cc30e011f62065436435c22a6516c79a9045` | Exact local viscoelastic GSLS VJP |
+| M6.3c-1p | `22a2dec5bb415f87f2534fc71b8203885b2939dd` | Anchor M6.3b provenance guard to its historical publication snapshot |
+| M6.3c-2 | `cd7ffc82f6e6e87483c868d509d24b734bbd9f9f` | Exact stress-side spatial derivative and CPML transpose |
+| M6.3c-3 | `fa58413fdb2ce0f1c5cca7af8fe2e50dc4ee8696` | Exact velocity-side adjoint primitives |
+| M6.3c-4 | `6281219308731bd5e251a3226a372506cd137ba1` | Exact MPI-exchange and free-surface adjoint primitives |
+| M6.3c-5a | `52fcc03c8bbdb2fbae3c40c6b7fc9cf67d2c1e54` | Exact full-state transpose of one fixed-material viscoelastic SH timestep |
+| M6.3c-5b | `39be93f1c817ced7489d036f22001cf8437434e3` | Exact reverse-time composition of the fixed-material viscoelastic SH adjoint over the full time axis |
+| M6.3c-6a | `e855d1b2feb9dc468ad3af3303727e5a52ce3007` | Exact local SH material-map VJPs and physical parameter-chain verification |
+| M6.3c-6b | `8a708de5c9a03a9c3d22bf199d3697f047ca7d5a` | Exact distributed SH material-map transpose across MPI seams and corners |
+| M6.3c-7a | `8f711dfbe1bb32af34120a5cb80800082ce76e41` | Exact forward material-observable trajectory from the viscoelastic SH forward path |
+| M6.3c-7b | `f128dfa0a563f334116da1c58c746da9eaf2b6fa` | Exact local per-timestep native material sensitivities |
+| M6.3c-7c-a | `77a20dd8d81de6f444e3292f438626bc0b2a48a3` | Temporal reduction and exact distributed mapping of prescribed per-timestep sensitivities to owned physical gradients |
+| M6.3c-7c-b1 | `f67daaff71f98b1f7ef048821175b56e9ea73ac8` | Exact single-step bridge from real forward observables and aligned adjoint cotangents to native material sensitivities |
+| M6.3c-7c-b2 | `dc37e0602c92c3bfc76600f2a32eac691ca69941` | Historical multi-step reverse-time material-gradient assembly under the then-current temporal contract |
+| M6.3c-7d-a RED | `dd787f01f3db32bcff4c83ce5328c615fda0b19a` | Real-objective directional-FD falsification exposing an erroneous extra `DT` scaling in the assembled material gradient |
+| M6.3c-C7c-r1 | `fe60e9b858585421f3dbaefca77e53e419b81e20` | Correct discrete-objective temporal material-gradient normalization for `DTINV==1` |
+| M6.3c-7d-b1 | `f0f1516a3862c18de1b0f6378599700a4d719d82` | Single-rank end-to-end objective directional-FD validation of all physical material channels and parameterizations |
+| M6.3c-7d-b2 | `e0cfe59afbf9eb77ab7ea8b1fd097af6fff69de3` | Distributed and boundary end-to-end objective directional-FD validation across representative MPI, free-surface, and active CPML configurations |
+
+M6.3c-2 composes the locked C1 GSLS VJP with the exact staggered FD
+transpose and stress-side CPML temporal-state transpose. Its coverage includes
+FDORDER 2/4/6/8/10/12, CPML left/right/top/bottom/corner cases, and
+FREE_SURF top-CPML selection behavior.
+
+Locked local thresholds:
+
+```text
+C2_DOUBLE_DOT_RELATIVE_MAX = 5.0e-12
+C2_DOUBLE_REFERENCE_RELATIVE_MAX = 5.0e-12
+```
+
+Publication-gate evidence maxima:
+
+| Measurement | Maximum |
+| --- | ---: |
+| Standalone CPML dot residual | `1.632922442287044e-16` |
+| Standalone spatial dot residual | `3.866498983147064e-16` |
+| Full stress-side block dot residual | `3.900895271804678e-14` |
+| C vs independent-reference relative error | `2.7209690178180662e-16` |
+
+M6.3c-3 provides the locked velocity-side discrete-adjoint primitives for
+the velocity-update transpose, velocity-side CPML temporal-state transpose,
+receiver-sampling transpose, and source-injection transpose. It does not yet
+close or activate the full global production adjoint. M6.3c-4 provides the
+exact transposes for MPI velocity and stress exchange and for velocity and
+stress free-surface completion. Its verification includes actual multi-rank
+MPI dot-product tests and comparisons with an independent reference.
+
+M6.3c-5a composes the locked C1--C4 primitives into the exact transpose of one
+complete fixed-material viscoelastic SH propagation timestep. The propagated
+state comprises `vz`, `sxz`, `syz`, the GSLS memory variables `r` and `q`, and
+the stress-side and velocity-side CPML states. In reverse order, the composed
+operator covers receiver sampling, stress MPI exchange, free-surface stress
+completion, the viscoelastic GSLS/stress update with spatial-derivative and
+CPML transposes, free-surface velocity completion, velocity MPI exchange, the
+velocity update, and source injection.
+
+C5a is not the active production FWI adjoint. It provides neither a reverse-
+time driver over the full time axis nor a switch of `grad_obj_sh` or the
+existing FWI path to the new operator. Material gradients and the complete
+`mu`/`rho`/`tau`/`Q` chain, optimizer integration, and model update remain
+later work.
+
+M6.3c-5b composes the locked C5a single-step operator over multiple timesteps
+in reverse temporal order and propagates the complete cotangent state backward
+over the full time axis. Receiver cotangents are injected at their associated
+timesteps, while source cotangents are returned for every chronological
+forward timestep. The initial-state cotangent is placed unambiguously in the
+designated output state for both even and odd timestep counts. C5b remains a
+fixed-material operator: it accumulates no material gradients and is not yet
+connected to the active SH FWI path.
+
+M6.3c-6a closes the local material-parameter transpose for the viscoelastic
+SH path. It provides the exact harmonic-average VJP used by `av_mu_SH`, the
+`av_tau` transpose, the piecewise `rho -> rhoi` VJP, velocity-update
+coefficient sensitivity with respect to `rhoi`, and the exact legacy and
+physical-Q `Q -> tau` derivatives. The complete local 2x2 parameter map is
+verified by dot-product tests, an independent analytic reference, and finite
+differences for the audited `INVMAT1==1` (`Vs`, `rho`, `Q`) and `INVMAT1==3`
+(`mu`, `rho`, `Q`) material modes. C6a is local only: it does not transpose
+the distributed `matcopy_SH` operation or accumulate production gradients
+over time.
+
+M6.3c-6b implements the exact transpose of the production `matcopy_SH`
+material exchange. It transposes the actual vertical-then-horizontal cyclic
+forward exchange in horizontal-then-vertical reverse order, accumulates
+returned cotangents into their source cells, consumes overwritten halo
+cotangents, and preserves diagonal-corner provenance. Verification covers
+self-neighbour and multi-rank MPI topologies and composes the locked C6a local
+VJPs for `INVMAT1==1` and `INVMAT1==3` with legacy and physical Q. All
+material channels, including `bar_Q`, are independently checked with
+channel-specific normalization. C6b reproduces the existing cyclic
+`matcopy_SH` topology exactly; it does not redesign its forward boundary
+semantics.
+
+C6 is complete. C6a and C6b together close the spatial material-parameter
+transpose from staggered viscoelastic SH coefficient sensitivities to owned
+`Vs`/`rho`/`Q` parameters for `INVMAT1==1` and `mu`/`rho`/`Q` parameters for
+`INVMAT1==3`, including local nonlinear maps, staggered averaging, MPI seams,
+and MPI corners. This is not yet the production FWI gradient because temporal
+integration with the forward trajectory remains to be implemented.
+
+M6.3c-7a provides the exact forward material-observable trajectory required
+by the later material VJP. It passively captures the corrected stress
+divergence `qsum` at the velocity update and the CPML-corrected strains
+`strain_x` and `strain_y` at the viscoelastic constitutive update. These are
+the three frozen forward-observable sampling contracts in the real
+viscoelastic SH forward timestep. C7a neither assembles a material gradient
+nor changes the active FWI or gradient paths.
+
+M6.3c-7b combines the locked C7a observables `qsum`, `strain_x`, and
+`strain_y` with the time-aligned reverse-time cotangents at the outputs of
+the material-dependent velocity and constitutive updates. For one physical
+timestep it returns the native sensitivities `bar_rhoi`, `bar_mu_x`,
+`bar_mu_y`, `bar_tau_x`, and `bar_tau_y`. The density contribution is exactly
+`(DT / DH) * qsum * bar_v_post-velocity`, with no additional `rhoi` factor.
+The stress and memory contributions reuse the locked C1 GSLS VJP rather than
+deriving a second GSLS adjoint.
+
+C7b performs no multi-step temporal accumulation or `DT * DTINV` gradient
+quadrature, no C6 mapping to owned physical `Vs`/`mu`, `rho`, and `Q`
+parameters, no model-level tau-to-Q composition, no objective directional-FD
+verification, and no integration into the active FWI or line-search path.
+
+M6.3c-7c-a independently validated that its then-assumed temporal reduction
+and exact distributed mapping were implemented as specified for prescribed
+C7b per-timestep native sensitivities. That historical checkpoint applied
+the assumed outer weight `DT * DTINV` before the exact C6b distributed
+material transpose and locked C6a native-to-physical mapping. C7d-a later
+falsified that temporal assumption against the real discrete objective;
+C7c-r1 corrects the verified `DTINV==1` path without rewriting the published
+C7c-a commit or its historical evidence.
+
+C7c-b is complete. C7c-b1 bridges the locked real C7a observables `qsum`,
+`strain_x`, and `strain_y` with the exactly time-aligned cotangents of the
+locked C5 reverse step. Through the locked C7b VJP it produces the five
+native sensitivities `g_rhoi`, `g_mu_x`, `g_mu_y`, `g_tau_x`, and `g_tau_y`
+for one physical timestep without changing the fixed-material C5 state
+transpose.
+
+C7c-b2 composes that bridge over the real reverse-time trajectory. At each
+physical reverse timestep it uses the corresponding C7a observable set and
+the time-aligned C5 cotangents to produce the five C7b per-step material
+VJPs. For the corrected `DTINV==1` contract, C7c-r1 sums those contributions
+directly over the discrete timesteps, with no additional temporal `DT`
+scaling, and then applies the locked distributed C6 material transpose
+exactly once. The result is an owned `Vs`/`rho`/`Q` gradient for
+`INVMAT1==1` or an owned `mu`/`rho`/`Q` gradient for `INVMAT1==3`. Q remains
+mapped only after `matcopy_SH_adjoint` through the corresponding locked
+tau/Q chain rule.
+
+For a supplied receiver-cotangent series and its corresponding real C7a
+forward-observable trajectory, the multi-step viscoelastic SH reverse-time
+adjoint therefore assembles the directly summed and distributed owned
+`Vs`/`mu`, `rho`, and `Q` material gradient for `DTINV==1`, while preserving
+the locked fixed-material state transpose. No end-to-end objective-gradient
+weighting has been established for `DTINV>1`; neither `DTINV` nor
+`DT * DTINV` may be inferred as the correct weight without separate proof.
+
+C7d is complete for the verified `DTINV==1` discrete viscoelastic SH L2
+objective. C7d-a first supplied real-objective falsification evidence:
+`D_ad / D_fd ~= DT` with `DT = 0.0013`, caused by an erroneous additional
+outer `DT` scaling in C7c. C7c-r1 removed that scaling without rewriting the
+historical RED checkpoint, after which the same frozen C7d-a gate passed
+without a fitted sign, scale, or time shift.
+
+C7d-b1 then closed the complete single-rank physical parameter matrix. For
+`INVMAT1==3`, it verifies separate `mu`, `rho`, legacy-Q, and physical-Q
+directions and combined `mu + rho + Q` directions under both Q mappings. For
+`INVMAT1==1`, it verifies the corresponding `Vs`, `rho`, legacy-Q, physical-Q,
+and combined `Vs + rho + Q` directions. The `INVMAT1==1` rho derivative
+therefore includes both `rho -> rhoi` and `rho -> mu = rho * Vs^2` end to end.
+On the FD side, owned physical Q is perturbed before `q_to_tau`; on the
+adjoint side, `bar_tau` is mapped by the locked `q_to_tau_derivative` for both
+`tau = 2/Q` and `tau = 1/(aQ+b)`.
+
+C7d-b2 extends that objective gate to representative distributed and boundary
+configurations:
+
+| Case | Configuration | Direction | Maximum acceptance-window error |
+| --- | --- | --- | ---: |
+| Horizontal MPI seam | 2x1, `INVMAT1==3`, physical Q, `FREE_SURF=0`, `FW=0` | combined `mu + rho + Q` | `2.320199816e-03` |
+| Vertical MPI seam | 1x2, `INVMAT1==1`, legacy Q, `FREE_SURF=0`, `FW=0` | rho | `9.367225066e-05` |
+| 2x2 MPI corner | 2x2, `INVMAT1==3`, physical Q, `FREE_SURF=0`, `FW=0` | Q | `1.071973111e-04` |
+| Free surface | 1x1, `INVMAT1==1`, physical Q, `FREE_SURF=1`, `FW=0` | Vs | `5.704538780e-04` |
+| Active CPML | 1x1, `INVMAT1==3`, physical Q, `FREE_SURF=0`, `FW=3` | combined `mu + rho + Q` | `3.670866203e-04` |
+| Combined integration | 2x2, `INVMAT1==1`, physical Q, `FREE_SURF=1`, `FW=3` | combined `Vs + rho + Q` | `4.073662730e-04` |
+
+The multi-rank objective is `MPI_Allreduce(sum, J_local)`, with receiver data
+owned only by the receiver rank. The adjoint directional derivative contracts
+only owned physical cells and is then globally summed; halo and ghost cells
+are excluded. Model, truth, and direction patterns use global model
+coordinates. MPI cases demonstrated nonzero remote receiver traces and
+directions on every participating rank. Free-surface cases used shallow
+sources, receivers, and nonzero near-surface directions. CPML cases used a
+representative active nontrivial coefficient configuration with finite
+coefficients, nonzero velocity- and stress-side states, and non-overlapping
+same-axis regions. The active-CPML case reached approximately `7299.8296` in
+the velocity-side state family and `3.52388e-4` in the stress-side family;
+the non-overlap margins were positive at X=`10` and Y=`12`. Each b2 case was
+run twice with identical decoded results.
+
+The CPML evidence validates the executed forward/adjoint operators under that
+representative active configuration. It does not independently validate
+`PML_pro()` or arbitrary production CPML parameter choices. C7d also makes no
+claim for `DTINV>1`, opposing same-axis CPML overlap, active FWI integration,
+line search, optimizer, model update, or a complete active-path Q-inversion
+workflow.
+
+For the verified `DTINV==1` discrete viscoelastic SH L2 objective, the
+corrected exact material-gradient chain therefore satisfies independent
+central directional finite-difference checks for the complete physical
+`Vs`/`mu`, `rho`, and Q parameterizations and for representative MPI,
+free-surface, and active nontrivial CPML configurations, without fitted sign,
+scale, or time shift.
+
+## Open integration risks / preconditions
+
+The current local adjoint CPML helpers do not treat simultaneous CPML
+activation on both sides of the same axis as a normal case and reject such
+same-axis overlap configurations. The current production forward code can in
+principle execute both corresponding CPML `if` branches sequentially when the
+opposing CPML activation regions overlap. The existing geometry check only
+verifies that `FW` does not exceed the minimum local domain dimension; it does
+not guarantee that opposing CPML activation regions on an axis are disjoint.
+
+Before a final global-exactness claim, one of the following must therefore be
+decided and verified explicitly:
+
+1. prohibit such domain-decomposition geometries as a production
+   precondition; or
+2. implement the exact sequential transpose of the overlapping forward CPML
+   operations.
+
+This remains an open integration/precondition issue, not a retrospective
+M6.3c-2 publication blocker. It is not repaired in this documentation-only
+checkpoint.
+
+## Frozen M6.3 provenance hashes
+
+| Artifact | SHA-256 |
+| --- | --- |
+| M6.3a audit | `03c757210f0b86db5be82cd0dbe3f6650ce9115c2933926ccda9c5f2f1bca28a` |
+| M6.3b validation | `15a8b21077f03e902d2edc735941442b384935431b749540401a0d018e5e0552` |
+| M6.3b instrumentation | `84a821686303b9b8166ec884b381348900e7158f074dc57259d12142a0d991cd` |
+
+## Frozen M6.3c acceptance
+
+- Local Python/C operator-transpose closure must be at machine-precision
+  scale where applicable.
+- The eventual production global float32 adjoint-dot relative residual must
+  be at most `1e-5`.
+- For the verified `DTINV==1`, `LNORM==2`, `GRAD_FORM==2` discrete SH L2
+  objective, `r[n] = synthetic[n] - observed[n]`,
+  `J = 0.5 * sum_receivers sum_n r[n]^2`, and
+  `bar_receiver[n] = r[n]`. The first residual sample is zero under the
+  production contract.
+- Material sensitivities are accumulated as
+  `g_total = sum_n g_step[n]`, with no additional outer `DT` or
+  `DT * DTINV` scaling. Operator-level `dt` factors inside the discrete
+  forward Jacobians remain unchanged.
+- Every objective directional-FD case evaluates epsilon values `1e-2`,
+  `3e-3`, `1e-3`, and `3e-4`. The common, non-case-specific float32
+  acceptance window is `epsilon = {1e-2, 3e-3}` with relative error at most
+  `5e-3`; the smaller values remain mandatory diagnostics rather than global
+  acceptance points.
+- C7d-b2 additionally requires demonstrated activation of the intended MPI,
+  free-surface, or CPML mechanism, not merely numerical FD agreement.
+- No exactness claim is made for DTINV>1 until separately demonstrated.
+- The viscoelastic base objective and zero-step trial objective must use the
+  same physics and agree to relative `1e-12` or better.
+- No fitted sign, temporal shift, empirical scale factor, or case-specific
+  epsilon selection is allowed.
+
+## Resolved falsification evidence
+
+C7d-a at `dd787f01f3db32bcff4c83ce5328c615fda0b19a` froze a real
+single-rank, heterogeneous mu-only `INVMAT1==3`, `DTINV==1`, `LNORM==2`
+objective-directional-FD experiment. The production contract was
+`J = 0.5 * sum_n r[n]^2`, with `r[n] = synthetic[n] - observed[n]` and
+receiver cotangent `bar_receiver[n] = r[n]`; neither objective nor receiver
+cotangent contained an extra `DT`. Before C7c-r1, the complete predefined
+epsilon series reproducibly yielded `D_ad / D_fd ~= DT`, with
+`DT = 0.0013`, without a fitted sign, scale, or time shift.
+
+C7c-r1 at `fe60e9b858585421f3dbaefca77e53e419b81e20` removed that
+erroneous outer `DT` scaling. It distinguishes the operator-level `dt`
+factors already contained in the discrete C7b update Jacobians from the
+objective sample weighting: for the verified `DTINV==1` path,
+`g_total = sum_n g_step[n]`.
+
+The unchanged C7d-a acceptance gate then produced these relative errors:
+
+| Epsilon | Relative error |
+| ---: | ---: |
+| `1.0e-2` | `1.2750705797569411e-05` |
+| `3.0e-3` | `1.7147288560645724e-04` |
+| `1.0e-3` | `2.7921168943080390e-04` |
+| `3.0e-4` | `4.5648788994939954e-04` |
+
+The maximum `4.5648788994939954e-04` is below the frozen `5e-3` limit.
+Thus, for this verified configuration, the exact assembled mu material
+gradient agrees with the independently evaluated central finite-difference
+derivative of the real discrete receiver-data objective without fitted sign,
+scale, or time shift. C7d-a remains a published falsification checkpoint,
+not a permanent XFAIL and not a complete C7d matrix.
+
+## Known intentional RED/XFAIL evidence
+
+Two M6.3b baseline XFAILs remain intentionally frozen until the corresponding
+later production defects are repaired:
+
+1. the production global adjoint-dot defect;
+2. the disconnected/incomplete Q/tau gradient baseline.
+
+These are historical RED evidence, not current test-suite regressions. Later
+post-repair GREEN tests do not rewrite this frozen baseline.
+
+## Roadmap
+
+### Done / locked
+
+- C0 acceptance contract
+- C1 local GSLS VJP
+- C2 stress-side spatial derivative and CPML transpose
+- C3 velocity-side transpose and receiver-sampling/source-injection transpose
+  primitives
+- C4 MPI-exchange and free-surface transpose primitives
+- C5a exact full-state transpose of one fixed-material viscoelastic SH
+  propagation timestep
+- C5b full reverse-time fixed-material viscoelastic SH adjoint driver
+- C6a exact local material-map VJPs and physical parameter-chain verification
+- C6b exact distributed material-map transpose across MPI seams and corners
+- C7a exact forward material-observable trajectory
+- C7b exact local per-timestep native material sensitivities
+- C7c-a temporal reduction and exact distributed mapping of prescribed
+  per-timestep sensitivities to owned physical gradients
+- C7c-b1 exact single-step bridge from real forward observables and aligned
+  adjoint cotangents to native material sensitivities
+- C7c-b2 multi-step reverse-time assembly of temporally reduced distributed
+  `Vs`/`mu`, `rho`, and `Q` material gradients for `DTINV==1`
+- C7d-a real-objective mu directional-FD falsification checkpoint
+- C7c-r1 corrected discrete-objective temporal gradient normalization and
+  successful rerun of the frozen C7d-a gate
+- C7d-b1 complete single-rank end-to-end physical `Vs`/`mu`, `rho`, and Q
+  objective directional-FD matrix for legacy and physical Q
+- C7d-b2 distributed and boundary objective directional-FD matrix across
+  representative MPI seams/corners, free surface, active CPML, and their
+  combined composition
+- C7d complete for the frozen `DTINV==1` discrete viscoelastic SH L2
+  objective contract
+
+## M6.3 scientific closeout
+
+At the published frontier `05a2af16e9d46cc9491296e37ef5717a740cb512`, M6.3
+is **SCIENTIFICALLY COMPLETE**. The completed progression comprises exact
+gradient/adjoint closure; C8c active physical-Q integration; exact
+steepest-descent line search; accepted-model lifecycle with Q-to-Tau
+regeneration; physical-Q persistence/readback; and the configuration contract.
+Together with the committed exact-gradient, active-driver, line-search,
+persistence, and configuration-contract oracles, this closes the scientific
+end-to-end requirement.
+
+An independent, uncommitted 32x32 synthetic experiment at that frontier
+provides supplementary closure evidence: eight accepted exact
+steepest-descent iterations reduced the objective from `1.394873e-05` to
+`1.221404e-06` (approximately 91%), with every accepted objective decreasing
+and the strongest final update inside the true Q anomaly. It is short-horizon
+evidence of stable and physically directed inversion behavior, not a claim of
+complete Q-anomaly reconstruction. Its raw runtime artifact is not committed.
+
+Frozen C8a/M6.3b RED inventories and their oracle meanings are unchanged;
+they are historical frozen evidence superseded by the subsequently verified
+implementation. The essential physical-Q update lifecycle was delivered by
+C8c/B5, so no new mandatory M6.3d phase is required.
+
+### Non-blocking future work
+
+- Physical-Q-safe PCG/L-BFGS
+- True simultaneous-source inversion
+- Exact-path filters, tapers, and preconditioning
+- Time-window, filter, and STF extensions
+- Delayed-activation and scaling extensions
+- Full optimizer/workflow checkpoint-restart
+
+## Update policy
+
+- Update this ledger after an independently verified substantive
+  modernization publication lock or a material roadmap decision, not for
+  every local/uncommitted iteration.
+- A documentation-only commit that updates this ledger or its review policy
+  does not itself require another self-referential ledger update.
+- Published SHAs must never be silently rewritten.
+- If a checkpoint is superseded or corrected, record the new checkpoint
+  rather than altering history.
+- Detailed test logs belong in verification evidence, not in this concise
+  ledger.

@@ -219,7 +219,9 @@ DENISE += alloc_fwiSH.c \
 	  dealloc_SH.c \
 	  eprecond_SH.c \
 	  exchange_s_SH.c \
+	  exchange_s_SH_adjoint.c \
 	  exchange_v_SH.c \
+	  exchange_v_SH_adjoint.c \
 	  extract_LBFGS_SH.c \
 	  extract_LBFGS_SH_visc.c \
 	  extract_PCG_SH.c \
@@ -230,8 +232,18 @@ DENISE += alloc_fwiSH.c \
 	  FWI_SH_visc.c \
 	  grad_obj_sh.c \
 	  grad_obj_sh_visc.c \
+	  grad_obj_sh_visc_exact.c \
+	  grad_obj_sh_visc_exact_shot.c \
+	  obj_sh_visc_exact.c \
+	  obj_sh_visc_exact_shot.c \
+	  obj_sh_visc_exact_trial.c \
+	  visco_sh_exact_optimizer_boundary.c \
+	  visco_sh_exact_trial_state.c \
+	  visco_sh_exact_material_preparation.c \
+	  step_length_est_sh_visc_exact.c \
 	  matcopy_elastic_SH.c \
 	  matcopy_SH.c \
+	  matcopy_SH_adjoint.c \
 	  mem_SH.c \
 	  model_freq_out_SH.c \
 	  model_freq_out_SH_visc.c \
@@ -251,6 +263,7 @@ DENISE += alloc_fwiSH.c \
 	  sh.c \
 	  sh_visc.c \
 	  surface_elastic_SH.c \
+	  surface_elastic_SH_adjoint.c \
           step_length_est_sh.c \
 	  stf_sh.c \
 	  store_LBFGS_SH.c \
@@ -260,7 +273,17 @@ DENISE += alloc_fwiSH.c \
           store_pseudo_hess_SH.c \
 	  update_s_elastic_PML_SH.c \
 	  update_s_visc_PML_SH.c \
+	  update_s_visc_PML_SH_adjoint.c \
 	  update_v_PML_SH.c \
+	  update_v_PML_SH_adjoint.c \
+	  visco_sh_full_state_adjoint_step.c \
+	  visco_sh_gsls_vjp.c \
+	  visco_sh_material_vjp.c \
+	  visco_sh_material_observable.c \
+	  visco_sh_material_gradient_assembly.c \
+	  visco_sh_material_timestep_vjp.c \
+	  visco_sh_reverse_time_adjoint.c \
+	  visco_sh_reverse_time_material_gradient.c \
 	  zero_denise_elast_SH.c \
 	  zero_denise_visc_SH.c
 

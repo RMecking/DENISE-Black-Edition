@@ -1,0 +1,1224 @@
+{
+  "acceptance": {
+    "all_runs_returncode_zero": true,
+    "directional_derivative_min_abs": 1e-08,
+    "dtinv_expected_bitidentity": true,
+    "fd_five_point_vs_centered_relative_max": 0.005,
+    "mpi_correlation_min": 0.999999999,
+    "mpi_relative_l2_max": 2e-06,
+    "no_timeout_or_nonfinite_output": true
+  },
+  "audit_commit": "a4d2ca176f518a8414aa95aef256265dd89fa567",
+  "baseline_objectives": {
+    "fs0_1x1_dt1": 0.054389676800199425,
+    "fs0_1x1_dt2": 0.054389676800199425,
+    "fs0_1x1_dt3": 0.054389676800199425,
+    "fs0_1x1_dt4": 0.054389676800199425,
+    "fs0_1x2_dt1": 0.054389676800199425,
+    "fs0_2x1_dt1": 0.054389676800199425,
+    "fs1_1x1_dt1": 0.054408583481891974
+  },
+  "baseline_q_model_sha256": {
+    "fs0_1x1_dt1": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+    "fs0_1x1_dt2": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+    "fs0_1x1_dt3": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+    "fs0_1x1_dt4": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+    "fs0_1x2_dt1": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+    "fs0_2x1_dt1": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+    "fs1_1x1_dt1": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0"
+  },
+  "configuration": {
+    "absorbing_width_gridpoints": 10,
+    "anomaly_sigma_m": 90.0,
+    "anomaly_x_m": 430.0,
+    "anomaly_y_m": 320.0,
+    "baseline_qs": 60.0,
+    "density_kg_m3": 1800.0,
+    "dh_m": 10.0,
+    "dt_s": 0.0005,
+    "dtinv": 1,
+    "fd_order": 8,
+    "nx": 80,
+    "ny": 64,
+    "observed_qs": 35.0,
+    "q_approx_df_hz": 2.0,
+    "q_approx_fmax_hz": 80.0,
+    "q_approx_fmin_hz": 4.0,
+    "q_parameterization_mode": 1,
+    "receiver_x_m": [
+      360.0,
+      440.0,
+      520.0,
+      600.0
+    ],
+    "receiver_y_m": 320.0,
+    "relaxation_frequencies_hz": [
+      7.0,
+      28.0
+    ],
+    "source_frequency_hz": 14.0,
+    "source_x_m": 180.0,
+    "source_y_m": 320.0,
+    "time_s": 0.34,
+    "vs_m_s": 2200.0
+  },
+  "directional_q_model_sha256": {
+    "fs0_1x1": {
+      "+0.01": "aac74e90f53a746c70b1ce234fe0bfa6012cb0a2fdbdc3a30657b7f1e2e2ab1f",
+      "+0.02": "1b0a9aa25a5628cab793c486c12ff3f637f94c77f39eae9787b4989ad43e64e9",
+      "-0.01": "2f4e300fa2fd7ca21a7eacc3779ead9cf8340dd88201ca592146a192696eaa96",
+      "-0.02": "59c1f8bb8664a79b71671cdcb8b9d85117e03691047cd2a5102226cad2a7f907"
+    },
+    "fs0_1x2": {
+      "+0.01": "aac74e90f53a746c70b1ce234fe0bfa6012cb0a2fdbdc3a30657b7f1e2e2ab1f",
+      "+0.02": "1b0a9aa25a5628cab793c486c12ff3f637f94c77f39eae9787b4989ad43e64e9",
+      "-0.01": "2f4e300fa2fd7ca21a7eacc3779ead9cf8340dd88201ca592146a192696eaa96",
+      "-0.02": "59c1f8bb8664a79b71671cdcb8b9d85117e03691047cd2a5102226cad2a7f907"
+    },
+    "fs0_2x1": {
+      "+0.01": "aac74e90f53a746c70b1ce234fe0bfa6012cb0a2fdbdc3a30657b7f1e2e2ab1f",
+      "+0.02": "1b0a9aa25a5628cab793c486c12ff3f637f94c77f39eae9787b4989ad43e64e9",
+      "-0.01": "2f4e300fa2fd7ca21a7eacc3779ead9cf8340dd88201ca592146a192696eaa96",
+      "-0.02": "59c1f8bb8664a79b71671cdcb8b9d85117e03691047cd2a5102226cad2a7f907"
+    },
+    "fs1_1x1": {
+      "+0.01": "aac74e90f53a746c70b1ce234fe0bfa6012cb0a2fdbdc3a30657b7f1e2e2ab1f",
+      "+0.02": "1b0a9aa25a5628cab793c486c12ff3f637f94c77f39eae9787b4989ad43e64e9",
+      "-0.01": "2f4e300fa2fd7ca21a7eacc3779ead9cf8340dd88201ca592146a192696eaa96",
+      "-0.02": "59c1f8bb8664a79b71671cdcb8b9d85117e03691047cd2a5102226cad2a7f907"
+    }
+  },
+  "dtinv": {
+    "1": {
+      "max_absolute_difference": 0.0,
+      "objective": 0.054389676800199425,
+      "relative_l2_vs_dtinv1": 0.0,
+      "seismogram_identical": true
+    },
+    "2": {
+      "max_absolute_difference": 0.0,
+      "objective": 0.054389676800199425,
+      "relative_l2_vs_dtinv1": 0.0,
+      "seismogram_identical": true
+    },
+    "3": {
+      "max_absolute_difference": 0.0,
+      "objective": 0.054389676800199425,
+      "relative_l2_vs_dtinv1": 0.0,
+      "seismogram_identical": true
+    },
+    "4": {
+      "max_absolute_difference": 0.0,
+      "objective": 0.054389676800199425,
+      "relative_l2_vs_dtinv1": 0.0,
+      "seismogram_identical": true
+    }
+  },
+  "executable": {
+    "path": "bin/denise",
+    "sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4"
+  },
+  "executed_git_sha": "a4d2ca176f518a8414aa95aef256265dd89fa567",
+  "milestone": "M6.3b frozen RED oracle",
+  "mpi": {
+    "fs0_1x2_dt1": {
+      "max_absolute_difference": 0.0,
+      "normalized_correlation": 1.0,
+      "q_model_identical": true,
+      "relative_l2": 0.0
+    },
+    "fs0_2x1_dt1": {
+      "max_absolute_difference": 0.0,
+      "normalized_correlation": 1.0,
+      "q_model_identical": true,
+      "relative_l2": 0.0
+    }
+  },
+  "observed_payload_sha256": {
+    "free_surface_0": "87335a4c4295de3290fff4c4d7e2cce99ad22fba4cf329df3868d7330c8d78e1",
+    "free_surface_1": "8fe50097f7e22b77c8103fde58e9c94ac19e14b325852a1b43e2b4d2ca655013"
+  },
+  "production_adjoint_dot_product": {
+    "cases": {
+      "fs0_1x1": {
+        "command": [
+          "mpirun",
+          "-np",
+          "1",
+          "temporary-instrumented-bin/denise",
+          "denise.inp",
+          "workflow.inp"
+        ],
+        "executable_sha256": "f033ca08bbe402545fb2be9ec90c73d4b406b4f320b1d9668123b2089034c141",
+        "free_surface": 0,
+        "input_sha256": {
+          "parameters": "8bbc2e2324bfa82de9d9903a5bc7f9b8f43c2880fe3f2eecfe3307e16083d16b",
+          "qs": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+          "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+          "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+          "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+          "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+          "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+        },
+        "instrumentation_artifact_sha256": "84a821686303b9b8166ec884b381348900e7158f074dc57259d12142a0d991cd",
+        "left": 0.0007360088431465489,
+        "nprocx": 1,
+        "nprocy": 1,
+        "observed_payload_sha256": "9fd99d3719eff21bc79cc5998fdbeca76c6018204f588ed47b5e130c10c7500f",
+        "q_model_sha256": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+        "ranks": 1,
+        "relative_residual": 0.00020859312655549753,
+        "returncode": 0,
+        "right": 0.0007361624015635437,
+        "runtime_seconds": 0.6365444959956221,
+        "signed_residual": -1.5355841699474324e-07,
+        "timed_out": false
+      },
+      "fs0_1x2": {
+        "command": [
+          "mpirun",
+          "-np",
+          "2",
+          "temporary-instrumented-bin/denise",
+          "denise.inp",
+          "workflow.inp"
+        ],
+        "executable_sha256": "f033ca08bbe402545fb2be9ec90c73d4b406b4f320b1d9668123b2089034c141",
+        "free_surface": 0,
+        "input_sha256": {
+          "parameters": "82cd6eb0a0838f531a7b4fba451f4cbe4f42659c19cddf8a4416a09d428df80d",
+          "qs": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+          "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+          "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+          "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+          "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+          "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+        },
+        "instrumentation_artifact_sha256": "84a821686303b9b8166ec884b381348900e7158f074dc57259d12142a0d991cd",
+        "left": 0.0007360088431465489,
+        "nprocx": 1,
+        "nprocy": 2,
+        "observed_payload_sha256": "9fd99d3719eff21bc79cc5998fdbeca76c6018204f588ed47b5e130c10c7500f",
+        "q_model_sha256": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+        "ranks": 2,
+        "relative_residual": 0.00020859312655549753,
+        "returncode": 0,
+        "right": 0.0007361624015635437,
+        "runtime_seconds": 0.5463000250019832,
+        "signed_residual": -1.5355841699474324e-07,
+        "timed_out": false
+      },
+      "fs0_2x1": {
+        "command": [
+          "mpirun",
+          "-np",
+          "2",
+          "temporary-instrumented-bin/denise",
+          "denise.inp",
+          "workflow.inp"
+        ],
+        "executable_sha256": "f033ca08bbe402545fb2be9ec90c73d4b406b4f320b1d9668123b2089034c141",
+        "free_surface": 0,
+        "input_sha256": {
+          "parameters": "8f1d287676e1309db1738186ab6fa5b3ac7a1438fe472ee88d897c56e908941a",
+          "qs": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+          "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+          "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+          "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+          "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+          "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+        },
+        "instrumentation_artifact_sha256": "84a821686303b9b8166ec884b381348900e7158f074dc57259d12142a0d991cd",
+        "left": 0.000736008843146549,
+        "nprocx": 2,
+        "nprocy": 1,
+        "observed_payload_sha256": "9fd99d3719eff21bc79cc5998fdbeca76c6018204f588ed47b5e130c10c7500f",
+        "q_model_sha256": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+        "ranks": 2,
+        "relative_residual": 0.00020859312655535024,
+        "returncode": 0,
+        "right": 0.0007361624015635437,
+        "runtime_seconds": 0.5092944779971731,
+        "signed_residual": -1.5355841699463482e-07,
+        "timed_out": false
+      },
+      "fs1_1x1": {
+        "command": [
+          "mpirun",
+          "-np",
+          "1",
+          "temporary-instrumented-bin/denise",
+          "denise.inp",
+          "workflow.inp"
+        ],
+        "executable_sha256": "f033ca08bbe402545fb2be9ec90c73d4b406b4f320b1d9668123b2089034c141",
+        "free_surface": 1,
+        "input_sha256": {
+          "parameters": "d73f0b35e612ac135114bc640d2af498352eb4d06e567d1e1afb1ef5a3ae6fc1",
+          "qs": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+          "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+          "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+          "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+          "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+          "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+        },
+        "instrumentation_artifact_sha256": "84a821686303b9b8166ec884b381348900e7158f074dc57259d12142a0d991cd",
+        "left": 0.00030306648581713766,
+        "nprocx": 1,
+        "nprocy": 1,
+        "observed_payload_sha256": "518e1f314f659daeda0b7493e7e465dbf3f6eb99f0bf0bc056b513c6f0beee27",
+        "q_model_sha256": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+        "ranks": 1,
+        "relative_residual": 0.0004005783733025039,
+        "returncode": 0,
+        "right": 0.0003029450839372465,
+        "runtime_seconds": 0.6092557289957767,
+        "signed_residual": 1.2140187989113536e-07,
+        "timed_out": false
+      }
+    },
+    "definition": "<F x,y> versus <x,F*_candidate y>; current sh_visc mode=1; no fitted sign, scale, or shift",
+    "independent_data_vectors": {
+      "fs0": {
+        "definition": "y=0.25*max_abs(Fx)*(sin(0.173*(sample+1)*(trace+1))+0.37*cos(0.071*(sample+3)*(trace+2))); sample 1 fixed to zero",
+        "observed_payload_sha256": "9fd99d3719eff21bc79cc5998fdbeca76c6018204f588ed47b5e130c10c7500f",
+        "sample_count": 2720,
+        "scale": 0.05883670970797539,
+        "sha256_float32": "05abd4614322bb2cbdfcf0176d6a6ed757534b4d13dae2387e2bf68fc932a97b"
+      },
+      "fs1": {
+        "definition": "y=0.25*max_abs(Fx)*(sin(0.173*(sample+1)*(trace+1))+0.37*cos(0.071*(sample+3)*(trace+2))); sample 1 fixed to zero",
+        "observed_payload_sha256": "518e1f314f659daeda0b7493e7e465dbf3f6eb99f0bf0bc056b513c6f0beee27",
+        "sample_count": 2720,
+        "scale": 0.058836691081523895,
+        "sha256_float32": "326109bbfb77c37335e7e3cf7c14d1420a3c96df5fee11113c61abfccf0c7bbe"
+      }
+    },
+    "instrumentation": {
+      "artifact_path": "tests/utilities/m63b_production_adjoint_instrumentation.py",
+      "artifact_sha256": "84a821686303b9b8166ec884b381348900e7158f074dc57259d12142a0d991cd",
+      "base_git_sha": "a4d2ca176f518a8414aa95aef256265dd89fa567",
+      "changed_files": [
+        "src/SH/FWI_SH_visc.c",
+        "src/SH/grad_obj_sh_visc.c",
+        "src/SH/sh_visc.c"
+      ],
+      "compiler_version": "gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0\nCopyright (C) 2021 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+      "instrumented_source_sha256": {
+        "src/SH/FWI_SH_visc.c": "cd833758dc442257700fcdaaf608ea3ff66a68417b5d3dab3e7bc9ba821183da",
+        "src/SH/grad_obj_sh_visc.c": "e278c37221c50f510bb36f21a160c1ede3772d254cb278e66ddbec048ca5b8ee",
+        "src/SH/sh_visc.c": "bc876286a2f56bb8ca385beeb350acadc7f447d1f42ae16c269a3b50d07a4cf0"
+      },
+      "sha256": "f033ca08bbe402545fb2be9ec90c73d4b406b4f320b1d9668123b2089034c141"
+    },
+    "red_acceptance": {
+      "all_health_and_provenance_checks_must_pass_normally": true,
+      "minimum_relative_residual": 0.0001,
+      "rationale": "predeclared above ordinary float32 scalar roundoff and below the smallest observed unfitted production residual (2.08e-4)"
+    }
+  },
+  "production_changed_files": [],
+  "q_directional_derivatives": {
+    "fs0_1x1": {
+      "centered_h_0.01": 0.07392159731620142,
+      "five_point": 0.07392143895781535,
+      "raw_objectives": {
+        "+0.01": 0.05512676412979241,
+        "+0.02": 0.05585960194103506,
+        "-0.01": 0.05364833218346838,
+        "-0.02": 0.05290271904538068
+      },
+      "relative_five_point_vs_centered": 2.142247892636042e-06
+    },
+    "fs0_1x2": {
+      "centered_h_0.01": 0.07392159731620142,
+      "five_point": 0.07392143895781535,
+      "raw_objectives": {
+        "+0.01": 0.05512676412979241,
+        "+0.02": 0.05585960194103506,
+        "-0.01": 0.05364833218346838,
+        "-0.02": 0.05290271904538068
+      },
+      "relative_five_point_vs_centered": 2.142247892636042e-06
+    },
+    "fs0_2x1": {
+      "centered_h_0.01": 0.07392159731620142,
+      "five_point": 0.07392143895781535,
+      "raw_objectives": {
+        "+0.01": 0.05512676412979241,
+        "+0.02": 0.05585960194103506,
+        "-0.01": 0.05364833218346838,
+        "-0.02": 0.05290271904538068
+      },
+      "relative_five_point_vs_centered": 2.142247892636042e-06
+    },
+    "fs1_1x1": {
+      "centered_h_0.01": 0.07393173662706559,
+      "five_point": 0.07393062256115715,
+      "raw_objectives": {
+        "+0.01": 0.05514576784378518,
+        "+0.02": 0.055878729363655476,
+        "-0.01": 0.05366713311124387,
+        "-0.02": 0.05292132621066382
+      },
+      "relative_five_point_vs_centered": 1.506884538721937e-05
+    }
+  },
+  "repository_dirty_during_execution": false,
+  "run_count": 29,
+  "run_records": [
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "1",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "4a07378b3650357f42e5039082ea18bddbf368860af03ddef0cc90ef381e5196",
+        "qs": "b9fa86d8f4ddb818aa1e0da328a7688d004707d1d0e445003d749e444ec1234a",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 1,
+      "q_model_sha256": "b9fa86d8f4ddb818aa1e0da328a7688d004707d1d0e445003d749e444ec1234a",
+      "returncode": 0,
+      "role": "observed_fs0",
+      "runtime_seconds": 0.4317016990025877,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "87335a4c4295de3290fff4c4d7e2cce99ad22fba4cf329df3868d7330c8d78e1",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "1",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "d7bd3ca7dabdf4b31953835873a671ea8f2b0f610dd36f305003851bcaefc9c9",
+        "qs": "b9fa86d8f4ddb818aa1e0da328a7688d004707d1d0e445003d749e444ec1234a",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 1,
+      "q_model_sha256": "b9fa86d8f4ddb818aa1e0da328a7688d004707d1d0e445003d749e444ec1234a",
+      "returncode": 0,
+      "role": "observed_fs1",
+      "runtime_seconds": 0.40049304000422126,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "8fe50097f7e22b77c8103fde58e9c94ac19e14b325852a1b43e2b4d2ca655013",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "1",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "4a07378b3650357f42e5039082ea18bddbf368860af03ddef0cc90ef381e5196",
+        "qs": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 1,
+      "q_model_sha256": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+      "returncode": 0,
+      "role": "fs0_1x1_dt1",
+      "runtime_seconds": 0.3977249559975462,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "418f6f7e41a3395c79254bb40f34176808169dbdb01545b1685fbca80572c5a8",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "1",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "d7bd3ca7dabdf4b31953835873a671ea8f2b0f610dd36f305003851bcaefc9c9",
+        "qs": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 1,
+      "q_model_sha256": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+      "returncode": 0,
+      "role": "fs1_1x1_dt1",
+      "runtime_seconds": 0.4107395499959239,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "77a7ea355707ee27a5e3c0ec5d69e1a5f37de5c471e10836e65d6b35f6b56187",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "2",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "20110579a8594553675bb9764bdbc7420563d27863411f3e72cacbc2495686a6",
+        "qs": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 2,
+      "q_model_sha256": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+      "returncode": 0,
+      "role": "fs0_2x1_dt1",
+      "runtime_seconds": 0.37328554799751146,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "418f6f7e41a3395c79254bb40f34176808169dbdb01545b1685fbca80572c5a8",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "2",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "f7149f9cb146bd31ffca2b2fadc5a1f3d5f07d1f45a8cad08736878b665c4689",
+        "qs": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 2,
+      "q_model_sha256": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+      "returncode": 0,
+      "role": "fs0_1x2_dt1",
+      "runtime_seconds": 0.37685127499571536,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "418f6f7e41a3395c79254bb40f34176808169dbdb01545b1685fbca80572c5a8",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "1",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "21a39214c42ee646965c5ad403cdcd6c79e1e755681cf90bcb114aec4e8b8fac",
+        "qs": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 1,
+      "q_model_sha256": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+      "returncode": 0,
+      "role": "fs0_1x1_dt2",
+      "runtime_seconds": 0.39385148000292247,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "418f6f7e41a3395c79254bb40f34176808169dbdb01545b1685fbca80572c5a8",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "1",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "29e68436bb7e4c80e0d3fcfa192bab01a2572826ff0c8b049e196f1529ba2561",
+        "qs": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 1,
+      "q_model_sha256": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+      "returncode": 0,
+      "role": "fs0_1x1_dt3",
+      "runtime_seconds": 0.39221869899483863,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "418f6f7e41a3395c79254bb40f34176808169dbdb01545b1685fbca80572c5a8",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "1",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "76d0e792e94ce7974e3b460cfec5fa30eb4aed1868d4909dfafc4c76d07bf93d",
+        "qs": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 1,
+      "q_model_sha256": "c82bac61d3b55872fb8e2b1ee548c903445426ac81f337f2878e634f901516b0",
+      "returncode": 0,
+      "role": "fs0_1x1_dt4",
+      "runtime_seconds": 0.390675883005315,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "418f6f7e41a3395c79254bb40f34176808169dbdb01545b1685fbca80572c5a8",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "1",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "4a07378b3650357f42e5039082ea18bddbf368860af03ddef0cc90ef381e5196",
+        "qs": "59c1f8bb8664a79b71671cdcb8b9d85117e03691047cd2a5102226cad2a7f907",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 1,
+      "q_model_sha256": "59c1f8bb8664a79b71671cdcb8b9d85117e03691047cd2a5102226cad2a7f907",
+      "returncode": 0,
+      "role": "q_fs0_1x1_-0.02",
+      "runtime_seconds": 0.3973139110021293,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "04bbf063377cec90212e9a2bca88759c95a47dbb701b5a5643f1d26dd4843a11",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "1",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "4a07378b3650357f42e5039082ea18bddbf368860af03ddef0cc90ef381e5196",
+        "qs": "2f4e300fa2fd7ca21a7eacc3779ead9cf8340dd88201ca592146a192696eaa96",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 1,
+      "q_model_sha256": "2f4e300fa2fd7ca21a7eacc3779ead9cf8340dd88201ca592146a192696eaa96",
+      "returncode": 0,
+      "role": "q_fs0_1x1_-0.01",
+      "runtime_seconds": 0.39724946900241775,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "b9b6227179633de30fdaa7b58902d986553824c28bcb26730796b21602ed55e1",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "1",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "4a07378b3650357f42e5039082ea18bddbf368860af03ddef0cc90ef381e5196",
+        "qs": "aac74e90f53a746c70b1ce234fe0bfa6012cb0a2fdbdc3a30657b7f1e2e2ab1f",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 1,
+      "q_model_sha256": "aac74e90f53a746c70b1ce234fe0bfa6012cb0a2fdbdc3a30657b7f1e2e2ab1f",
+      "returncode": 0,
+      "role": "q_fs0_1x1_+0.01",
+      "runtime_seconds": 0.3957292619961663,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "31cb2a5e36101993501d83b160b0f869d27be383add97db61e684616c98452cb",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "1",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "4a07378b3650357f42e5039082ea18bddbf368860af03ddef0cc90ef381e5196",
+        "qs": "1b0a9aa25a5628cab793c486c12ff3f637f94c77f39eae9787b4989ad43e64e9",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 1,
+      "q_model_sha256": "1b0a9aa25a5628cab793c486c12ff3f637f94c77f39eae9787b4989ad43e64e9",
+      "returncode": 0,
+      "role": "q_fs0_1x1_+0.02",
+      "runtime_seconds": 0.3953317350024008,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "6e91e7e2d714e7976ffe7ec8701d4afad0b35282fa548ce4637e42d68420d759",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "1",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "d7bd3ca7dabdf4b31953835873a671ea8f2b0f610dd36f305003851bcaefc9c9",
+        "qs": "59c1f8bb8664a79b71671cdcb8b9d85117e03691047cd2a5102226cad2a7f907",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 1,
+      "q_model_sha256": "59c1f8bb8664a79b71671cdcb8b9d85117e03691047cd2a5102226cad2a7f907",
+      "returncode": 0,
+      "role": "q_fs1_1x1_-0.02",
+      "runtime_seconds": 0.3943040939993807,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "a93e6a7f3d760c12b27dc6a98f25c3de50c68144f2034c68f611266b9866ca2f",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "1",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "d7bd3ca7dabdf4b31953835873a671ea8f2b0f610dd36f305003851bcaefc9c9",
+        "qs": "2f4e300fa2fd7ca21a7eacc3779ead9cf8340dd88201ca592146a192696eaa96",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 1,
+      "q_model_sha256": "2f4e300fa2fd7ca21a7eacc3779ead9cf8340dd88201ca592146a192696eaa96",
+      "returncode": 0,
+      "role": "q_fs1_1x1_-0.01",
+      "runtime_seconds": 0.3878360660019098,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "3271191baa000723a47ac23ca718a0ef0f2cabe4ea81f5a7dce373ce5d5c802e",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "1",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "d7bd3ca7dabdf4b31953835873a671ea8f2b0f610dd36f305003851bcaefc9c9",
+        "qs": "aac74e90f53a746c70b1ce234fe0bfa6012cb0a2fdbdc3a30657b7f1e2e2ab1f",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 1,
+      "q_model_sha256": "aac74e90f53a746c70b1ce234fe0bfa6012cb0a2fdbdc3a30657b7f1e2e2ab1f",
+      "returncode": 0,
+      "role": "q_fs1_1x1_+0.01",
+      "runtime_seconds": 0.39684300500084646,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "100ba89ba0254697485ec8fc221dddb7a7a93b487f9e0e1bd2ef689acaa0b1a6",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "1",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "d7bd3ca7dabdf4b31953835873a671ea8f2b0f610dd36f305003851bcaefc9c9",
+        "qs": "1b0a9aa25a5628cab793c486c12ff3f637f94c77f39eae9787b4989ad43e64e9",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 1,
+      "q_model_sha256": "1b0a9aa25a5628cab793c486c12ff3f637f94c77f39eae9787b4989ad43e64e9",
+      "returncode": 0,
+      "role": "q_fs1_1x1_+0.02",
+      "runtime_seconds": 0.3921512270026142,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "6d1d9f06bfcd97bc7b1c8e3278353556fa3e92795925cc3ff0841421a04672a8",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "2",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "20110579a8594553675bb9764bdbc7420563d27863411f3e72cacbc2495686a6",
+        "qs": "59c1f8bb8664a79b71671cdcb8b9d85117e03691047cd2a5102226cad2a7f907",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 2,
+      "q_model_sha256": "59c1f8bb8664a79b71671cdcb8b9d85117e03691047cd2a5102226cad2a7f907",
+      "returncode": 0,
+      "role": "q_fs0_2x1_-0.02",
+      "runtime_seconds": 0.37368828099715756,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "04bbf063377cec90212e9a2bca88759c95a47dbb701b5a5643f1d26dd4843a11",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "2",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "20110579a8594553675bb9764bdbc7420563d27863411f3e72cacbc2495686a6",
+        "qs": "2f4e300fa2fd7ca21a7eacc3779ead9cf8340dd88201ca592146a192696eaa96",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 2,
+      "q_model_sha256": "2f4e300fa2fd7ca21a7eacc3779ead9cf8340dd88201ca592146a192696eaa96",
+      "returncode": 0,
+      "role": "q_fs0_2x1_-0.01",
+      "runtime_seconds": 0.37159072999929776,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "b9b6227179633de30fdaa7b58902d986553824c28bcb26730796b21602ed55e1",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "2",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "20110579a8594553675bb9764bdbc7420563d27863411f3e72cacbc2495686a6",
+        "qs": "aac74e90f53a746c70b1ce234fe0bfa6012cb0a2fdbdc3a30657b7f1e2e2ab1f",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 2,
+      "q_model_sha256": "aac74e90f53a746c70b1ce234fe0bfa6012cb0a2fdbdc3a30657b7f1e2e2ab1f",
+      "returncode": 0,
+      "role": "q_fs0_2x1_+0.01",
+      "runtime_seconds": 0.37128843699611025,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "31cb2a5e36101993501d83b160b0f869d27be383add97db61e684616c98452cb",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "2",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "20110579a8594553675bb9764bdbc7420563d27863411f3e72cacbc2495686a6",
+        "qs": "1b0a9aa25a5628cab793c486c12ff3f637f94c77f39eae9787b4989ad43e64e9",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 2,
+      "q_model_sha256": "1b0a9aa25a5628cab793c486c12ff3f637f94c77f39eae9787b4989ad43e64e9",
+      "returncode": 0,
+      "role": "q_fs0_2x1_+0.02",
+      "runtime_seconds": 0.36976469500223175,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "6e91e7e2d714e7976ffe7ec8701d4afad0b35282fa548ce4637e42d68420d759",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "2",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "f7149f9cb146bd31ffca2b2fadc5a1f3d5f07d1f45a8cad08736878b665c4689",
+        "qs": "59c1f8bb8664a79b71671cdcb8b9d85117e03691047cd2a5102226cad2a7f907",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 2,
+      "q_model_sha256": "59c1f8bb8664a79b71671cdcb8b9d85117e03691047cd2a5102226cad2a7f907",
+      "returncode": 0,
+      "role": "q_fs0_1x2_-0.02",
+      "runtime_seconds": 0.3812330369983101,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "04bbf063377cec90212e9a2bca88759c95a47dbb701b5a5643f1d26dd4843a11",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "2",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "f7149f9cb146bd31ffca2b2fadc5a1f3d5f07d1f45a8cad08736878b665c4689",
+        "qs": "2f4e300fa2fd7ca21a7eacc3779ead9cf8340dd88201ca592146a192696eaa96",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 2,
+      "q_model_sha256": "2f4e300fa2fd7ca21a7eacc3779ead9cf8340dd88201ca592146a192696eaa96",
+      "returncode": 0,
+      "role": "q_fs0_1x2_-0.01",
+      "runtime_seconds": 0.3706821040032082,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "b9b6227179633de30fdaa7b58902d986553824c28bcb26730796b21602ed55e1",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "2",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "f7149f9cb146bd31ffca2b2fadc5a1f3d5f07d1f45a8cad08736878b665c4689",
+        "qs": "aac74e90f53a746c70b1ce234fe0bfa6012cb0a2fdbdc3a30657b7f1e2e2ab1f",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 2,
+      "q_model_sha256": "aac74e90f53a746c70b1ce234fe0bfa6012cb0a2fdbdc3a30657b7f1e2e2ab1f",
+      "returncode": 0,
+      "role": "q_fs0_1x2_+0.01",
+      "runtime_seconds": 0.3677257759991335,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "31cb2a5e36101993501d83b160b0f869d27be383add97db61e684616c98452cb",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "2",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "f7149f9cb146bd31ffca2b2fadc5a1f3d5f07d1f45a8cad08736878b665c4689",
+        "qs": "1b0a9aa25a5628cab793c486c12ff3f637f94c77f39eae9787b4989ad43e64e9",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 2,
+      "q_model_sha256": "1b0a9aa25a5628cab793c486c12ff3f637f94c77f39eae9787b4989ad43e64e9",
+      "returncode": 0,
+      "role": "q_fs0_1x2_+0.02",
+      "runtime_seconds": 0.36707921299966983,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "6e91e7e2d714e7976ffe7ec8701d4afad0b35282fa548ce4637e42d68420d759",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "1",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "4a07378b3650357f42e5039082ea18bddbf368860af03ddef0cc90ef381e5196",
+        "qs": "070eeae3f43ff977403c42728fef6b1617e42691942aad3ac7bc2a65e1594fc6",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 1,
+      "q_model_sha256": "070eeae3f43ff977403c42728fef6b1617e42691942aad3ac7bc2a65e1594fc6",
+      "returncode": 0,
+      "role": "tau_fs0_1x1_-0.02",
+      "runtime_seconds": 0.4011466490046587,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "9c00be7540589134701adca082e8b3e3e4f287206c9c4b1879841ca2464d396c",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "1",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "4a07378b3650357f42e5039082ea18bddbf368860af03ddef0cc90ef381e5196",
+        "qs": "f4fe1eb1e3dea6548d83ff5d0c4626870184ca4f0c4c82cf86519b562103cbba",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 1,
+      "q_model_sha256": "f4fe1eb1e3dea6548d83ff5d0c4626870184ca4f0c4c82cf86519b562103cbba",
+      "returncode": 0,
+      "role": "tau_fs0_1x1_-0.01",
+      "runtime_seconds": 0.400534719999996,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "03a207bfa2904eb784a67d20219a6aad1cec41d8e39df73dbf361822653af708",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "1",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "4a07378b3650357f42e5039082ea18bddbf368860af03ddef0cc90ef381e5196",
+        "qs": "6e6d1d029afe2c18a70fb03cc5efb6f74f141451040c57eaf59f1831e74170b9",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 1,
+      "q_model_sha256": "6e6d1d029afe2c18a70fb03cc5efb6f74f141451040c57eaf59f1831e74170b9",
+      "returncode": 0,
+      "role": "tau_fs0_1x1_+0.01",
+      "runtime_seconds": 0.39460575499833794,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "80e4f65eee0e63b870755b37b0de96229dfb892fb86048399937ae637ec97f0f",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-np",
+        "1",
+        "bin/denise",
+        "denise.inp",
+        "workflow.inp"
+      ],
+      "executable_sha256": "35bb43a7c11af1e97941ee1008d4f0726aae96019c54f78b1a71cb38d9392bb4",
+      "finite": true,
+      "input_sha256": {
+        "parameters": "4a07378b3650357f42e5039082ea18bddbf368860af03ddef0cc90ef381e5196",
+        "qs": "d8ab833894bb73be4c714cdace53ee7b14123ee91fbf5cffa1da437b80005ee7",
+        "receiver": "63cb950f9e950092ad7fa925701f3fa22d463076d34ddba6ffed77d9cafc970c",
+        "rho": "aaac3b52bd00b0d9464b5388fc42a9cb4aeb2de72d09c0c51623c6b1ab26a560",
+        "source": "12d0fd6ccf529ecb2f376bff36f22d2f6540efd7258da977357fd1298c31593d",
+        "vs": "a96a806d8f927bc2a2bd7353737d5998a43821e1e98fa436d8a3c18721ba53b3",
+        "workflow": "155449861dbee16314ee4053bfede13b48a6d2d38553fbe2df16ee8d183515a6"
+      },
+      "mpi_ranks": 1,
+      "q_model_sha256": "d8ab833894bb73be4c714cdace53ee7b14123ee91fbf5cffa1da437b80005ee7",
+      "returncode": 0,
+      "role": "tau_fs0_1x1_+0.02",
+      "runtime_seconds": 0.40156496499548666,
+      "sample_count": 2720,
+      "seismogram_payload_sha256": "d4668ad69244d1226b5cdf8278d9800aba74dc27a21796464c95d9829ff1a5d5",
+      "timed_out": false
+    }
+  ],
+  "tau_directional_derivative": {
+    "centered_h_0.01": -0.07030643317676027,
+    "five_point": -0.07030570365957942,
+    "raw_objectives": {
+      "+0.01": 0.05368955870905771,
+      "+0.02": 0.05299513513561942,
+      "-0.01": 0.05509568737259291,
+      "-0.02": 0.055807480004751546
+    },
+    "relative_five_point_vs_centered": 1.0376250762493586e-05
+  },
+  "total_denise_run_count": 33
+}

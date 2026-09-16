@@ -19,6 +19,7 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
 	float * b_y_half, float ** psi_sxz_x, float ** psi_syz_y){
 
 	int i, j, l, h, h1;
+	int capture_material_observable = 0;
         float sxz_x, syz_y;
 	
 	extern float DT, DH;
@@ -28,6 +29,13 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
         extern int FREE_SURF, BOUNDARY, FW;
         extern int NPROCX, NPROCY, POS[3];
 	extern FILE *FP;	      
+
+	/* The weak query keeps older standalone harnesses linkable.  The concrete
+	 * C7a object is authoritative when present; resolve activity only once so
+	 * inactive production runs make no per-cell capture callback. */
+	if (visco_sh_material_observable_is_active != NULL)
+		capture_material_observable =
+			visco_sh_material_observable_is_active();
          
 	if (infoout && (MYID==0)){
 		time1=MPI_Wtime();
@@ -89,6 +97,10 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
 				
 				}    
 				
+				if (capture_material_observable)
+					visco_sh_material_observable_capture_qsum(
+							j, i, sxz_x + syz_y);
+
 				if(GRAD_FORM==1){ /* FWI with data integration */
 
                                 	if(sw==0){
@@ -172,6 +184,10 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
 		            			   
 
         			}                                                  
+
+				if (capture_material_observable)
+					visco_sh_material_observable_capture_qsum(
+							j, i, sxz_x + syz_y);
 
 				if(GRAD_FORM==1){ /* FWI with data integration */
 
@@ -258,6 +274,10 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
 		            			   
 
         			}                                                  
+
+				if (capture_material_observable)
+					visco_sh_material_observable_capture_qsum(
+							j, i, sxz_x + syz_y);
 
 				if(GRAD_FORM==1){ /* FWI with data integration */
 
@@ -348,6 +368,10 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
 
         			}    
 				
+				if (capture_material_observable)
+					visco_sh_material_observable_capture_qsum(
+							j, i, sxz_x + syz_y);
+
 				if(GRAD_FORM==1){ /* FWI with data integration */
 
                                 	if(sw==0){
@@ -438,6 +462,10 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
 
         			}
 				
+				if (capture_material_observable)
+					visco_sh_material_observable_capture_qsum(
+							j, i, sxz_x + syz_y);
+
 				if(GRAD_FORM==1){ /* FWI with data integration */
 
                                 	if(sw==0){
@@ -531,6 +559,10 @@ void update_v_PML_SH(int nx1, int nx2, int ny1, int ny2, int nt,
 
         			}
 				
+				if (capture_material_observable)
+					visco_sh_material_observable_capture_qsum(
+							j, i, sxz_x + syz_y);
+
 				if(GRAD_FORM==1){ /* FWI with data integration */
 
                                 	if(sw==0){

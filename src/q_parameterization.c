@@ -63,3 +63,21 @@ float q_to_tau(float target_q, const struct q_tau_mapping *mapping) {
         err(" Physical target Q does not yield a finite positive GSLS tau. ");
     return (float)(1.0 / inverse_tau);
 }
+
+double q_to_tau_derivative(float target_q,
+                           const struct q_tau_mapping *mapping) {
+    double inverse_tau, tau;
+    if (mapping == NULL) err(" Q parameterization mapping is NULL. ");
+    if (!(target_q > 0.0f) || !isfinite(target_q))
+        err(" Qp/Qs model values must be finite and positive. ");
+    if (mapping->mode == Q_PARAMETERIZATION_LEGACY)
+        return -2.0 / ((double)target_q * target_q);
+    if (mapping->mode != Q_PARAMETERIZATION_PHYSICAL)
+        err(" Invalid Q parameterization mode. ");
+    inverse_tau = mapping->inverse_tau_per_q * target_q
+                + mapping->inverse_tau_offset;
+    if (!(inverse_tau > 0.0) || !isfinite(inverse_tau))
+        err(" Physical target Q does not yield a finite positive GSLS tau. ");
+    tau = 1.0 / inverse_tau;
+    return -mapping->inverse_tau_per_q * tau * tau;
+}

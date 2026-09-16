@@ -323,12 +323,19 @@ void write_par(FILE *fp){
 	fprintf(fp,"\n Maximum number of iterations: %d\n",ITERMAX);
 	fprintf(fp," location of the measured seismograms : \n ");
 	fprintf(fp,"\t%s\n\n",DATA_DIR);
-	if (INVMAT1==1){
-		fprintf(fp," INVMAT1=%d: Inversion parameters are vp, vs and rho.\n",INVMAT1);}
-	if (INVMAT1==2){
-		fprintf(fp," INVMAT1=%d: Historical parameters are Zp, Zs and rho; unsupported for PSV because the legacy model-input/file contract is undefined.\n",INVMAT1);}
-	if (INVMAT1==3){
-		fprintf(fp," INVMAT1=%d: Inversion parameters are lambda, mu and rho.\n",INVMAT1);}
+	if (MODE==1 && PHYSICS==5 && Q_PARAMETERIZATION_MODE==Q_PARAMETERIZATION_PHYSICAL){
+		if (INVMAT1==1)
+			fprintf(fp," INVMAT1=%d: Exact SH inversion of Vs, density, and physical Q.\n",INVMAT1);
+		if (INVMAT1==3)
+			fprintf(fp," INVMAT1=%d: Exact SH inversion of mu, density, and physical Q.\n",INVMAT1);
+	} else {
+		if (INVMAT1==1)
+			fprintf(fp," INVMAT1=%d: Inversion parameters are vp, vs and rho.\n",INVMAT1);
+		if (INVMAT1==2)
+			fprintf(fp," INVMAT1=%d: Historical parameters are Zp, Zs and rho; unsupported for PSV because the legacy model-input/file contract is undefined.\n",INVMAT1);
+		if (INVMAT1==3)
+			fprintf(fp," INVMAT1=%d: Inversion parameters are lambda, mu and rho.\n",INVMAT1);
+	}
 	if (QUELLTYPB==1){
 		fprintf(fp," QUELLTYPB=%d: Inversion of x and y component.\n\n",QUELLTYPB);}
 	if (QUELLTYPB==2){
@@ -395,6 +402,9 @@ void write_par(FILE *fp){
 	fprintf(fp,"\n\n");
 	fprintf(fp," --------------- Optimization method -------------------\n");
 	switch(GRAD_METHOD){
+		case 0:
+			fprintf(fp," GRAD_METHOD=%d: Steepest descent\n",GRAD_METHOD);
+			break;
 		case 1:
 			fprintf(fp," GRAD_METHOD=%d: PCG\n",GRAD_METHOD);
 			break;

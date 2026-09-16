@@ -40,6 +40,81 @@ void init_q_tau_mapping(struct q_tau_mapping *mapping, int mode, int mechanisms,
                         const float *relaxation_frequencies_hz,
                         float fmin_hz, float fmax_hz, float df_hz);
 float q_to_tau(float target_q, const struct q_tau_mapping *mapping);
+double q_to_tau_derivative(float target_q,
+                           const struct q_tau_mapping *mapping);
+
+double visco_sh_harmonic_pair(double left, double right);
+int visco_sh_harmonic_pair_vjp(double left, double right, double bar_value,
+                               double *bar_left, double *bar_right);
+void visco_sh_av_tau_local_vjp(double bar_tau_x, double bar_tau_y,
+                               double bar_tau_cells[4]);
+double visco_sh_rhoi_value(double rho);
+double visco_sh_rhoi_vjp(double rho, double bar_rhoi);
+double visco_sh_velocity_rhoi_vjp(double dt, double dh,
+                                  double corrected_qx, double corrected_qy,
+                                  double bar_v_next);
+int visco_sh_material_patch_forward(
+        int invmat1, const struct q_tau_mapping *mapping,
+        const double primary[4], const double rho[4], const double q[4],
+        double output[5]);
+int visco_sh_material_patch_vjp(
+        int invmat1, const struct q_tau_mapping *mapping,
+        const double primary[4], const double rho[4], const double q[4],
+        const double bar_output[5], double bar_primary[4],
+        double bar_rho[4], double bar_q[4]);
+
+/* C7b consumes cotangents at the outputs of the material-dependent velocity
+ * and constitutive operations of one physical timestep.  It returns native
+ * coefficient sensitivities only; no time accumulation or physical-model
+ * parameter mapping is performed here. */
+struct visco_sh_material_timestep_vjp_input {
+   int mechanisms;
+   double dt, dh;
+   double qsum, strain_x, strain_y;
+   double bar_v_post_velocity;
+   double bar_sxz_next, bar_syz_next;
+   const double *bar_r_next, *bar_q_next;
+   double mu_x, tau_x, mu_y, tau_y;
+   double reference_sum;
+   const double *eta_x, *b_x, *eta_y, *b_y;
+   double forward_f_x, forward_f_y;
+   const double *forward_a_x, *forward_c_x;
+   const double *forward_a_y, *forward_c_y;
+};
+
+struct visco_sh_material_timestep_vjp_output {
+   double g_rhoi;
+   double g_mu_x, g_mu_y;
+   double g_tau_x, g_tau_y;
+};
+
+int visco_sh_material_timestep_vjp(
+        const struct visco_sh_material_timestep_vjp_input *input,
+        struct visco_sh_material_timestep_vjp_output *output);
+
+/* Exact reduction for the verified discrete objective at DTINV == 1.
+ * Operator-level dt factors already belong to the supplied C7b per-step
+ * VJPs; the objective is an unweighted sample sum, so this helper adds no
+ * temporal scale.  DTINV > 1 has no verified end-to-end contract yet. */
+int visco_sh_temporal_native_gradient_accumulate(
+        int timesteps, int points, int dtinv,
+        const struct visco_sh_material_timestep_vjp_output *series,
+        struct visco_sh_material_timestep_vjp_output *accumulated);
+
+struct visco_sh_native_material_gradient_fields {
+   double **g_rhoi;
+   double **g_mu_x, **g_mu_y;
+   double **g_tau_x, **g_tau_y;
+};
+
+/* Exact transpose of the locked distributed C6 material graph.  primary_post
+ * and rho_post are the post-matcopy fields; owned_q is differentiated only
+ * after H^T then V^T has returned tau cotangents to owned cells. */
+int visco_sh_distributed_material_gradient_vjp(
+        int invmat1, const struct q_tau_mapping *mapping,
+        float **primary_post, float **rho_post, float **owned_q,
+        const struct visco_sh_native_material_gradient_fields *native,
+        float **grad_primary, float **grad_rho, float **grad_q);
 
 /* ---------------------------------- */
 /* declaration of PSV data-structures */
@@ -176,7 +251,7 @@ struct fwiSH{
 /* SH material parameters */
 struct matSH{
    float  **prho, **prhoi, **puip, **pujp, **pu, **puipjp;
-   float **ptaus, *etaip, *etajm, *peta, **ptausipjp, **fipjp, ***dip, *bip, *bjm;
+   float **pqs, **ptaus, *etaip, *etajm, *peta, **ptausipjp, **fipjp, ***dip, *bip, *bjm;
    float *cip, *cjm, ***d, ***e, **f, **g;
 } matSH;
 
@@ -209,6 +284,284 @@ struct waveSH_PML{
    float ** psi_syz_y, ** psi_sxz_x, ** psi_vzy, ** psi_vzx;
    float  **  absorb_coeff;
 } waveSH_PML;
+
+/* Propagating state and fixed coefficients for one exact viscoelastic SH
+ * full-state transpose step.  Input and output cotangent states must be
+ * distinct.  Rows/columns include the allocated SH halo range; CPML fields
+ * use their native NY x 2*FW / 2*FW x NX layouts. */
+struct visco_sh_full_state {
+   float **vz, **sxz, **syz;
+   float ***r, ***q;
+   float **psi_sxz_x, **psi_syz_y;
+   float **psi_vzx, **psi_vzy;
+};
+
+struct visco_sh_full_step_config {
+   int nx, ny, fdorder, mechanisms, fw, free_surface, boundary;
+   int pos[3], nproc_x, nproc_y, index[5];
+   float dt, dh;
+   const float *hc;
+   float **rhoi, **fipjp, **f;
+   const float *bip, *bjm, *cip, *cjm;
+   float ***dip, ***d;
+   const float *K_x, *a_x, *b_x;
+   const float *K_x_half, *a_x_half, *b_x_half;
+   const float *K_y, *a_y, *b_y;
+   const float *K_y_half, *a_y_half, *b_y_half;
+   int nrec;
+   const int *rec_x, *rec_y;
+   const double *bar_receiver;
+   int nsrc;
+   const int *src_x, *src_y, *source_type;
+   MPI_Comm comm;
+};
+
+/* Minimal forward observables required by the exact viscoelastic SH material
+ * VJPs.  Each channel is defined only on the owned 1..ny, 1..nx domain. */
+struct visco_sh_material_observable_step {
+   float **qsum;
+   float **strain_x;
+   float **strain_y;
+};
+
+/* Optional passive material-gradient capture for one full-state adjoint step.
+ * Material and observable inputs are read-only.  native_output is overwritten
+ * on owned cells only; no temporal accumulation or physical-model mapping is
+ * performed by this interface. */
+struct visco_sh_material_adjoint_step_context {
+   const struct visco_sh_material_observable_step *observable;
+   float **mu_x, **tau_x;
+   float **mu_y, **tau_y;
+   double reference_sum;
+   const float *eta_x, *eta_y;
+   struct visco_sh_native_material_gradient_fields *native_output;
+};
+
+/* Physical-timestep-major storage.  C7 initially requires dtinv == 1. */
+struct visco_sh_material_observable_trajectory {
+   int nx, ny, nsteps, dtinv;
+   struct visco_sh_material_observable_step *steps;
+};
+
+/* C7c-b2 material inputs and owned physical-gradient outputs for the
+ * reverse-time companion driver.  All inputs are borrowed and read-only;
+ * gradient outputs are overwritten only after complete preflight. */
+struct visco_sh_reverse_time_material_context {
+   const struct visco_sh_material_observable_trajectory *trajectory;
+   float **mu_x, **tau_x;
+   float **mu_y, **tau_y;
+   double reference_sum;
+   const float *eta_x, *eta_y;
+   int invmat1;
+   const struct q_tau_mapping *mapping;
+   float **primary_post, **rho_post, **owned_q;
+   float **grad_primary, **grad_rho, **grad_q;
+};
+
+/* Inactive C8c objective-only bridge for one prepared production shot. */
+struct visco_sh_exact_objective_shot_request {
+   struct waveSH *wave;
+   struct waveSH_PML *pml;
+   struct matSH *material;
+   struct fwiSH *fwi;
+   struct mpiPSV *mpi;
+   struct seisSH *seismogram;
+   struct seisSHfwi *legacy_fwi_seismogram;
+   struct acq *acquisition;
+
+   float *hc;
+
+   int ishot;
+   int nshots;
+   int nsrc_local;
+   int ns;
+   int nrec_local;
+   int hin;
+
+   int *dtinv_help;
+
+   float **source_energy;
+   float **receiver_energy;
+
+   MPI_Request *request_send;
+   MPI_Request *request_receive;
+
+   float **observed_vz;
+};
+
+struct visco_sh_exact_objective_shot_result {
+   double objective;
+};
+
+/* Inactive C8b2-b1 bridge for one already prepared production shot.  The
+ * observed traces use the native DENISE [receiver][1..ns] layout.  Gradient
+ * outputs are raw owned-cell objective derivatives and are overwritten only
+ * after complete preflight. */
+struct visco_sh_exact_shot_request {
+   struct waveSH *wave;
+   struct waveSH_PML *pml;
+   struct matSH *material;
+   struct fwiSH *fwi;
+   struct mpiPSV *mpi;
+   struct seisSH *seismogram;
+   struct seisSHfwi *legacy_fwi_seismogram;
+   struct acq *acquisition;
+   float *hc;
+   int ishot, nshots, nsrc_local, ns, nrec_local, hin;
+   int *dtinv_help;
+   float **source_energy, **receiver_energy;
+   MPI_Request *request_send, *request_receive;
+   float **observed_vz;
+   double *receiver_cotangent;
+   float **grad_primary, **grad_rho, **grad_q;
+};
+
+struct visco_sh_exact_shot_result {
+   double objective;
+};
+
+/* Inactive C8b2-b2 acquisition/shot wrapper around the locked exact-shot
+ * bridge.  For RUN_MULTIPLE_SHOTS != 0, every source column is one shot;
+ * otherwise all source columns form one simultaneous-source experiment.
+ * Objective and raw owned-cell physical gradients always use this identical
+ * shot set.  Input workspaces/acquisition are borrowed; outputs are
+ * overwritten after complete preflight. */
+struct visco_sh_exact_multi_shot_request {
+   struct waveSH *wave;
+   struct waveSH_PML *pml;
+   struct matSH *material;
+   struct fwiSH *fwi;
+   struct mpiPSV *mpi;
+   struct seisSH *seismogram;
+   struct seisSHfwi *legacy_fwi_seismogram;
+   struct acq *acquisition;
+   float *hc;
+   int iter, nsrc, ns, nrec_local, nrec_global, hin;
+   int *dtinv_help;
+   float **source_energy, **receiver_energy;
+   MPI_Request *request_send, *request_receive;
+   float **grad_primary, **grad_rho, **grad_q;
+};
+
+struct visco_sh_exact_multi_shot_result {
+   double objective;
+   int shot_count;
+};
+
+/* Inactive C8c non-owning optimizer boundary.  Raw inputs are objective
+ * derivatives, including physical Q.  Outputs hold the subtractive step p
+ * for m_trial = m_base - alpha * p; this baseline adapter uses p = g_raw,
+ * so the mathematical trajectory direction is -p. */
+struct visco_sh_exact_optimizer_boundary {
+   int nx, ny;
+
+   float **grad_raw_primary;
+   float **grad_raw_rho;
+   float **grad_raw_q;
+
+   float **optimizer_step_primary;
+   float **optimizer_step_rho;
+   float **optimizer_step_q;
+};
+
+/* Inactive C8c non-owning trial-state boundary.  Physical Q is the optimized
+ * parameter; tau is derived solver state only. */
+struct visco_sh_exact_trial_state_request {
+   int nx, ny;
+
+   float alpha;
+
+   int primary_bounds_enabled;
+   float primary_lower, primary_upper;
+   float rho_lower, rho_upper;
+   float q_lower, q_upper;
+
+   const struct q_tau_mapping *q_mapping;
+
+   float **base_primary;
+   float **base_rho;
+   float **base_q;
+
+   float **optimizer_step_primary;
+   float **optimizer_step_rho;
+   float **optimizer_step_q;
+
+   float **trial_primary;
+   float **trial_rho;
+   float **trial_q;
+   float **trial_tau;
+};
+
+/* Inactive collective B4B composition boundary for exact viscoelastic SH
+ * trial objectives. Base parameter storage is borrowed and immutable. The
+ * embedded B2 request owns the subtractive convention
+ * m_trial = m_base - alpha * p and physical Q remains authoritative. Trial
+ * parameter buffers and trial_material must be preallocated, mutually
+ * separate from Base storage, and reusable; objective.material must name that
+ * same trial_material target. All ranks in MPI_COMM_WORLD call collectively
+ * with matching configuration. B3B consequently supports independent shots
+ * and the one-source simultaneous experiment, while its Contract-C rejection
+ * remains authoritative for simultaneous multi-source observations. The
+ * result is published only after B2, B4A, and B3B all succeed. */
+struct visco_sh_exact_trial_objective_request {
+   struct visco_sh_exact_trial_state_request trial_state;
+   struct matSH *trial_material;
+   int mechanisms;
+   float dt;
+   const float *frequencies_hz, *peta;
+   struct visco_sh_exact_multi_shot_request objective;
+};
+
+struct visco_sh_exact_trial_objective_result {
+   double objective;
+};
+
+/* Inactive collective B5A exact physical-Q line-search boundary.  The
+ * embedded B4B request is borrowed as a reusable Trial evaluator; B5A changes
+ * only the alpha in a local request copy.  Base storage remains immutable and
+ * the selected Trial is not committed.  All ranks must supply identical
+ * scalar policy inputs and enter collectively. */
+struct visco_sh_exact_line_search_request {
+   struct visco_sh_exact_trial_objective_request trial_objective;
+   double base_objective;
+   float initial_alpha;
+   float scale_factor;
+   int max_retries;
+};
+
+struct visco_sh_exact_line_search_result {
+   float selected_alpha;
+   double selected_objective;
+   int candidate_count;
+   int bracketed;
+};
+
+int visco_sh_material_observable_trajectory_init(
+        struct visco_sh_material_observable_trajectory *trajectory,
+        int nx, int ny, int nsteps, int dtinv, int fw, int free_surface,
+        int boundary, int nproc_x, int nproc_y);
+void visco_sh_material_observable_trajectory_release(
+        struct visco_sh_material_observable_trajectory *trajectory);
+int visco_sh_material_observable_begin_step(
+        struct visco_sh_material_observable_trajectory *trajectory, int step);
+void visco_sh_material_observable_end_step(void);
+#if defined(__GNUC__)
+int visco_sh_material_observable_is_active(void) __attribute__((weak));
+void visco_sh_material_observable_capture_qsum(
+        int j, int i, float qsum) __attribute__((weak));
+void visco_sh_material_observable_capture_strain(
+        int j, int i, float strain_x, float strain_y) __attribute__((weak));
+#else
+int visco_sh_material_observable_is_active(void);
+void visco_sh_material_observable_capture_qsum(int j, int i, float qsum);
+void visco_sh_material_observable_capture_strain(
+        int j, int i, float strain_x, float strain_y);
+#endif
+#if defined(M63C_MATERIAL_OBSERVABLE_TEST_COUNTERS)
+void visco_sh_material_observable_test_reset_counts(void);
+size_t visco_sh_material_observable_test_qsum_count(void);
+size_t visco_sh_material_observable_test_strain_count(void);
+#endif
 
 /* ------------- */
 /* PSV functions */
@@ -606,6 +959,21 @@ void exchange_v_SH(float ** vz, float ** bufferlef_to_rig, float ** bufferrig_to
 		   float ** buffertop_to_bot, float ** bufferbot_to_top,
 	           MPI_Request * req_send, MPI_Request * req_rec);
 
+int visco_sh_exchange_field_adjoint(
+        float **bar_field, int nx, int ny, int vertical_depth,
+        int horizontal_depth, int boundary, const int pos[3],
+        int nproc_x, int nproc_y, const int index[5], MPI_Comm comm);
+
+int exchange_v_SH_adjoint(
+        float **bar_vz, int nx, int ny, int fdorder, int boundary,
+        const int pos[3], int nproc_x, int nproc_y,
+        const int index[5], MPI_Comm comm);
+
+int exchange_s_SH_adjoint(
+        float **bar_sxz, float **bar_syz, int nx, int ny, int fdorder,
+        int boundary, const int pos[3], int nproc_x, int nproc_y,
+        const int index[5], MPI_Comm comm);
+
 void extract_LBFGS_SH( int iter, float ** waveconv_u, float ** gradp_u, float ** waveconv_rho, float ** gradp_rho, float ** pu, float ** prho, float * r_LBFGS);
 
 void extract_LBFGS_SH_visc( int iter, float ** waveconv_u, float ** gradp_u, float ** waveconv_rho, float ** gradp_rho, float ** waveconv_ts, float ** gradp_ts, float ** pu, float ** prho,  float ** ptaus, float * r_LBFGS);
@@ -635,16 +1003,17 @@ double grad_obj_sh_visc(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, st
 void matcopy_elastic_SH(float ** rho, float ** u);
 
 void matcopy_SH(float ** rho, float ** u, float ** taus);
+int matcopy_SH_adjoint(float **bar_rho, float **bar_u, float **bar_taus);
 
 void mem_SH(int nseismograms,int ntr, int ns, int fdo3, int nd, float buffsize);
 
 void model_freq_out_SH(float  **  rho, float **  pu, int iter, float freq);
 
-void model_freq_out_SH_visc(float  **  rho, float **  pu, float ** ptaus, int iter, float freq);
+void model_freq_out_SH_visc(float **rho, float **primary, float **physical_q, int nstage, float freq);
 
 void model_it_out_SH(float  **  rho, float **  pu, int nstage, int iter, float freq);
 
-void model_it_out_SH_visc(float  **  rho, float **  pu, float **  ptaus, int nstage, int iter, float freq);
+void model_it_out_SH_visc(float **rho, float **primary, float **physical_q, int nstage, int iter, float freq);
 
 double obj_sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matSH, struct fwiSH *fwiSH, struct mpiPSV *mpiPSV, 
          struct seisSH *seisSH, struct seisSHfwi *seisSHfwi, struct acq *acq, float *hc, int nsrc, int nsrc_loc, int nsrc_glob, int ntr, 
@@ -667,9 +1036,195 @@ void prepare_update_s_visc_SH(float *etajm, float *etaip, float *peta, float **f
 		float **puip, float **prho, float **ptaus, float **ptausipjp, float **f, float **g, 
 		float *bip, float *bjm, float *cip, float *cjm, float ***dip, float ***d, float ***e);
 
+int visco_sh_gsls_local_derivatives(
+        int mechanisms, double dt, double unrelaxed_modulus, double tau,
+        double reference_sum, const double *eta, const double *b,
+        double *f_tau, double *f_modulus, double *c_tau,
+        double *c_modulus);
+
+int visco_sh_gsls_local_vjp(
+        int mechanisms, double dt, double strain, double bar_s_next,
+        const double *bar_r_next, double forward_f,
+        const double *forward_a, const double *forward_c,
+        double f_tau, double f_modulus, const double *c_tau,
+        const double *c_modulus, double *bar_s_prev,
+        double *bar_r_prev, double *bar_strain, double *g_tau,
+        double *g_modulus);
+
+int visco_sh_stress_cpml_select_x(
+        int i, int nx2, int fw, int boundary, int pos_x, int nproc_x,
+        const float *K_x_half, const float *a_x_half,
+        const float *b_x_half, int *active, int *aux_index,
+        double *K, double *a, double *b);
+
+int visco_sh_stress_cpml_select_y(
+        int j, int ny2, int fw, int free_surface, int pos_y, int nproc_y,
+        const float *K_y, const float *a_y, const float *b_y,
+        const float *K_y_half, const float *a_y_half,
+        const float *b_y_half, int *active, int *aux_index,
+        double *K, double *a, double *b);
+
+int visco_sh_stress_cpml_local_vjp(
+        int active, double K, double a, double b, double bar_e,
+        double bar_psi_next, double *bar_e_raw, double *bar_psi_prev);
+
+int visco_sh_stress_spatial_local_vjp(
+        int fdorder, double dh, const float *hc, double bar_e_raw_x,
+        double bar_e_raw_y, double *bar_vz_patch, int patch_rows,
+        int patch_stride, int center_row, int center_col);
+
+int update_s_visc_PML_SH_adjoint_point(
+        int fdorder, int mechanisms, double dh, double dt,
+        const float *hc, const int cpml_active[2],
+        const double cpml_K[2], const double cpml_a[2],
+        const double cpml_b[2], const double strain[2],
+        const double bar_stress_next[2],
+        const double *bar_memory_x_next,
+        const double *bar_memory_y_next, const double forward_f[2],
+        const double *forward_a_x, const double *forward_a_y,
+        const double *forward_c_x, const double *forward_c_y,
+        const double f_tau[2], const double f_modulus[2],
+        const double *c_tau_x, const double *c_tau_y,
+        const double *c_modulus_x, const double *c_modulus_y,
+        const double bar_psi_next[2], double bar_stress_prev[2],
+        double *bar_memory_x_prev, double *bar_memory_y_prev,
+        double bar_psi_prev[2], double *bar_vz_patch, int patch_rows,
+        int patch_stride, int center_row, int center_col,
+        double g_tau[2], double g_modulus[2]);
+
+int visco_sh_velocity_cpml_select_x(
+        int i, int nx2, int fw, int boundary, int pos_x, int nproc_x,
+        const float *K_x, const float *a_x, const float *b_x,
+        int *active, int *aux_index, double *K, double *a, double *b);
+
+int visco_sh_velocity_cpml_select_y(
+        int j, int ny2, int fw, int free_surface, int pos_y, int nproc_y,
+        const float *K_y, const float *a_y, const float *b_y,
+        int *active, int *aux_index, double *K, double *a, double *b);
+
+int visco_sh_velocity_cpml_local_vjp(
+        int active, double K, double a, double b, double bar_q,
+        double bar_psi_next, double *bar_d_raw, double *bar_psi_prev);
+
+int visco_sh_velocity_spatial_local_vjp(
+        int fdorder, const float *hc, double bar_dx, double bar_dy,
+        double *bar_sxz_patch, double *bar_syz_patch, int patch_rows,
+        int patch_stride, int center_row, int center_col);
+
+int update_v_PML_SH_adjoint_point(
+        int fdorder, double dt, double dh, float rhoi, const float *hc,
+        const int cpml_active[2], const double cpml_K[2],
+        const double cpml_a[2], const double cpml_b[2],
+        double bar_vz_next, const double bar_psi_next[2],
+        double *bar_vz_prev, double bar_psi_prev[2],
+        double *bar_sxz_patch, double *bar_syz_patch, int patch_rows,
+        int patch_stride, int center_row, int center_col);
+
+int visco_sh_receiver_velocity_sampling_vjp(
+        int nrec, const int *rec_x, const int *rec_y,
+        const double *bar_data, double *bar_vz, int rows, int stride);
+
+int visco_sh_velocity_source_injection_vjp(
+        int rows, int stride, const double *bar_vz_after,
+        double *bar_vz_before, int nsrc, const int *src_x,
+        const int *src_y, const int *source_type, double *bar_signal);
+
+int visco_sh_full_state_adjoint_step(
+        const struct visco_sh_full_step_config *config,
+        struct visco_sh_full_state *bar_next_work,
+        struct visco_sh_full_state *bar_prev,
+        double *bar_signal);
+
+int visco_sh_full_state_adjoint_step_material(
+        const struct visco_sh_full_step_config *config,
+        struct visco_sh_full_state *bar_next_work,
+        struct visco_sh_full_state *bar_prev,
+        double *bar_signal,
+        const struct visco_sh_material_adjoint_step_context *material);
+
+/* Exact reverse-time composition of the fixed-material full-state step.
+ * Receiver and source cotangent series are time-major:
+ *   bar_receiver_series[n * nrec + receiver]
+ *   bar_signal_series[n * nsrc + source]
+ * for chronological forward indices n = 0, ..., nsteps - 1.  The terminal
+ * and scratch states are mutable workspaces; bar_initial is overwritten and
+ * owns the result for every positive nsteps, independent of parity. */
+int visco_sh_reverse_time_adjoint(
+        const struct visco_sh_full_step_config *base_config,
+        int nsteps,
+        const double *bar_receiver_series,
+        struct visco_sh_full_state *bar_terminal_work,
+        struct visco_sh_full_state *bar_initial,
+        struct visco_sh_full_state *scratch,
+        double *bar_signal_series);
+
+/* Material-aware C7c-b2 companion.  It preserves the locked fixed-material
+ * state transpose, uses trajectory->steps[n] at reverse step n, accumulates
+ * native contributions without weight, then applies the locked C7c-a
+ * direct discrete-time sum and distributed physical mapping exactly once.
+ * The integrated path is intentionally restricted to trajectory dtinv == 1. */
+int visco_sh_reverse_time_adjoint_material(
+        const struct visco_sh_full_step_config *base_config,
+        int nsteps,
+        const double *bar_receiver_series,
+        struct visco_sh_full_state *bar_terminal_work,
+        struct visco_sh_full_state *bar_initial,
+        struct visco_sh_full_state *scratch,
+        double *bar_signal_series,
+        const struct visco_sh_reverse_time_material_context *material);
+
+int visco_sh_exact_objective_gradient_shot(
+        const struct visco_sh_exact_shot_request *request,
+        struct visco_sh_exact_shot_result *result);
+
+int visco_sh_exact_objective_shot(
+        const struct visco_sh_exact_objective_shot_request *request,
+        struct visco_sh_exact_objective_shot_result *result);
+
+int visco_sh_exact_objective_gradient(
+        const struct visco_sh_exact_multi_shot_request *request,
+        struct visco_sh_exact_multi_shot_result *result);
+
+int visco_sh_exact_objective(
+        const struct visco_sh_exact_multi_shot_request *request,
+        struct visco_sh_exact_multi_shot_result *result);
+
+/* Collective on MPI_COMM_WORLD with the normal model topology and Bsend
+ * buffer installed. Physical Q is authoritative; no input Tau is accepted.
+ * All input storage and target storage must be disjoint, including Base
+ * caches. Target is already allocated for NX/NY/L: pu/prho/ptaus include
+ * 0..NY+1 x 0..NX+1 halos; Q and derived fields need owned cells only.
+ * Configuration must match the immutable global L/FL/DT and physical-Q
+ * approximation settings. Target mutation starts only after global validation
+ * succeeds; validation failure leaves every target unchanged. */
+struct visco_sh_exact_material_preparation_request {
+    float **primary, **rho, **physical_q;
+    struct matSH *target;
+    int mechanisms;
+    float dt;
+    const float *frequencies_hz, *peta;
+};
+
+int visco_sh_exact_prepare_visco_material(
+        const struct visco_sh_exact_material_preparation_request *request);
+
+int visco_sh_exact_build_steepest_subtractive_step(
+        const struct visco_sh_exact_optimizer_boundary *boundary);
+
+int visco_sh_exact_build_trial_parameter_state(
+        const struct visco_sh_exact_trial_state_request *request);
+
+int visco_sh_exact_trial_objective(
+        const struct visco_sh_exact_trial_objective_request *request,
+        struct visco_sh_exact_trial_objective_result *result);
+
+int step_length_est_sh_visc_exact(
+        const struct visco_sh_exact_line_search_request *request,
+        struct visco_sh_exact_line_search_result *result);
+
 void readmod_elastic_SH(float  **rho, float **u);
 
-void readmod_visc_SH(float  **rho, float **u, float **taus, float *eta);
+void readmod_visc_SH(float **rho, float **u, float **qs, float **taus, float *eta);
 
 void RTM_SH_out_shot(struct fwiSH *fwiSH, int ishot);
 
@@ -682,6 +1237,11 @@ void sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matS
 void sh_visc(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matSH, struct fwiSH *fwiSH, struct mpiPSV *mpiPSV, 
          struct seisSH *seisSH, struct seisSHfwi *seisSHfwi, struct acq *acq, float *hc, int ishot, int nshots, int nsrc_loc, 
          int ns, int ntr, float **Ws, float **Wr, int hin, int *DTINV_help, int mode, MPI_Request * req_send, MPI_Request * req_rec);	  
+
+void sh_visc_with_material_trajectory(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matSH, struct fwiSH *fwiSH, struct mpiPSV *mpiPSV,
+         struct seisSH *seisSH, struct seisSHfwi *seisSHfwi, struct acq *acq, float *hc, int ishot, int nshots, int nsrc_loc,
+         int ns, int ntr, float **Ws, float **Wr, int hin, int *DTINV_help, int mode, MPI_Request * req_send, MPI_Request * req_rec,
+         struct visco_sh_material_observable_trajectory *trajectory);
 
 
 float step_length_est_sh(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matSH, struct fwiSH *fwiSH, struct mpiPSV *mpiPSV, 
@@ -709,6 +1269,12 @@ void store_pseudo_hess_SH(struct fwiSH *fwiSH);
 void surface_elastic_SH_velocity(float **vz, int nx, int half_order);
 
 void surface_elastic_SH_stress(float **syz, int nx, int half_order);
+
+void surface_elastic_SH_velocity_adjoint(
+        float **bar_vz, int nx, int half_order);
+
+void surface_elastic_SH_stress_adjoint(
+        float **bar_syz, int nx, int half_order);
 
 void update_s_elastic_PML_SH(int nx1, int nx2, int ny1, int ny2,
 	float ** vz, float **  uz, float **  uzx, float **   syz, float **   sxz,
@@ -905,6 +1471,7 @@ float **read_grav_pos(int *ngrav);
 void read_par(FILE *fp_in);
 
 void read_par_inv(FILE *fp,int nstage,int stagemax);
+void read_par_inv_silent(FILE *fp,int nstage,int stagemax);
 
 int **receiver(FILE *fp, int *ntr, int ishot);
 

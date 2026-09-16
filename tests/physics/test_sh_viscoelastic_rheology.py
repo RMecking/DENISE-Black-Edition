@@ -590,7 +590,8 @@ def test_m42_historical_l4_external_qs_parameterization(
     psv_reader_source = (repository_root / "src" / "PSV" / "readmod_visc_PSV.c").read_text(
         encoding="utf-8"
     )
-    assert "taus[jj][ii]=q_to_tau(qs, &q_mapping);" in reader_source
+    assert "qs[jj][ii]=q_value;" in reader_source
+    assert "taus[jj][ii]=q_to_tau(qs[jj][ii], &q_mapping);" in reader_source
     assert "taus[jj][ii]=q_to_tau(qs, &q_mapping);" in psv_reader_source
     assert "taup[jj][ii]=q_to_tau(qp, &q_mapping);" in psv_reader_source
 

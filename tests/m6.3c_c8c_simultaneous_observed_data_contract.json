@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "task": "C8C-B3B.0A-SIMULTANEOUS-OBSERVED-DATA-CONTRACT-FREEZE",
+  "baseline_sha": "1a0d67b2fa49520a3e2fb5491643449d380ba3f7",
+  "contract_kind": "forward scientific acceptance amendment",
+  "historical_a1_contract": {
+    "path": "tests/m6.3c_c8c_active_switch_contract.json",
+    "task": "C8C-A1-ACTIVE-SWITCH-CONTRACT",
+    "baseline_sha": "67f1040549ade5a7b93a723700448cbfedb92513",
+    "preserved": true
+  },
+  "supported_experiment_modes": {
+    "independent_shots": {
+      "condition": "RUN_MULTIPLE_SHOTS != 0 and nsrc >= 1",
+      "experiment_count": "one per physical source",
+      "observed_data": "one matching observed shot dataset per physical source",
+      "existing_exact_experiment_semantics": "unchanged"
+    },
+    "one_source_simultaneous": {
+      "condition": "RUN_MULTIPLE_SHOTS == 0 and nsrc == 1",
+      "experiment_count": 1,
+      "physical_source_count": 1,
+      "observed_data": "observed dataset 1 is the matching single-source observation"
+    }
+  },
+  "unsupported_experiment_mode": {
+    "condition": "RUN_MULTIPLE_SHOTS == 0 and nsrc > 1",
+    "initial_exact_c8c_path": "fail closed",
+    "rejecting_entrypoints": [
+      "visco_sh_exact_objective_gradient",
+      "visco_sh_exact_objective"
+    ],
+    "rejection_must_precede": [
+      "interpretation of observed data as a valid simultaneous experiment",
+      "gradient output overwrite or accumulation",
+      "presentation of objective output as scientifically valid"
+    ],
+    "forbidden_fallbacks": [
+      "inseis(1) as a multi-source simultaneous observed-data surrogate",
+      "naive sum of independent shot objectives"
+    ]
+  },
+  "supersession": {
+    "supersedes_only": "A1 initial-activation requirement for a real RUN_MULTIPLE_SHOTS == 0 and nsrc > 1 simultaneous-source E2E case",
+    "does_not_weaken": [
+      "independent multi-shot testing",
+      "one-source simultaneous testing",
+      "objective/gradient identity",
+      "physical-Q ownership",
+      "sign semantics",
+      "fail-closed requirements"
+    ]
+  },
+  "future_reenablement": {
+    "requires_separate_contract": true,
+    "observed_data_contract_options": [
+      "pre-combined observed simultaneous data",
+      "validated construction of simultaneous observed data from per-source gathers"
+    ],
+    "must_not_choose_option_in_this_amendment": true,
+    "required_e2e_oracle": "distinguish 0.5 ||sum_s r_s||^2 from sum_s 0.5 ||r_s||^2 through nonzero cross terms"
+  }
+}

@@ -8,7 +8,7 @@
 
 #include "fd.h"
 
-void readmod_visc_SH(float  **  rho, float **  u, float ** taus, float * eta){
+void readmod_visc_SH(float **rho, float **u, float **qs, float **taus, float *eta){
 
 	extern float DT, *FL;
 	extern int L;
@@ -20,7 +20,7 @@ void readmod_visc_SH(float  **  rho, float **  u, float ** taus, float * eta){
 
 		
 	/* local variables */
-	float rhov, muv, vs, qs, *pts;
+	float rhov, muv, vs, q_value, *pts;
 	struct q_tau_mapping q_mapping;
 	int i, j, ii, jj, l;
 	FILE *fp_vs, *fp_rho, *fp_qs;
@@ -85,7 +85,7 @@ void readmod_visc_SH(float  **  rho, float **  u, float ** taus, float * eta){
 			for (j=1;j<=NYG;j++){
 			fread(&vs, sizeof(float), 1, fp_vs);
 			fread(&rhov, sizeof(float), 1, fp_rho);
-			fread(&qs, sizeof(float), 1, fp_qs);
+			fread(&q_value, sizeof(float), 1, fp_qs);
 				
 			/* only the PE which belongs to the current global gridpoint 
 			is saving model parameters in his local arrays */
@@ -96,7 +96,8 @@ void readmod_visc_SH(float  **  rho, float **  u, float ** taus, float * eta){
                                 
 				u[jj][ii]=vs;
                                 rho[jj][ii]=rhov;
-				taus[jj][ii]=q_to_tau(qs, &q_mapping);
+				qs[jj][ii]=q_value;
+				taus[jj][ii]=q_to_tau(qs[jj][ii], &q_mapping);
 				
 				}
 			}
@@ -124,7 +125,6 @@ void readmod_visc_SH(float  **  rho, float **  u, float ** taus, float * eta){
 
 	free_vector(pts,1,L);
 }
-
 
 
 
