@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import struct
+import textwrap
 
 import pytest
 
@@ -25,7 +26,8 @@ def _write_sh_parameter(
     repository_root: Path, output: Path, *, mode: int = 0,
     model_prefix: str = "model/true", grad_method: int = 1,
     nprocx: int = 1, nprocy: int = 1, eps_scale: float = 1.0e6,
-    stepmax: int = 10,
+    stepmax: int = 10, invmat1: int = 1, inv_mod_out: int = 0,
+    inv_model_file: str = "model/inverted", itermax: int = 1,
 ) -> None:
     """Invoke the repository's SH parameter serializer without its plotting imports."""
     serializer = repository_root / "par" / "pythonIO_SH" / "denise_sh_IO" / "denise_sh_out.py"
@@ -48,13 +50,13 @@ def _write_sh_parameter(
         "SEISMO": 1, "READREC": 1, "REC_FILE": "receiver/line", "NDT": 1,
         "SEIS_FILE_VX": "su/unused_x.su", "SEIS_FILE_VY": "su/observed_y.su",
         "SEIS_FILE_CURL": "su/unused_curl.su", "SEIS_FILE_DIV": "su/unused_div.su", "SEIS_FILE_P": "su/unused_p.su",
-        "LOG_FILE": "log/denise", "ITERMAX": 1, "JACOBIAN": "jacobian/unused", "DATA_DIR": "su/observed",
+        "LOG_FILE": "log/denise", "ITERMAX": itermax, "JACOBIAN": "jacobian/unused", "DATA_DIR": "su/observed",
         "TAPERLENGTH": 1, "GRADT1": 1, "GRADT2": 1, "GRADT3": 1, "GRADT4": 1,
         "INVMAT1": 1, "GRAD_FORM": 1, "QUELLTYPB": 2, "TESTSHOT_START": 1, "TESTSHOT_END": 1,
         "TESTSHOT_INCR": 1, "SWS_TAPER_GRAD_VERT": 0, "SWS_TAPER_GRAD_HOR": 0,
         "EXP_TAPER_GRAD_HOR": 1.0, "SWS_TAPER_GRAD_SOURCES": 0, "SWS_TAPER_CIRCULAR_PER_SHOT": 0,
         "SRTSHAPE": 1, "SRTRADIUS": 50.0, "SWS_TAPER_FILE": 0, "TFILE": "taper/unused",
-        "INV_MOD_OUT": 0, "INV_MODELFILE": "model/inverted", "VPUPPERLIM": 5000.0, "VPLOWERLIM": 100.0,
+        "INV_MOD_OUT": inv_mod_out, "INV_MODELFILE": inv_model_file, "VPUPPERLIM": 5000.0, "VPLOWERLIM": 100.0,
         "VSUPPERLIM": 5000.0, "VSLOWERLIM": 100.0, "RHOUPPERLIM": 5000.0, "RHOLOWERLIM": 100.0,
         "QSUPPERLIM": 100.0, "QSLOWERLIM": 10.0, "GRAD_METHOD": grad_method, "PCG_BETA": 1, "NLBFGS": 1,
         # The real raw Q gradient is O(1e-7) here; 1e6 makes B5A's first
@@ -64,6 +66,7 @@ def _write_sh_parameter(
         "SCALEFAC": 2.0, "TRKILL": 0, "TRKILL_FILE": "tracekill/unused", "PICKS_FILE": "picks/unused",
         "MISFIT_LOG_FILE": "log/misfit", "MIN_ITER": 1, "GRAD_FILTER": 0, "FILT_SIZE_GRAD": 1,
     }
+    fields["INVMAT1"] = invmat1
     write = namespace["write_denise_para"]
     assert callable(write)
     write(fields)
@@ -71,7 +74,10 @@ def _write_sh_parameter(
     output.write_text(output.read_text(encoding="utf-8") + "\nQ_PARAMETERIZATION_MODE = 1\nQ_APPROX_FMIN = 5.0\nQ_APPROX_FMAX = 40.0\nQ_APPROX_DF = 1.0\n", encoding="utf-8")
 
 
-def _write_ephemeral_sh_forward_fixture(tmp_path: Path, repository_root: Path) -> dict[str, Path]:
+def _write_ephemeral_sh_forward_fixture(
+    tmp_path: Path, repository_root: Path, *, invmat1: int = 1,
+    workflow_pro: float = 0.01,
+) -> dict[str, Path]:
     # 32 x 32 cells at DH=10 m with a six-cell CPML.  The source is at
     # (160, 160) m and the receiver line is x=100..220 m at y=160 m: each
     # lies at least four cells beyond the PML and permits measurable travel.
@@ -91,8 +97,11 @@ def _write_ephemeral_sh_forward_fixture(tmp_path: Path, repository_root: Path) -
         for y in range(ny):
             true_q.append(80.0)
             start_q.append(70.0 if 14 <= x <= 18 and 14 <= y <= 18 else 80.0)
+    assert invmat1 in (1, 3)
+    primary_suffix = ".vs" if invmat1 == 1 else ".mu"
+    primary_value = 2000.0 if invmat1 == 1 else 2000.0 * 2000.0 * 2000.0
     for prefix, qs in ((true_prefix, true_q), (start_prefix, start_q)):
-        _write_model(prefix.with_suffix(".vs"), [2000.0] * cells, cells)
+        _write_model(prefix.with_suffix(primary_suffix), [primary_value] * cells, cells)
         _write_model(prefix.with_suffix(".rho"), [2000.0] * cells, cells)
         _write_model(prefix.with_suffix(".qs"), qs, cells)
     source = root / "source" / "one.dat"
@@ -100,13 +109,142 @@ def _write_ephemeral_sh_forward_fixture(tmp_path: Path, repository_root: Path) -
     receiver = root / "receiver" / "line.dat"
     receiver.write_text("100 160\n120 160\n140 160\n180 160\n200 160\n220 160\n", encoding="ascii")
     par = root / "true_forward.inp"
-    _write_sh_parameter(repository_root, par)
+    _write_sh_parameter(repository_root, par, invmat1=invmat1)
     workflow = root / "workflow.inp"
-    workflow.write_text("PRO TIME_FILT FC_low FC_high ORDER TIME_WIN GAMMA TWIN- TWIN+ INV_VP_ITER INV_VS_ITER INV_RHO_ITER INV_QS_ITER SPATFILTER WD_DAMP WD_DAMP1 EPRECOND LNORM ROWI STF_INV OFFSETC_STF EPS_STF NORMALIZE OFFSET_MUTE OFFSETC SCALERHO SCALEQS ENV GAMMA_GRAV N_ORDER\n0.01 0 0 20 2 0 1 0 0 0 0 0 0 0 0.5 0.5 0 2 0 0 0 0.1 0 0 10 1 1 0 0 0\n", encoding="ascii")
+    workflow.write_text(
+        "PRO TIME_FILT FC_low FC_high ORDER TIME_WIN GAMMA TWIN- TWIN+ INV_VP_ITER INV_VS_ITER INV_RHO_ITER INV_QS_ITER SPATFILTER WD_DAMP WD_DAMP1 EPRECOND LNORM ROWI STF_INV OFFSETC_STF EPS_STF NORMALIZE OFFSET_MUTE OFFSETC SCALERHO SCALEQS ENV GAMMA_GRAV N_ORDER\n"
+        f"{workflow_pro} 0 0 20 2 0 1 0 0 0 0 0 0 0 0.5 0.5 0 2 0 0 0 0.1 0 0 10 1 1 0 0 0\n",
+        encoding="ascii",
+    )
     return {"root": root, "parameter": par, "workflow": workflow,
             "observed": root / "su" / "observed_y.su.shot1",
             "fwi_observed": root / "su" / "observed_y.su.shot1",
             "true": true_prefix, "start": start_prefix}
+
+
+def _read_native_model(path: Path, cells: int) -> tuple[bytes, tuple[float, ...]]:
+    raw = path.read_bytes()
+    assert len(raw) == 4 * cells
+    values = struct.unpack(f"={cells}f", raw)
+    assert all(math.isfinite(value) for value in values)
+    return raw, values
+
+
+def _compile_and_run_production_reader(
+    tmp_path: Path, repository_root: Path, fixture: dict[str, Path], *,
+    model_prefix: str, invmat1: int, readback_prefix: str,
+) -> dict[str, Path]:
+    """Exercise readmod_visc_SH and production model writers in a one-rank adapter."""
+    compiler = shutil.which("mpicc")
+    launcher = shutil.which("mpiexec") or shutil.which("mpirun")
+    assert compiler and launcher
+    source = tmp_path / "production_reader_adapter.c"
+    executable = tmp_path / "production_reader_adapter"
+    source.write_text(textwrap.dedent(r"""
+        #include "fd.h"
+        #include "globvar.h"
+
+        static void write_merged(const char *name, float **array) {
+            char path[STRING_SIZE];
+            snprintf(path, sizeof(path), "%s", name);
+            writemod(path, array, 3);
+            MPI_Barrier(MPI_COMM_WORLD);
+            if (MYID == 0) mergemod(path, 3);
+            MPI_Barrier(MPI_COMM_WORLD);
+        }
+
+        int main(int argc, char **argv) {
+            float **rho, **primary, **qs, **tau, *eta;
+            char output[STRING_SIZE];
+            if (argc != 5) return 2;
+            MPI_Init(&argc, &argv);
+            NX = NY = NXG = NYG = atoi(argv[4]);
+            NPROCX = NPROCY = NPROC = 1;
+            MYID = MYID_SHOT = 0;
+            POS[0] = POS[1] = POS[2] = 0;
+            IDX = IDY = 1;
+            L = 1;
+            DT = 0.0005f;
+            FL = vector(1, L);
+            FL[1] = 20.0f;
+            Q_PARAMETERIZATION_MODE = Q_PARAMETERIZATION_PHYSICAL;
+            Q_APPROX_FMIN = 5.0f;
+            Q_APPROX_FMAX = 40.0f;
+            Q_APPROX_DF = 1.0f;
+            INVMAT1 = atoi(argv[2]);
+            FP = stdout;
+            snprintf(MFILE, sizeof(MFILE), "%s", argv[1]);
+            rho = matrix(1, NY, 1, NX);
+            primary = matrix(1, NY, 1, NX);
+            qs = matrix(1, NY, 1, NX);
+            tau = matrix(1, NY, 1, NX);
+            eta = vector(1, L);
+            readmod_visc_SH(rho, primary, qs, tau, eta);
+            snprintf(output, sizeof(output), "%s.primary", argv[3]);
+            write_merged(output, primary);
+            snprintf(output, sizeof(output), "%s.rho", argv[3]);
+            write_merged(output, rho);
+            snprintf(output, sizeof(output), "%s.qs", argv[3]);
+            write_merged(output, qs);
+            snprintf(output, sizeof(output), "%s.tau", argv[3]);
+            write_merged(output, tau);
+            free_matrix(rho, 1, NY, 1, NX);
+            free_matrix(primary, 1, NY, 1, NX);
+            free_matrix(qs, 1, NY, 1, NX);
+            free_matrix(tau, 1, NY, 1, NX);
+            free_vector(eta, 1, L);
+            free_vector(FL, 1, L);
+            MPI_Finalize();
+            return 0;
+        }
+    """), encoding="utf-8")
+    production_sources = (
+        repository_root / "src" / "SH" / "readmod_visc_SH.c",
+        repository_root / "src" / "q_parameterization.c",
+        repository_root / "src" / "util.c",
+        repository_root / "src" / "writemod.c",
+        repository_root / "src" / "mergemod.c",
+        repository_root / "src" / "writedsk.c",
+        repository_root / "src" / "readdsk.c",
+    )
+    build = subprocess.run(
+        [compiler, "-std=c99", "-fcommon", "-I", str(repository_root / "include"),
+         str(source), *(str(item) for item in production_sources), "-lm", "-o", str(executable)],
+        cwd=repository_root, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    )
+    assert build.returncode == 0, build.stdout
+    run = subprocess.run(
+        [launcher, "--oversubscribe", "-n", "1", str(executable), model_prefix,
+         str(invmat1), readback_prefix, "32"],
+        cwd=fixture["root"], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        timeout=120,
+    )
+    assert run.returncode == 0, run.stdout
+    root = fixture["root"] / readback_prefix
+    return {suffix: Path(f"{root}{suffix}") for suffix in (".primary", ".rho", ".qs", ".tau")}
+
+
+def _run_accepted_fwi_with_model_output(
+    tmp_path: Path, repository_root: Path, *, invmat1: int, inv_mod_out: int,
+    output_prefix: str, workflow_pro: float = 0.01, itermax: int = 1,
+    nprocx: int = 1, nprocy: int = 1,
+) -> tuple[dict[str, Path], Path]:
+    fixture = _write_ephemeral_sh_forward_fixture(
+        tmp_path, repository_root, invmat1=invmat1, workflow_pro=workflow_pro,
+    )
+    forward = _run_denise(repository_root, fixture, fixture["parameter"])
+    assert forward.returncode == 0, forward.stdout
+    parameter = fixture["root"] / f"active_{invmat1}_{inv_mod_out}.inp"
+    _write_sh_parameter(
+        repository_root, parameter, mode=1, model_prefix="model/start", grad_method=0,
+        invmat1=invmat1, inv_mod_out=inv_mod_out, inv_model_file=output_prefix,
+        itermax=itermax, nprocx=nprocx, nprocy=nprocy,
+    )
+    run = _run_denise(repository_root, fixture, parameter, ranks=nprocx * nprocy)
+    assert run.returncode == 0, run.stdout
+    assert "TDFWI ITERATION 1" in run.stdout
+    assert "opteps_vp" in run.stdout
+    return fixture, fixture["root"] / output_prefix
 
 
 def _run_denise(
@@ -295,6 +433,7 @@ def test_real_active_fwi_two_rank_preacceptance_failure_keeps_start_model(
     _write_sh_parameter(
         repository_root, parameter, mode=1, model_prefix="model/start", grad_method=0,
         nprocx=2, nprocy=1, eps_scale=0.1, stepmax=10,
+        inv_model_file="model/must_not_be_accepted",
     )
     run = _run_denise(repository_root, fixture, parameter, ranks=2)
     assert run.returncode != 0
@@ -303,3 +442,127 @@ def test_real_active_fwi_two_rank_preacceptance_failure_keeps_start_model(
         suffix: fixture["start"].with_suffix(suffix).read_bytes()
         for suffix in (".vs", ".rho", ".qs")
     }
+    assert not list((fixture["root"] / "model").glob("must_not_be_accepted*"))
+
+
+def test_accepted_vs_model_persists_through_iteration_stage_and_production_readback(
+    tmp_path: Path, repository_root: Path,
+) -> None:
+    """The accepted physical-Q Base survives both real writer boundaries and readmod."""
+    fixture, iteration_root = _run_accepted_fwi_with_model_output(
+        tmp_path, repository_root, invmat1=1, inv_mod_out=1,
+        output_prefix="model/accepted_iteration", workflow_pro=1.0, itermax=2,
+    )
+    iteration_prefix = Path(f"{iteration_root}_stage_1_it_2")
+    cells = 32 * 32
+    iteration = {
+        suffix: Path(f"{iteration_prefix}{suffix}")
+        for suffix in (".vs", ".rho", ".qs")
+    }
+    iteration_raw = {
+        suffix: _read_native_model(path, cells)[0]
+        for suffix, path in iteration.items()
+    }
+    # The fixture's central physical-Q patch must have accepted a real update.
+    _, accepted_q = _read_native_model(iteration[".qs"], cells)
+    _, start_q = _read_native_model(fixture["start"].with_suffix(".qs"), cells)
+    updated_cell = 15 * 32 + 15
+    assert accepted_q[updated_cell] != start_q[updated_cell]
+
+    # The historical stage-abort condition is not reached by the smallest
+    # one-stage fixture, so freeze its production boundary without inventing a
+    # direct writer call.  The iteration writer above remains the real runtime
+    # persistence proof.
+    driver = _compact((repository_root / "src/SH/FWI_SH_visc.c").read_text(encoding="utf-8"))
+    stage_writer = "model_freq_out_SH_visc(exact_base_rho,exact_base_primary,exact_base_q,nstage,FC)"
+    assert stage_writer in driver
+    stage_source = (repository_root / "src/SH/model_freq_out_SH_visc.c").read_text(encoding="utf-8")
+    assert "writemod(modfile,physical_q,3)" in _compact(stage_source)
+
+    readback = _compile_and_run_production_reader(
+        tmp_path, repository_root, fixture,
+        model_prefix="model/accepted_iteration_stage_1_it_2", invmat1=1,
+        readback_prefix="model/readback_vs",
+    )
+    assert _read_native_model(readback[".primary"], cells)[0] == iteration_raw[".vs"]
+    assert _read_native_model(readback[".rho"], cells)[0] == iteration_raw[".rho"]
+    assert _read_native_model(readback[".qs"], cells)[0] == iteration_raw[".qs"]
+
+    _, reloaded_q = _read_native_model(readback[".qs"], cells)
+    _, reloaded_tau = _read_native_model(readback[".tau"], cells)
+    # The value written as .qs is physical Q, while Tau exists only as state
+    # derived by the real reader from that just-reloaded Q.
+    assert reloaded_q[updated_cell] == accepted_q[updated_cell]
+    assert reloaded_tau[updated_cell] > 0.0
+    assert reloaded_q[updated_cell] != reloaded_tau[updated_cell]
+
+
+def test_accepted_mu_model_persists_as_mu_and_physical_q_through_readmod(
+    tmp_path: Path, repository_root: Path,
+) -> None:
+    """INVMAT1=3 retains its μ primary field and physical-Q secondary field."""
+    fixture, output_root = _run_accepted_fwi_with_model_output(
+        tmp_path, repository_root, invmat1=3, inv_mod_out=1,
+        output_prefix="model/accepted_mu",
+    )
+    prefix = Path(f"{output_root}_stage_1_it_1")
+    cells = 32 * 32
+    persisted = {
+        suffix: Path(f"{prefix}{suffix}")
+        for suffix in (".mu", ".rho", ".qs")
+    }
+    assert not Path(f"{prefix}.vs").exists()
+    persisted_raw = {
+        suffix: _read_native_model(path, cells)[0]
+        for suffix, path in persisted.items()
+    }
+    _, mu = _read_native_model(persisted[".mu"], cells)
+    _, qs = _read_native_model(persisted[".qs"], cells)
+    updated_cell = 15 * 32 + 15
+    assert mu[updated_cell] == 2000.0 * 2000.0 * 2000.0
+    assert qs[updated_cell] != 70.0
+
+    readback = _compile_and_run_production_reader(
+        tmp_path, repository_root, fixture,
+        model_prefix="model/accepted_mu_stage_1_it_1", invmat1=3,
+        readback_prefix="model/readback_mu",
+    )
+    assert _read_native_model(readback[".primary"], cells)[0] == persisted_raw[".mu"]
+    assert _read_native_model(readback[".rho"], cells)[0] == persisted_raw[".rho"]
+    assert _read_native_model(readback[".qs"], cells)[0] == persisted_raw[".qs"]
+    _, tau = _read_native_model(readback[".tau"], cells)
+    assert qs[updated_cell] != tau[updated_cell]
+
+
+def test_two_rank_accepted_vs_model_is_merged_globally_and_roundtrips_through_readmod(
+    tmp_path: Path, repository_root: Path,
+) -> None:
+    """Two MPI ranks must persist one complete physical-Q accepted model triplet."""
+    fixture, output_root = _run_accepted_fwi_with_model_output(
+        tmp_path, repository_root, invmat1=1, inv_mod_out=1,
+        output_prefix="model/accepted_two_rank", nprocx=2, nprocy=1,
+    )
+    prefix = Path(f"{output_root}_stage_1_it_1")
+    cells = 32 * 32
+    persisted = {
+        suffix: Path(f"{prefix}{suffix}")
+        for suffix in (".vs", ".rho", ".qs")
+    }
+    raw = {suffix: _read_native_model(path, cells)[0] for suffix, path in persisted.items()}
+    for suffix, path in persisted.items():
+        assert path.stat().st_size == 32 * 32 * 4
+        assert list(path.parent.glob(f"{path.name}.*.*")) == []
+
+    readback = _compile_and_run_production_reader(
+        tmp_path, repository_root, fixture,
+        model_prefix="model/accepted_two_rank_stage_1_it_1", invmat1=1,
+        readback_prefix="model/readback_two_rank",
+    )
+    assert _read_native_model(readback[".primary"], cells)[0] == raw[".vs"]
+    assert _read_native_model(readback[".rho"], cells)[0] == raw[".rho"]
+    assert _read_native_model(readback[".qs"], cells)[0] == raw[".qs"]
+    _, q = _read_native_model(readback[".qs"], cells)
+    _, tau = _read_native_model(readback[".tau"], cells)
+    updated_cell = 15 * 32 + 15
+    assert q[updated_cell] != 70.0
+    assert q[updated_cell] != tau[updated_cell]
