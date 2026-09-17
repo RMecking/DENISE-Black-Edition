@@ -10,6 +10,8 @@
 
 #include "fd.h"
 
+void visco_psv_exact_velocity(int j, int i, float force_x, float force_y);
+
 
 void update_v_PML_PSV(int nx1, int nx2, int ny1, int ny2, int nt,
 	float **  vx, float **  vxp1, float **  vxm1, float ** vy, float **  vyp1, float **  vym1, float **  uttx, float **  utty,float ** sxx, float ** syy,
@@ -223,6 +225,8 @@ void update_v_PML_PSV(int nx1, int nx2, int ny1, int ny2, int nt,
 
         }                       
                            
+                           if(sw==0) visco_psv_exact_velocity(j,i,sxx_x+sxy_y,sxy_x+syy_y);
+
                            if(GRAD_FORM==1){
 
                               if(sw==0){

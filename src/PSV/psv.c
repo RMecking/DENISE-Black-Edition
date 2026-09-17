@@ -14,6 +14,8 @@
 
 #include "fd.h"
 
+void visco_psv_exact_step(int t);
+
 void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV *matPSV, struct fwiPSV *fwiPSV, struct mpiPSV *mpiPSV,
 		 struct seisPSV *seisPSV, struct seisPSVfwi *seisPSVfwi, struct acq *acq, float *hc, int ishot, int nshots, int nsrc_loc,
 		 int ns, int ntr, float **Ws, float **Wr, int hin, int *DTINV_help, int mode, MPI_Request *req_send, MPI_Request *req_rec)
@@ -97,6 +99,7 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 
 	for (nt = 1; nt <= NT; nt++)
 	{
+		if (mode == 0) visco_psv_exact_step(nt);
 
 		/* Check if simulation is still stable */
 		/*if (isnan(pvy[NY/2][NX/2])) err(" Simulation is unstable !");*/

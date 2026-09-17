@@ -10,6 +10,9 @@
 
 #include "fd.h"
 
+void visco_psv_exact_strain(int j, int i, float vxx, float vyx,
+                            float vxy, float vyy);
+
 void update_s_visc_PML_PSV(int nx1, int nx2, int ny1, int ny2,
 	float **  vx, float **   vy, float **  ux, float **   uy, float **  uxy, float **   uyx, float **   sxx, float **   syy,
 	float **   sxy, float ** pi, float ** u, float ** uipjp, float **rho, float *hc, int infoout,
@@ -227,6 +230,8 @@ void update_s_visc_PML_PSV(int nx1, int nx2, int ny1, int ny2,
 			vxy = vxy / K_y_half[h1] + psi_vxy[h1][i];
         
         }
+
+	if(mode==0) visco_psv_exact_strain(j,i,vxx,vyx,vxy,vyy);
 
 	/* computing sums of the old memory variables */
 			sumr=sump=sumq=0.0;
