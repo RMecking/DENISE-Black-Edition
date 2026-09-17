@@ -8,6 +8,12 @@
 
 #include "fd.h"
 
+int visco_psv_exact_enabled(void);
+void visco_psv_exact_begin(void);
+void visco_psv_exact_finish(struct wavePSV_PML *pml, struct matPSV *mat,
+                            struct seisPSV *seis, struct seisPSVfwi *data,
+                            struct acq *acq, float *hc, int ntr);
+
 double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV *matPSV, struct fwiPSV *fwiPSV, struct mpiPSV *mpiPSV,
 				   struct seisPSV *seisPSV, struct seisPSVfwi *seisPSVfwi, struct acq *acq, float *hc, int iter, int nsrc, int ns, int ntr, int ntr_glob, int nsrc_glob,
 				   int nsrc_loc, int ntr_loc, int nstage, float **We, float **Ws, float **Wr, float **taper_coeff, int hin, int *DTINV_help,
@@ -176,6 +182,7 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 		}
 
 		/* solve forward problem */
+		if (visco_psv_exact_enabled()) visco_psv_exact_begin();
 		psv(wavePSV, wavePSV_PML, matPSV, fwiPSV, mpiPSV, seisPSV, seisPSVfwi, acq, hc, ishot, nshots, nsrc_loc, ns, ntr, Ws, Wr, hin, DTINV_help, 0, req_send, req_rec);
 		
 		/* ===============================================
@@ -191,6 +198,9 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 		{
 			calc_res_PSV(seisPSV, seisPSVfwi, (*acq).recswitch, (*acq).recpos, (*acq).recpos_loc, ntr_glob, ntr, nsrc_glob, (*acq).srcpos, ishot, ns, iter, swstestshot);
 		}
+		if (visco_psv_exact_enabled())
+			visco_psv_exact_finish(wavePSV_PML, matPSV, seisPSV,
+			                       seisPSVfwi, acq, hc, ntr);
 
 		swstestshot = 0;
 

@@ -133,7 +133,7 @@ def _write_case(directory: Path, *, config: ViscoPSVOracleConfig, model: Mapping
     (directory / "workflow.inp").write_text(_workflow(), encoding="ascii")
     if observed is not None:
         for component in ("x", "y"):
-            (directory / "observed" / f"synthetic_{component}.su.shot1").write_bytes((observed / "su" / f"synthetic_{component}.su.shot1").read_bytes())
+            (directory / f"observed_{component}.su.shot1").write_bytes((observed / "su" / f"synthetic_{component}.su.shot1").read_bytes())
 
 
 def _pattern(config: ViscoPSVOracleConfig, *, phase: float, cx: float, cy: float) -> list[float]:
@@ -251,19 +251,38 @@ def test_physical_viscoelastic_psv_central_differences_are_stable_and_distinct(m
     assert not math.isclose(qp, qs, rel_tol=0.02, abs_tol=1.0e-14)
 
 
-@pytest.mark.xfail(strict=True, reason="M7c current baseline: viscoelastic P/SV exposes no Qp/Qs physical gradient channel")
-def test_current_viscoelastic_psv_gradient_baseline_is_incomplete(m7c_fd_measurements, repository_root, denise_binary, mpiexec):
-    """Frozen RED baseline: today's production FWI has no physical Qp/Qs output."""
+def test_current_viscoelastic_psv_gradient_baseline_is_incomplete(m7c_fd_measurements, repository_root, denise_binary, mpiexec, monkeypatch):
+    """Compare raw production physical-gradient fields with frozen FD directions."""
     config = m7c_fd_measurements["config"]
     directory = m7c_fd_measurements["root"] / "current_fwi"
     _write_case(directory, config=config, model=m7c_fd_measurements["model"], mode=1, observed=m7c_fd_measurements["observed_directory"])
-    result = run_denise(repository_root=repository_root, case_directory=directory, denise_binary=denise_binary, mpiexec=mpiexec, ranks=1, configuration={"oracle": "M7c", "mode": 1, "role": "current_gradient_baseline"}, timeout_seconds=90.0)
+    monkeypatch.setenv("DENISE_PSV_EXACT_VISCO_GRADIENT", "1")
+    result = run_denise(repository_root=repository_root, case_directory=directory, denise_binary=denise_binary, mpiexec=mpiexec, ranks=1, configuration={"oracle": "M7c", "mode": 1, "role": "physical_gradient"}, timeout_seconds=90.0)
     assert result.returncode == 0, result_summary(result)
-    # Current FWI executes transient Vp/Vs/rho correlations but persists none
-    # of their raw directional products and has no Qp/Qs channel at all. The
-    # future repair must wire actual physical directional products into
-    # _require_future_physical_products without changing the frozen FD
-    # reference, sign/scale contract, tolerance, or directions.
-    produced = {path.name for path in (directory / "jacobian").glob("*")}
-    assert any("qp" in name.lower() for name in produced)
-    assert any("qs" in name.lower() for name in produced)
+    gradients = {}
+    for name in PHYSICAL_FIELDS:
+        values = array("f")
+        with (directory / "jacobian" / f"gradient.raw.{name}").open("rb") as stream:
+            values.fromfile(stream, config.cell_count)
+        gradients[name] = values
+    products = {
+        name: math.fsum(
+            gradient * model_value * weight
+            for field, weights in direction.items()
+            for gradient, model_value, weight in zip(
+                gradients[field], m7c_fd_measurements["model"][field], weights
+            )
+        )
+        for name, direction in _directions(config).items()
+    }
+    report = {
+        name: {
+            "fd": float(m7c_fd_measurements["results"][name]["derivative"]),
+            "analytic": products[name],
+            "relative_error": abs(products[name] - float(m7c_fd_measurements["results"][name]["derivative"])) / max(abs(products[name]), abs(float(m7c_fd_measurements["results"][name]["derivative"])), 1.0e-30),
+        }
+        for name in (*PHYSICAL_FIELDS, "joint")
+    }
+    (directory / "m7c_gradient_report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    print("M7c raw physical gradient products:", json.dumps(report, sort_keys=True))
+    _require_future_physical_products(m7c_fd_measurements["results"], products)
