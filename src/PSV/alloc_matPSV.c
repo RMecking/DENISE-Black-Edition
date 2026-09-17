@@ -27,6 +27,8 @@ void alloc_matPSV(struct matPSV *matPSV){
 
 	/* memory allocation for static arrays for viscoelastic modeling */
 	if (L>0){
+		(*matPSV).pqp = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
+		(*matPSV).pqs = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
 		(*matPSV).dip = f3tensor(-nd+1,NY+nd,-nd+1,NX+nd,1,L);
 		(*matPSV).d =  f3tensor(-nd+1,NY+nd,-nd+1,NX+nd,1,L);
 		(*matPSV).e =  f3tensor(-nd+1,NY+nd,-nd+1,NX+nd,1,L);

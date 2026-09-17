@@ -36,6 +36,7 @@ void FWI_PSV()
 
   /* local variables */
   int ns, nseismograms = 0, nt, nd, fdo3, j, i, iter, h, hin, iter_true, SHOTINC, s = 0;
+  int exact_visco_fwi = 0;
   int buffsize, ntr = 0, ntr_loc = 0, ntr_glob = 0, nsrc = 0, nsrc_loc = 0, nsrc_glob = 0, ishot, nshots = 0, itestshot;
 
   float sum, eps_scale, opteps_vp, opteps_vs, opteps_rho, Vp_avg, Vs_avg, rho_avg, Vs_sum, Vp_sum, rho_sum;
@@ -88,6 +89,7 @@ void FWI_PSV()
   int ra, ra1;
 
   FILE *FPL2, *FP_stage, *FP_GRAV, *LAMBDA;
+  struct visco_psv_exact_fwi_request exact_request;
 
   if (MYID == 0)
   {
@@ -336,7 +338,9 @@ void FWI_PSV()
   if (L)
   {
     if (READMOD)
-      readmod_visc_PSV(matPSV.prho, matPSV.ppi, matPSV.pu, matPSV.ptaus, matPSV.ptaup, matPSV.peta);
+      readmod_visc_PSV(matPSV.prho, matPSV.ppi, matPSV.pu,
+                       matPSV.pqp, matPSV.pqs, matPSV.ptaus,
+                       matPSV.ptaup, matPSV.peta);
     else
       model(matPSV.prho, matPSV.ppi, matPSV.pu, matPSV.ptaus, matPSV.ptaup, matPSV.peta);
   }
@@ -402,6 +406,15 @@ void FWI_PSV()
     FP_stage = fopen(FILEINP1, "r");
     read_par_inv(FP_stage, nstage, stagemax);
     /*fclose(FP_stage);*/
+
+    exact_visco_fwi=(L>0);
+    if(exact_visco_fwi){
+      if(!visco_psv_exact_supported())
+        err(" Viscoelastic P/SV FWI is exact only for one-rank L=1, INVMAT1=1, GRAD_FORM=2, DTINV=NDT=1, LNORM=2, FD4, CPML interior. ");
+      if(!READMOD || nsrc!=1 || GRAD_METHOD!=1 || EPRECOND!=0 ||
+         MODEL_FILTER!=0 || INV_STF!=0 || TIME_FILT!=0 || GRAVITY!=0 || ROWI!=0)
+        err(" Exact viscoelastic P/SV FWI requires READMOD=1, one source, the GRAD_METHOD=1 selector, and no filtering, preconditioning, STF, gravity, or ROWI. ");
+    }
 
     if ((EPRECOND == 1) || (EPRECOND == 3))
     {
@@ -613,6 +626,44 @@ void FWI_PSV()
       
       L2t[1] = L2sum;
       L2t[4] = L2sum;
+
+      if(exact_visco_fwi){
+        memset(&exact_request,0,sizeof(exact_request));
+        exact_request.wave=&wavePSV;
+        exact_request.pml=&wavePSV_PML;
+        exact_request.material=&matPSV;
+        exact_request.fwi=&fwiPSV;
+        exact_request.mpi=&mpiPSV;
+        exact_request.seis=&seisPSV;
+        exact_request.data=&seisPSVfwi;
+        exact_request.acquisition=&acq;
+        exact_request.hc=hc;
+        exact_request.Ws=Ws;
+        exact_request.Wr=Wr;
+        exact_request.iter=iter;
+        exact_request.stage=nstage;
+        exact_request.nsrc=nsrc;
+        exact_request.ns=ns;
+        exact_request.ntr=ntr;
+        exact_request.ntr_glob=ntr_glob;
+        exact_request.nsrc_glob=nsrc_glob;
+        exact_request.nsrc_loc=nsrc_loc;
+        exact_request.hin=hin;
+        exact_request.DTINV_help=DTINV_help;
+        exact_request.req_send=req_send;
+        exact_request.req_rec=req_rec;
+        exact_request.base_objective=L2sum;
+        L2t[4]=visco_psv_exact_active_step(&exact_request);
+        L2_hist[iter]=L2t[4];
+        if(MYID==0){
+          fprintf(FPL2,"0.0 0.0 0.0 0.0 %e 0.0 0.0 %e %d\n",
+                  L2t[1],L2t[4],nstage);
+          fclose(FPL2);
+        }
+        iter++;
+        iter_true++;
+        continue;
+      }
 
       /* Interpolate missing spatial gradient values in case IDXI > 1 || IDXY > 1 */
       /* ------------------------------------------------------------------------ */
@@ -893,6 +944,8 @@ frequency MIN_ITER */
   free_matrix(fwiPSV.waveconv_mu_xy_exact, -nd + 1, NY + nd, -nd + 1, NX + nd);
   free_matrix(fwiPSV.waveconv_rho_x_exact, -nd + 1, NY + nd, -nd + 1, NX + nd);
   free_matrix(fwiPSV.waveconv_rho_y_exact, -nd + 1, NY + nd, -nd + 1, NX + nd);
+  free_matrix(fwiPSV.waveconv_qp_exact, -nd + 1, NY + nd, -nd + 1, NX + nd);
+  free_matrix(fwiPSV.waveconv_qs_exact, -nd + 1, NY + nd, -nd + 1, NX + nd);
 
   free_vector(fwiPSV.forward_prop_x, 1, NY * NX * NT);
   free_vector(fwiPSV.forward_prop_y, 1, NY * NX * NT);
@@ -1017,6 +1070,8 @@ frequency MIN_ITER */
   /* free memory for viscoelastic modeling variables */
   if (L)
   {
+    free_matrix(matPSV.pqp, -nd + 1, NY + nd, -nd + 1, NX + nd);
+    free_matrix(matPSV.pqs, -nd + 1, NY + nd, -nd + 1, NX + nd);
     free_matrix(matPSV.ptaus, -nd + 1, NY + nd, -nd + 1, NX + nd);
     free_matrix(matPSV.ptausipjp, -nd + 1, NY + nd, -nd + 1, NX + nd);
     free_matrix(matPSV.ptaup, -nd + 1, NY + nd, -nd + 1, NX + nd);

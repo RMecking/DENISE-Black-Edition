@@ -31,13 +31,17 @@ double obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct 
 	(*seisPSVfwi).L2=0.0;
 	(*seisPSVfwi).energy=0.0;
 
-	/* no differentiation of elastic and viscoelastic modelling because the viscoelastic parameters did not change during the forward modelling */
-	matcopy_elastic_PSV((*matPSV).prho,(*matPSV).ppi,(*matPSV).pu);
+	if (L)
+		matcopy_PSV((*matPSV).prho,(*matPSV).ppi,(*matPSV).pu,
+		            (*matPSV).ptaus,(*matPSV).ptaup);
+	else
+		matcopy_elastic_PSV((*matPSV).prho,(*matPSV).ppi,(*matPSV).pu);
 	
 	MPI_Barrier(MPI_COMM_WORLD);
 
 	av_mue((*matPSV).pu,(*matPSV).puipjp,(*matPSV).prho);
 	av_rho((*matPSV).prho,(*matPSV).prip,(*matPSV).prjp);
+	if (L) av_tau((*matPSV).ptaus,(*matPSV).ptausipjp);
 
 	/* Preparing memory variables for update_s (viscoelastic) */
 	if (L) prepare_update_s_visc_PSV((*matPSV).etajm,(*matPSV).etaip,(*matPSV).peta,(*matPSV).fipjp,(*matPSV).pu,(*matPSV).puipjp,(*matPSV).ppi,(*matPSV).prho,(*matPSV).ptaus,(*matPSV).ptaup,

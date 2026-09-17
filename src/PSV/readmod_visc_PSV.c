@@ -8,7 +8,8 @@
 
 #include "fd.h"
 
-void readmod_visc_PSV(float  **  rho, float **  pi, float **  u, float ** taus, float ** taup, float * eta){
+void readmod_visc_PSV(float **rho, float **pi, float **u, float **pqp,
+                      float **pqs, float **taus, float **taup, float *eta){
 
 	extern float DT, *FL;
 	extern int L;
@@ -120,6 +121,8 @@ void readmod_visc_PSV(float  **  rho, float **  pi, float **  u, float ** taus, 
 				u[jj][ii]=vs;
                                 rho[jj][ii]=rhov;
                                 pi[jj][ii]=vp;
+				pqp[jj][ii]=qp;
+				pqs[jj][ii]=qs;
 				taus[jj][ii]=q_to_tau(qs, &q_mapping);
 				taup[jj][ii]=q_to_tau(qp, &q_mapping);
 				
@@ -155,6 +158,18 @@ void readmod_visc_PSV(float  **  rho, float **  pi, float **  u, float ** taus, 
 	writemod(filename,rho,3);
 	MPI_Barrier(MPI_COMM_WORLD);
 	                        
+	if (MYID==0) mergemod(filename,3);
+
+	sprintf(filename,"%s.fdveps.qp",MFILE);
+	writemod(filename,pqp,3);
+	MPI_Barrier(MPI_COMM_WORLD);
+
+	if (MYID==0) mergemod(filename,3);
+
+	sprintf(filename,"%s.fdveps.qs",MFILE);
+	writemod(filename,pqs,3);
+	MPI_Barrier(MPI_COMM_WORLD);
+
 	if (MYID==0) mergemod(filename,3);
 
 	free_vector(pts,1,L);
