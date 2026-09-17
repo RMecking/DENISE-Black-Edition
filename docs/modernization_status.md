@@ -23,13 +23,14 @@ history.
 ## Repository workflow
 
 - Integration branch: `modernization`
-- M6.3 feature head: `c4fa6b55f246ff9bfcaa05f7c79c258fcc2de32e`
-- M6.3 was merged through PR #40 by a normal GitHub merge commit.
+- M7 scientific closeout head:
+  `043ef44b2a5b45dfd45014566f6a982f610ad668`
+- M7 was merged through PR #44 by a normal GitHub merge commit.
 - Current `modernization` frontier:
-  `26ca0b94faa8bf43200f19ca6dfc29be9e586cac`
-- M6.3 status: **SCIENTIFICALLY COMPLETE and merged into `modernization`**
-- Active next scientific milestone: **M7 — P/SV FWI Scientific Verification &
-  Repair**
+  `043ef44b2a5b45dfd45014566f6a982f610ad668`
+- M6.3 and M7 status: **SCIENTIFICALLY COMPLETE and merged into
+  `modernization`**
+- Active next milestone: **M8 — Performance / Compute**
 
 ## Locked M6.3 checkpoints
 
@@ -421,16 +422,56 @@ C8c/B5, so no new mandatory M6.3d phase is required.
 Only the ordering and high-level intent below are frozen; the M8, M9, and M10
 designs are not implementation contracts.
 
-### M7 — P/SV FWI Scientific Verification & Repair
+### M7 — P/SV FWI Scientific Verification: CLOSED
 
-M7 is the active next scientific milestone. Its goal is scientifically
-trustworthy elastic and viscoelastic P/SV FWI: begin with a scientific audit
-of the existing implementation, reuse correct implementation where possible,
-and verify the active end-to-end path rather than decomposing every operator
-by default. Use targeted adjoint/gradient and directional-FD verification,
-repair only demonstrated scientific defects, and finish with small genuine
-inversion experiments. Avoid repeating M6.3's extreme checkpoint granularity
-unless a concrete numerical defect requires deeper decomposition.
+M7 is **SCIENTIFICALLY CLOSED** at PR #44 merge commit
+`043ef44b2a5b45dfd45014566f6a982f610ad668`. The closed claim is deliberately
+narrow and does not extend to every P/SV configuration or optimizer.
+
+#### Verified elastic P/SV path
+
+The exact elastic claim is limited to `L=0`, `INVMAT1=1`, and physical
+`Vp/Vs/rho`. It covers the exact physical gradient, production active-driver
+integration, an accepted FWI step, accepted-model persistence, production
+reload, and objective consistency after reload. It does not close
+`INVMAT1=3` or arbitrary elastic parameterizations.
+
+#### Verified exact viscoelastic P/SV path
+
+The authoritative physical model is `Vp/Vs/rho/Qp/Qs`. The verified chain
+includes the discrete viscoelastic P/SV adjoint with reverse propagation of
+the required viscoelastic memory state; physical Qp/Qs VJPs through the
+production Q-to-relaxation mapping; a frozen end-to-end physical
+finite-difference oracle; and exact raw gradients for all five fields. The
+active lifecycle includes five-field FWI integration, scaled
+steepest-descent Trial construction, Trial Qp/Qs material rebuild, an
+objective-reducing accepted Trial, persistence of all five physical fields,
+and production reload whose objective reproduces the accepted objective.
+
+M7c-1 delivered the exact physical viscoelastic P/SV `Vp/Vs/rho/Qp/Qs`
+gradients: PR #43, feature commit
+`269cde6ae24ee9a52f31d5cf7d6d571a5166a508`, merge commit
+`2781191ce1ce6a83fe8b6cd985f70f3c35aaca36`. M7c-2 delivered the active exact
+viscoelastic P/SV FWI lifecycle for the verified configuration: PR #44,
+feature commit `08e94df5a5d7cb35c248e66b2e10a26803cbf864`, merge commit
+`043ef44b2a5b45dfd45014566f6a982f610ad668`.
+
+#### Verified viscoelastic support envelope
+
+The active exact viscoelastic P/SV claim is restricted to P/SV `MODE=1`,
+`L=1`, `INVMAT1=1`, `GRAD_FORM=2`, `DTINV=NDT=1`, `LNORM=2`, FD4, one MPI
+rank, one source, supported CPML/interior configuration, `READMOD=1`, and the
+supported steepest-descent path. Unsupported filters, preconditioning, STF
+inversion, gravity, and `ROWI` combinations fail closed and are not partially
+verified.
+
+Deferred beyond M7 are multi-rank exact viscoelastic P/SV FWI, broader source
+handling, arbitrary `L`, free-surface exact-visco validation, `INVMAT1=3`,
+`GRAD_FORM=1`, physical-Q-safe PCG/L-BFGS, and anisotropic FWI. **Multi-rank
+exact viscoelastic P/SV FWI → M8 Performance / Compute**: the physical
+objective/gradient/update/persistence lifecycle is scientifically closed for
+its declared envelope, while MPI expansion is a distributed-compute and
+scalability task rather than an unresolved M7 blocker.
 
 ### M8 — Performance & Compute Modernization
 
@@ -442,6 +483,8 @@ OpenMP, MPI communication/overlap, redundant computation, and shared solver
 infrastructure. GPU work begins with profiling and feasibility analysis, then
 representative numerically equivalent kernel prototypes with measured
 performance, before any whole-code GPU architecture commitment.
+Multi-rank exact viscoelastic P/SV execution belongs here as the deferred
+compute/scalability expansion, without redesigning M8 in this ledger.
 
 ### M9 — RTM Scientific Redesign / Modernization
 
