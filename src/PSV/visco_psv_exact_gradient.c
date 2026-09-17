@@ -6,6 +6,7 @@
 
 extern int NX, NY, NT, FW, BOUNDARY, FREE_SURF, NPROCX, NPROCY, NDT;
 extern int MODE, L, INVMAT1, GRAD_FORM, FDORDER, Q_PARAMETERIZATION_MODE;
+extern int DTINV, LNORM;
 extern float DT, DH, *FL, Q_APPROX_FMIN, Q_APPROX_FMAX, Q_APPROX_DF;
 extern char JACOBIAN[STRING_SIZE];
 
@@ -23,9 +24,16 @@ static size_t record_index(int t, int j, int i) {
 }
 static int cell(int j, int i) { return (j + 2) * exact.pitch + i + 2; }
 
+int visco_psv_exact_supported(void) {
+    return MODE == 1 && L == 1 && INVMAT1 == 1 && GRAD_FORM == 2 &&
+           FDORDER == 4 && NPROCX == 1 && NPROCY == 1 && !FREE_SURF &&
+           !BOUNDARY && FW > 0 && NDT == 1 && DTINV == 1 && LNORM == 2;
+}
+
 int visco_psv_exact_enabled(void) {
     const char *flag = getenv("DENISE_PSV_EXACT_VISCO_GRADIENT");
-    return flag && flag[0] == '1' && flag[1] == '\0';
+    return visco_psv_exact_supported() ||
+           (flag && flag[0] == '1' && flag[1] == '\0');
 }
 
 void visco_psv_exact_begin(void) {
@@ -33,8 +41,8 @@ void visco_psv_exact_begin(void) {
     if (!visco_psv_exact_enabled()) return;
     if (MODE != 1 || L != 1 || INVMAT1 != 1 || GRAD_FORM != 2 ||
         FDORDER != 4 || NPROCX != 1 || NPROCY != 1 || FREE_SURF ||
-        BOUNDARY || NDT != 1)
-        err(" Exact visco PSV raw gradient supports one-rank L=1 FD4, INVMAT1=1, GRAD_FORM=2, NDT=1, CPML interior only. ");
+        BOUNDARY || FW <= 0 || NDT != 1 || DTINV != 1 || LNORM != 2)
+        err(" Exact visco PSV raw gradient supports one-rank L=1 FD4, INVMAT1=1, GRAD_FORM=2, NDT=DTINV=1, LNORM=2, CPML interior only. ");
     exact.pitch = NX + 5;
     exact.area = (NY + 5) * exact.pitch;
     for (k = 0; k < NRECORD; k++) {
@@ -128,6 +136,7 @@ static void write_field(const char *suffix, double *gradient) {
 }
 
 void visco_psv_exact_finish(struct wavePSV_PML *pml, struct matPSV *mat,
+                            struct fwiPSV *fwi,
                             struct seisPSV *seis, struct seisPSVfwi *data,
                             struct acq *acq, float *hc, int ntr) {
     double *avx, *avy, *asxx, *asyy, *asxy, *ar, *ap, *aq;
@@ -275,9 +284,22 @@ void visco_psv_exact_finish(struct wavePSV_PML *pml, struct matPSV *mat,
         physical[3][p]*=q_to_tau_derivative((float)qp,&mapping);
         physical[4][p]*=q_to_tau_derivative((float)qs,&mapping);
     }
-    write_field("vp",physical[0]); write_field("vs",physical[1]);
-    write_field("rho",physical[2]); write_field("qp",physical[3]);
-    write_field("qs",physical[4]);
+    for (j=1;j<=NY;j++) for (i=1;i<=NX;i++) {
+        p=cell(j,i);
+        fwi->waveconv[j][i]+=(float)physical[0][p];
+        fwi->waveconv_u[j][i]+=(float)physical[1][p];
+        fwi->waveconv_rho[j][i]+=(float)physical[2][p];
+        fwi->waveconv_qp_exact[j][i]+=(float)physical[3][p];
+        fwi->waveconv_qs_exact[j][i]+=(float)physical[4][p];
+    }
+    {
+        const char *flag=getenv("DENISE_PSV_EXACT_VISCO_GRADIENT");
+        if (flag && flag[0]=='1' && flag[1]=='\0') {
+            write_field("vp",physical[0]); write_field("vs",physical[1]);
+            write_field("rho",physical[2]); write_field("qp",physical[3]);
+            write_field("qs",physical[4]);
+        }
+    }
     for (k=0;k<NRECORD;k++) { free(exact.record[k]); exact.record[k]=NULL; }
     for (k=0;k<NPSI;k++) free(psi[k]);
     for (k=0;k<NNATIVE;k++) free(native[k]);

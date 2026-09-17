@@ -11,6 +11,7 @@
 int visco_psv_exact_enabled(void);
 void visco_psv_exact_begin(void);
 void visco_psv_exact_finish(struct wavePSV_PML *pml, struct matPSV *mat,
+                            struct fwiPSV *fwi,
                             struct seisPSV *seis, struct seisPSVfwi *data,
                             struct acq *acq, float *hc, int ntr);
 
@@ -34,6 +35,7 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 
 	/* local variables */
 	int i, j, nshots, ishot, nt, lsnap, itestshot, swstestshot;
+	int exact_visco_path=visco_psv_exact_enabled();
 	float tmp_dg;
 	double L2sum, L2_tmp;
 	char source_signal_file[STRING_SIZE];
@@ -52,6 +54,10 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 	init_grad((*fwiPSV).waveconv);
 	init_grad((*fwiPSV).waveconv_rho);
 	init_grad((*fwiPSV).waveconv_u);
+	if(exact_visco_path){
+		init_grad((*fwiPSV).waveconv_qp_exact);
+		init_grad((*fwiPSV).waveconv_qs_exact);
+	}
 
 	itestshot=TESTSHOT_START;
 	swstestshot=0;
@@ -182,7 +188,7 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 		}
 
 		/* solve forward problem */
-		if (visco_psv_exact_enabled()) visco_psv_exact_begin();
+		if (exact_visco_path) visco_psv_exact_begin();
 		psv(wavePSV, wavePSV_PML, matPSV, fwiPSV, mpiPSV, seisPSV, seisPSVfwi, acq, hc, ishot, nshots, nsrc_loc, ns, ntr, Ws, Wr, hin, DTINV_help, 0, req_send, req_rec);
 		
 		/* ===============================================
@@ -198,8 +204,8 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 		{
 			calc_res_PSV(seisPSV, seisPSVfwi, (*acq).recswitch, (*acq).recpos, (*acq).recpos_loc, ntr_glob, ntr, nsrc_glob, (*acq).srcpos, ishot, ns, iter, swstestshot);
 		}
-		if (visco_psv_exact_enabled())
-			visco_psv_exact_finish(wavePSV_PML, matPSV, seisPSV,
+		if (exact_visco_path)
+			visco_psv_exact_finish(wavePSV_PML, matPSV, fwiPSV, seisPSV,
 			                       seisPSVfwi, acq, hc, ntr);
 
 		swstestshot = 0;
@@ -209,6 +215,7 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 		{
 			outseis_PSVres(seisPSV, seisPSVfwi, (*acq).recswitch, (*acq).recpos, (*acq).recpos_loc, ntr_glob, (*acq).srcpos, ishot, ns, nstage, FP);
 		}
+		if(exact_visco_path) goto exact_visco_shot_complete;
 
 		/*================================================================================
 		        Starting simulation (adjoint model)
@@ -286,6 +293,7 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 			RTM_PSV_out_shot(fwiPSV, ishot);
 		}
 
+		exact_visco_shot_complete:
 		if (READREC == 2)
 		{
 

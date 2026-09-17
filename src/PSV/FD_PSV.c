@@ -202,7 +202,9 @@ void FD_PSV()
         if (L)
         {
                 if (READMOD)
-                        readmod_visc_PSV(matPSV.prho, matPSV.ppi, matPSV.pu, matPSV.ptaus, matPSV.ptaup, matPSV.peta);
+                        readmod_visc_PSV(matPSV.prho, matPSV.ppi, matPSV.pu,
+                                         matPSV.pqp, matPSV.pqs, matPSV.ptaus,
+                                         matPSV.ptaup, matPSV.peta);
                 else
                         model(matPSV.prho, matPSV.ppi, matPSV.pu, matPSV.ptaus, matPSV.ptaup, matPSV.peta);
         }
@@ -541,6 +543,8 @@ void FD_PSV()
         /* free memory for viscoelastic modeling variables */
         if (L)
         {
+                free_matrix(matPSV.pqp, -nd + 1, NY + nd, -nd + 1, NX + nd);
+                free_matrix(matPSV.pqs, -nd + 1, NY + nd, -nd + 1, NX + nd);
                 free_matrix(matPSV.ptaus, -nd + 1, NY + nd, -nd + 1, NX + nd);
                 free_matrix(matPSV.ptausipjp, -nd + 1, NY + nd, -nd + 1, NX + nd);
                 free_matrix(matPSV.ptaup, -nd + 1, NY + nd, -nd + 1, NX + nd);

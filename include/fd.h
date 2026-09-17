@@ -139,7 +139,8 @@ struct wavePSV_PML{
 /* PSV material parameters */
 struct matPSV{
    float  **prho, **prip, **prjp, **ppi, **pu, **puipjp;
-   float **ptaus, **ptaup, *etaip, *etajm, *peta, **ptausipjp, **fipjp, ***dip, *bip, *bjm;
+   /* Physical Qp/Qs are authoritative for exact viscoelastic FWI. */
+   float **pqp, **pqs, **ptaus, **ptaup, *etaip, *etajm, *peta, **ptausipjp, **fipjp, ***dip, *bip, *bjm;
    float *cip, *cjm, ***d, ***e, **f, **g;
 } matPSV;
 
@@ -152,6 +153,7 @@ struct fwiPSV{
    /* Native staggered-grid correlations for the exact elastic PSV VJP. */
    float **waveconv_lam_exact, **waveconv_mu_normal_exact, **waveconv_mu_xy_exact;
    float **waveconv_rho_x_exact, **waveconv_rho_y_exact;
+   float **waveconv_qp_exact, **waveconv_qs_exact;
    float ** gradg, ** gradp,** gradg_rho, ** gradp_rho, ** gradg_u, ** gradp_u;
    float  *forward_prop_x, *forward_prop_y, *forward_prop_rho_x, *forward_prop_u, *forward_prop_rho_y;
 } fwiPSV;
@@ -183,6 +185,24 @@ struct acq{
 struct mpiPSV{
    float ** bufferlef_to_rig,  ** bufferrig_to_lef, ** buffertop_to_bot, ** bufferbot_to_top;
 } mpiPSV;
+
+struct visco_psv_exact_fwi_request {
+   struct wavePSV *wave;
+   struct wavePSV_PML *pml;
+   struct matPSV *material;
+   struct fwiPSV *fwi;
+   struct mpiPSV *mpi;
+   struct seisPSV *seis;
+   struct seisPSVfwi *data;
+   struct acq *acquisition;
+   float *hc;
+   float **Ws, **Wr;
+   int iter, stage, nsrc, ns, ntr, ntr_glob, nsrc_glob, nsrc_loc;
+   int hin;
+   int *DTINV_help;
+   MPI_Request *req_send, *req_rec;
+   double base_objective;
+};
 
 /* ---------------------------------- */
 /* declaration of VTI data-structures */
@@ -587,6 +607,11 @@ void assemble_gradPSV_exact(struct fwiPSV *fwiPSV, struct matPSV *matPSV,
                             struct mpiPSV *mpiPSV, int iter,
                             MPI_Request *req_send, MPI_Request *req_rec);
 
+int visco_psv_exact_supported(void);
+int visco_psv_exact_enabled(void);
+double visco_psv_exact_active_step(
+        const struct visco_psv_exact_fwi_request *request);
+
 float calc_mat_change_test_PSV(float  **  waveconv, float  **  waveconv_rho, float  **  waveconv_u, float  **  rho, float  **  rhonp1, float **  pi, float **  pinp1, float **  u, float **  unp1, 
 int iter, int epstest, float eps_scale, int itest);
 
@@ -652,7 +677,8 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
          struct seisPSV *seisPSV, struct seisPSVfwi *seisPSVfwi, struct acq *acq, float *hc, int ishot, int nshots, int nsrc_loc, 
          int ns, int ntr, float **Ws, float **Wr, int hin, int *DTINV_help, int mode, MPI_Request * req_send, MPI_Request * req_rec);
 
-void readmod_visc_PSV(float  **  rho, float **  pi, float **  u, float **  taus, float **  taup, float *  eta);
+void readmod_visc_PSV(float **rho, float **pi, float **u, float **qp,
+                      float **qs, float **taus, float **taup, float *eta);
 
 void readmod_elastic_PSV(float  **  rho, float **  pi, float **  u);
 

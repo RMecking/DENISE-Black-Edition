@@ -49,6 +49,8 @@ void alloc_fwiPSV(struct fwiPSV *fwiPSV){
 	(*fwiPSV).waveconv_mu_xy_exact = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
 	(*fwiPSV).waveconv_rho_x_exact = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
 	(*fwiPSV).waveconv_rho_y_exact = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
+	(*fwiPSV).waveconv_qp_exact = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
+	(*fwiPSV).waveconv_qs_exact = matrix(-nd+1,NY+nd,-nd+1,NX+nd);
 
 	(*fwiPSV).forward_prop_x =  vector(1,NXNYI*(NTDTINV));
 	(*fwiPSV).forward_prop_y =  vector(1,NXNYI*(NTDTINV));

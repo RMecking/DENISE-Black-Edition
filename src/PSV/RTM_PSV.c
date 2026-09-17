@@ -245,7 +245,9 @@ nsrc_glob=nsrc;
 
 /* create model grids */
 if(L){
-	if (READMOD) readmod_visc_PSV(matPSV.prho,matPSV.ppi,matPSV.pu,matPSV.ptaus,matPSV.ptaup,matPSV.peta);
+	if (READMOD) readmod_visc_PSV(matPSV.prho,matPSV.ppi,matPSV.pu,
+	                              matPSV.pqp,matPSV.pqs,matPSV.ptaus,
+	                              matPSV.ptaup,matPSV.peta);
 		else model(matPSV.prho,matPSV.ppi,matPSV.pu,matPSV.ptaus,matPSV.ptaup,matPSV.peta);
 } else{
 	if (READMOD) readmod_elastic_PSV(matPSV.prho,matPSV.ppi,matPSV.pu);
@@ -538,6 +540,8 @@ if (nsrc_loc>0){
  
  /* free memory for viscoelastic modeling variables */
  if (L) {
+		free_matrix(matPSV.pqp,-nd+1,NY+nd,-nd+1,NX+nd);
+		free_matrix(matPSV.pqs,-nd+1,NY+nd,-nd+1,NX+nd);
 		free_matrix(matPSV.ptaus,-nd+1,NY+nd,-nd+1,NX+nd);
 		free_matrix(matPSV.ptausipjp,-nd+1,NY+nd,-nd+1,NX+nd);
 		free_matrix(matPSV.ptaup,-nd+1,NY+nd,-nd+1,NX+nd);
