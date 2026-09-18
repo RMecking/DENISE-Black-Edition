@@ -6,7 +6,7 @@
 
 extern int NX, NY, NT, FW, BOUNDARY, FREE_SURF, NPROCX, NPROCY, NDT;
 extern int MODE, L, INVMAT1, GRAD_FORM, FDORDER, Q_PARAMETERIZATION_MODE;
-extern int DTINV, LNORM;
+extern int DTINV, LNORM, QUELLTYP;
 extern float DT, DH, *FL, Q_APPROX_FMIN, Q_APPROX_FMAX, Q_APPROX_DF;
 extern char JACOBIAN[STRING_SIZE];
 
@@ -16,14 +16,49 @@ enum {PSXX, PSXYX, PSXYY, PSYY, PVXX, PVYX, PVXY, PVYY, NPSI};
 
 static struct {
     int active, step, pitch, area, replay_compare, replay_first;
+    int full_storage, recording, record_first, record_capacity;
+    int requested_segments, segment_count, max_segment_length;
+    int checkpoint_count, checkpoints_captured, replayed_steps;
+    int *segment_start, *segment_end;
+    struct visco_psv_checkpoint **checkpoint;
+    float *record_payload;
     float *record[NRECORD];
     size_t replay_compared[NRECORD], replay_mismatches[NRECORD];
+    double initial_started, initial_seconds, replay_seconds, reverse_seconds;
 } exact;
 
 static size_t record_index(int t, int j, int i) {
-    return ((size_t)t * NY + (j - 1)) * NX + (i - 1);
+    int local_t = exact.full_storage ? t : t - exact.record_first;
+    return ((size_t)local_t * NY + (j - 1)) * NX + (i - 1);
 }
 static int cell(int j, int i) { return (j + 2) * exact.pitch + i + 2; }
+
+static int enabled_flag(const char *name) {
+    const char *value = getenv(name);
+    return value && value[0] == '1' && value[1] == '\0';
+}
+
+static int requested_segment_count(void) {
+    const char *value = getenv("DENISE_PSV_EXACT_SEGMENTS");
+    char *end = NULL;
+    long parsed;
+    if (!value || !value[0]) return 32;
+    parsed = strtol(value, &end, 10);
+    if (!end || *end || parsed < 1 || parsed > 2147483647L)
+        err(" DENISE_PSV_EXACT_SEGMENTS must be a positive integer. ");
+    return (int)parsed;
+}
+
+static void allocate_records(int capacity) {
+    size_t field_values = (size_t)capacity * NX * NY;
+    int k;
+    exact.record_payload = calloc((size_t)NRECORD * field_values, sizeof(float));
+    if (!exact.record_payload)
+        err(" Out of memory recording exact visco PSV forward operands. ");
+    for (k = 0; k < NRECORD; ++k)
+        exact.record[k] = exact.record_payload + (size_t)k * field_values;
+    exact.record_capacity = capacity;
+}
 
 int visco_psv_exact_supported(void) {
     return MODE == 1 && L == 1 && INVMAT1 == 1 && GRAD_FORM == 2 &&
@@ -46,9 +81,45 @@ void visco_psv_exact_begin(void) {
         err(" Exact visco PSV raw gradient supports one-rank L=1 FD4, INVMAT1=1, GRAD_FORM=2, NDT=DTINV=1, LNORM=2, CPML interior only. ");
     exact.pitch = NX + 5;
     exact.area = (NY + 5) * exact.pitch;
-    for (k = 0; k < NRECORD; k++) {
-        exact.record[k] = calloc((size_t)(NT + 1) * NX * NY, sizeof(float));
-        if (!exact.record[k]) err(" Out of memory recording exact visco PSV forward operands. ");
+    exact.full_storage = enabled_flag("DENISE_PSV_EXACT_FULL_STORAGE_REFERENCE") ||
+                         enabled_flag("DENISE_PSV_CHECKPOINT_REPLAY_TEST");
+    exact.requested_segments = requested_segment_count();
+    exact.segment_count = exact.requested_segments > NT ? NT : exact.requested_segments;
+    exact.segment_start = exact.segment_end = NULL;
+    exact.checkpoint = NULL;
+    exact.checkpoint_count = exact.checkpoints_captured = 0;
+    exact.max_segment_length = 0;
+    exact.replayed_steps = 0;
+    exact.initial_seconds = exact.replay_seconds = exact.reverse_seconds = 0.0;
+    if (exact.full_storage) {
+        allocate_records(NT + 1);
+        exact.record_first = 0;
+        exact.recording = 1;
+    } else {
+        exact.segment_start = calloc((size_t)exact.segment_count, sizeof(int));
+        exact.segment_end = calloc((size_t)exact.segment_count, sizeof(int));
+        if (!exact.segment_start || !exact.segment_end)
+            err(" Out of memory allocating exact visco PSV segment schedule. ");
+        for (k = 0; k < exact.segment_count; ++k) {
+            int length;
+            exact.segment_start[k] = (int)(((long long)k * NT) / exact.segment_count);
+            exact.segment_end[k] = (int)(((long long)(k + 1) * NT) / exact.segment_count);
+            length = exact.segment_end[k] - exact.segment_start[k];
+            if (length < 1) err(" Invalid exact visco PSV segment schedule. ");
+            if (length > exact.max_segment_length) exact.max_segment_length = length;
+        }
+        exact.checkpoint_count = exact.segment_count - 1;
+        if (exact.checkpoint_count) {
+            exact.checkpoint = calloc((size_t)exact.checkpoint_count,
+                                      sizeof(*exact.checkpoint));
+            if (!exact.checkpoint)
+                err(" Out of memory allocating exact visco PSV checkpoint table. ");
+            for (k = 0; k < exact.checkpoint_count; ++k)
+                exact.checkpoint[k] = visco_psv_checkpoint_create();
+        }
+        allocate_records(exact.max_segment_length);
+        exact.record_first = 1;
+        exact.recording = 0;
     }
     exact.step = 0;
     exact.replay_compare = 0;
@@ -56,13 +127,14 @@ void visco_psv_exact_begin(void) {
     memset(exact.replay_compared, 0, sizeof(exact.replay_compared));
     memset(exact.replay_mismatches, 0, sizeof(exact.replay_mismatches));
     exact.active = 1;
+    exact.initial_started = MPI_Wtime();
 }
 
 void visco_psv_exact_step(int t) { if (exact.active) exact.step = t; }
 
 void visco_psv_exact_velocity(int j, int i, float force_x, float force_y) {
     size_t p;
-    if (!exact.active) return;
+    if (!exact.active || (!exact.recording && !exact.replay_compare)) return;
     p = record_index(exact.step, j, i);
     if (exact.replay_compare) {
         exact.replay_compared[FX]++;
@@ -80,7 +152,7 @@ void visco_psv_exact_velocity(int j, int i, float force_x, float force_y) {
 void visco_psv_exact_strain(int j, int i, float vxx, float vyx,
                             float vxy, float vyy) {
     size_t p;
-    if (!exact.active) return;
+    if (!exact.active || (!exact.recording && !exact.replay_compare)) return;
     p = record_index(exact.step, j, i);
     if (exact.replay_compare) {
         float value[NRECORD] = {vxx, vyx, vxy, vyy, 0.0f, 0.0f};
@@ -99,7 +171,7 @@ void visco_psv_exact_strain(int j, int i, float vxx, float vyx,
 }
 
 void visco_psv_exact_replay_begin(int first_timestep) {
-    if (!exact.active || exact.replay_compare || first_timestep < 1 ||
+    if (!exact.active || !exact.full_storage || exact.replay_compare || first_timestep < 1 ||
         first_timestep > NT)
         err(" Invalid exact visco PSV operand-replay comparison start. ");
     exact.replay_first = first_timestep;
@@ -119,6 +191,96 @@ void visco_psv_exact_replay_end(size_t compared[NRECORD],
     }
     exact.replay_compare = 0;
     exact.replay_first = 0;
+}
+
+void visco_psv_exact_forward_boundary(struct wavePSV *wave,
+                                      struct wavePSV_PML *pml,
+                                      int timestep) {
+    if (!exact.active || exact.full_storage ||
+        exact.checkpoints_captured >= exact.checkpoint_count) return;
+    if (timestep == exact.segment_end[exact.checkpoints_captured]) {
+        visco_psv_checkpoint_capture(
+            exact.checkpoint[exact.checkpoints_captured], wave, pml, timestep);
+        exact.checkpoints_captured++;
+    }
+}
+
+static void zero_forward_state(struct wavePSV *wave, struct wavePSV_PML *pml) {
+    int nd = FDORDER / 2 + 1;
+    zero_denise_visc_PSV(-nd + 1, NY + nd, -nd + 1, NX + nd,
+                         wave->pvx, wave->pvy, wave->psxx, wave->psyy,
+                         wave->psxy, wave->ux, wave->uy, wave->uxy,
+                         wave->pvxp1, wave->pvyp1, pml->psi_sxx_x,
+                         pml->psi_sxy_x, pml->psi_vxx, pml->psi_vyx,
+                         pml->psi_syy_y, pml->psi_sxy_y, pml->psi_vyy,
+                         pml->psi_vxy, pml->psi_vxxs,
+                         wave->pr, wave->pp, wave->pq);
+}
+
+static void replay_forward_segment(
+        const struct visco_psv_exact_fwi_request *request, int segment) {
+    struct wavePSV *wave = request->wave;
+    struct wavePSV_PML *pml = request->pml;
+    struct matPSV *mat = request->material;
+    struct mpiPSV *mpi = request->mpi;
+    struct acq *acq = request->acquisition;
+    int t, begin = exact.segment_start[segment] + 1;
+    int end = exact.segment_end[segment];
+
+    if (segment == 0) zero_forward_state(wave, pml);
+    else visco_psv_checkpoint_restore(exact.checkpoint[segment - 1], wave, pml);
+    memset(exact.record_payload, 0,
+           (size_t)NRECORD * exact.record_capacity * NX * NY * sizeof(float));
+    exact.record_first = begin;
+    exact.recording = 1;
+    for (t = begin; t <= end; ++t) {
+        visco_psv_exact_step(t);
+        update_v_PML_PSV(1, NX, 1, NY, t,
+                         wave->pvx, wave->pvxp1, wave->pvxm1,
+                         wave->pvy, wave->pvyp1, wave->pvym1,
+                         wave->uttx, wave->utty,
+                         wave->psxx, wave->psyy, wave->psxy,
+                         mat->prip, mat->prjp, acq->srcpos_loc,
+                         acq->signals, acq->signals, request->nsrc_loc,
+                         pml->absorb_coeff, request->hc, 0, 0,
+                         pml->K_x, pml->a_x, pml->b_x,
+                         pml->K_x_half, pml->a_x_half, pml->b_x_half,
+                         pml->K_y, pml->a_y, pml->b_y,
+                         pml->K_y_half, pml->a_y_half, pml->b_y_half,
+                         pml->psi_sxx_x, pml->psi_syy_y,
+                         pml->psi_sxy_y, pml->psi_sxy_x, 0);
+        exchange_v_PSV(wave->pvx, wave->pvy,
+                       mpi->bufferlef_to_rig, mpi->bufferrig_to_lef,
+                       mpi->buffertop_to_bot, mpi->bufferbot_to_top,
+                       request->req_send, request->req_rec);
+        update_s_visc_PML_PSV(1, NX, 1, NY,
+                              wave->pvx, wave->pvy, wave->ux, wave->uy,
+                              wave->uxy, wave->uyx,
+                              wave->psxx, wave->psyy, wave->psxy,
+                              mat->ppi, mat->pu, mat->puipjp, mat->prho,
+                              request->hc, 0, wave->pr, wave->pp, wave->pq,
+                              mat->fipjp, mat->f, mat->g,
+                              mat->bip, mat->bjm, mat->cip, mat->cjm,
+                              mat->d, mat->e, mat->dip,
+                              pml->K_x, pml->a_x, pml->b_x,
+                              pml->K_x_half, pml->a_x_half, pml->b_x_half,
+                              pml->K_y, pml->a_y, pml->b_y,
+                              pml->K_y_half, pml->a_y_half, pml->b_y_half,
+                              pml->psi_vxx, pml->psi_vyy,
+                              pml->psi_vxy, pml->psi_vyx, 0);
+        if (QUELLTYP == 1)
+            psource(t, wave->psxx, wave->psyy, acq->srcpos_loc,
+                    acq->signals, request->nsrc_loc, 0);
+        if (QUELLTYP == 5)
+            msource(t, wave->psxx, wave->psyy, wave->psxy,
+                    acq->srcpos_loc, acq->signals, request->nsrc_loc, 0);
+        exchange_s_PSV(wave->psxx, wave->psyy, wave->psxy,
+                       mpi->bufferlef_to_rig, mpi->bufferrig_to_lef,
+                       mpi->buffertop_to_bot, mpi->bufferbot_to_top,
+                       request->req_send, request->req_rec);
+        exact.replayed_steps++;
+    }
+    exact.recording = 0;
 }
 
 /* Transpose of psi'=b psi+a D, D'=D/K+psi'.  psi_adj is the
@@ -182,21 +344,120 @@ static void write_field(const char *suffix, double *gradient) {
     fclose(out);
 }
 
-void visco_psv_exact_finish(struct wavePSV_PML *pml, struct matPSV *mat,
-                            struct fwiPSV *fwi,
-                            struct seisPSV *seis, struct seisPSVfwi *data,
-                            struct acq *acq, float *hc, int ntr) {
+static size_t checkpoint_formula_bytes(int nx, int ny, int fw) {
+    return (8 * (size_t)(nx + 6) * (ny + 6) +
+            8 * (size_t)fw * (nx + ny)) * sizeof(float);
+}
+
+static void write_segment_report(void) {
+    char path[STRING_SIZE + 48];
+    FILE *report;
+    size_t cells = (size_t)NX * NY;
+    size_t legacy_bytes = (size_t)NRECORD * (NT + 1) * cells * sizeof(float);
+    size_t checkpoint_each = exact.checkpoint_count ?
+        visco_psv_checkpoint_payload_bytes(exact.checkpoint[0]) : 0;
+    size_t checkpoint_total = (size_t)exact.checkpoint_count * checkpoint_each;
+    size_t segment_bytes = exact.full_storage ? 0 :
+        (size_t)NRECORD * exact.max_segment_length * cells * sizeof(float);
+    size_t full_bytes = exact.full_storage ? legacy_bytes : 0;
+    size_t combined = exact.full_storage ? full_bytes : checkpoint_total + segment_bytes;
+    const int large_nt = 5000, large_segments = 32, large_checkpoints = 31;
+    const int large_max = (large_nt + large_segments - 1) / large_segments;
+    int k;
+
+    snprintf(path, sizeof(path), "%s.segmented_gradient.json", JACOBIAN);
+    report = fopen(path, "w");
+    if (!report) err(" Could not open exact visco PSV segmented-gradient report. ");
+    fprintf(report,
+            "{\n"
+            "  \"storage_mode\": \"%s\",\n"
+            "  \"nt\": %d,\n"
+            "  \"requested_segments\": %d,\n"
+            "  \"segment_count\": %d,\n"
+            "  \"segment_count_clamped\": %s,\n"
+            "  \"max_segment_length\": %d,\n"
+            "  \"checkpoint_count\": %d,\n"
+            "  \"checkpoint_bytes_each\": %zu,\n"
+            "  \"checkpoint_bytes_total\": %zu,\n"
+            "  \"segment_buffer_bytes\": %zu,\n"
+            "  \"full_storage_bytes_allocated\": %zu,\n"
+            "  \"combined_working_set_bytes\": %zu,\n"
+            "  \"legacy_six_field_bytes\": %zu,\n"
+            "  \"reduction_factor\": %.17g,\n"
+            "  \"replayed_forward_steps\": %d,\n"
+            "  \"initial_forward_seconds\": %.17g,\n"
+            "  \"forward_replay_seconds\": %.17g,\n"
+            "  \"reverse_seconds\": %.17g,\n"
+            "  \"segment_boundaries\": [",
+            exact.full_storage ? "full_storage_reference" : "segmented",
+            NT, exact.requested_segments,
+            exact.full_storage ? 1 : exact.segment_count,
+            (!exact.full_storage && exact.requested_segments > NT) ? "true" : "false",
+            exact.full_storage ? NT : exact.max_segment_length,
+            exact.full_storage ? 0 : exact.checkpoint_count,
+            exact.full_storage ? 0 : checkpoint_each,
+            exact.full_storage ? 0 : checkpoint_total,
+            segment_bytes, full_bytes, combined, legacy_bytes,
+            combined ? (double)legacy_bytes / combined : 0.0,
+            exact.replayed_steps, exact.initial_seconds,
+            exact.replay_seconds, exact.reverse_seconds);
+    if (exact.full_storage) {
+        fprintf(report, "[1, %d]", NT);
+    } else {
+        for (k = 0; k < exact.segment_count; ++k)
+            fprintf(report, "%s[%d, %d]", k ? ", " : "",
+                    exact.segment_start[k] + 1, exact.segment_end[k]);
+    }
+    fprintf(report,
+            "],\n"
+            "  \"representative_grids\": {\n"
+            "    \"500x500x5000\": {\"combined_bytes\": %zu, \"legacy_bytes\": %zu, \"combined_gib\": %.17g, \"legacy_gib\": %.17g},\n"
+            "    \"1000x1000x5000\": {\"combined_bytes\": %zu, \"legacy_bytes\": %zu, \"combined_gib\": %.17g, \"legacy_gib\": %.17g}\n"
+            "  }\n"
+            "}\n",
+            (size_t)large_checkpoints * checkpoint_formula_bytes(500,500,FW) +
+                (size_t)NRECORD * 500 * 500 * large_max * sizeof(float),
+            (size_t)NRECORD * 500 * 500 * (large_nt + 1) * sizeof(float),
+            ((double)large_checkpoints * checkpoint_formula_bytes(500,500,FW) +
+                (double)NRECORD * 500 * 500 * large_max * sizeof(float)) /
+                (1024.0 * 1024.0 * 1024.0),
+            ((double)NRECORD * 500 * 500 * (large_nt + 1) * sizeof(float)) /
+                (1024.0 * 1024.0 * 1024.0),
+            (size_t)large_checkpoints * checkpoint_formula_bytes(1000,1000,FW) +
+                (size_t)NRECORD * 1000 * 1000 * large_max * sizeof(float),
+            (size_t)NRECORD * 1000 * 1000 * (large_nt + 1) * sizeof(float),
+            ((double)large_checkpoints * checkpoint_formula_bytes(1000,1000,FW) +
+                (double)NRECORD * 1000 * 1000 * large_max * sizeof(float)) /
+                (1024.0 * 1024.0 * 1024.0),
+            ((double)NRECORD * 1000 * 1000 * (large_nt + 1) * sizeof(float)) /
+                (1024.0 * 1024.0 * 1024.0));
+    fclose(report);
+}
+
+void visco_psv_exact_finish(
+        const struct visco_psv_exact_fwi_request *request) {
+    struct wavePSV_PML *pml = request->pml;
+    struct matPSV *mat = request->material;
+    struct fwiPSV *fwi = request->fwi;
+    struct seisPSV *seis = request->seis;
+    struct seisPSVfwi *data = request->data;
+    struct acq *acq = request->acquisition;
+    float *hc = request->hc;
+    int ntr = request->ntr;
     double *avx, *avy, *asxx, *asyy, *asxy, *ar, *ap, *aq;
     double *psi[NPSI], *native[NNATIVE], *physical[5];
     struct q_tau_mapping mapping;
-    int t, i, j, k, p, cx, cy;
+    int t, i, j, k, p, cx, cy, segment, t_begin, t_end;
+    double phase_started;
     double eta, b, c, dt2, div, shear, ax, ay, xx, yy, xy, yx;
     double tr, tp, tq, lambda_r, lambda_p, lambda_q;
     size_t r;
     if (!exact.active) return;
     if (exact.replay_compare)
         err(" Exact visco PSV operand replay was not finalized. ");
-    exact.active = 0;
+    exact.initial_seconds = MPI_Wtime() - exact.initial_started;
+    if (!exact.full_storage && exact.checkpoints_captured != exact.checkpoint_count)
+        err(" Exact visco PSV forward did not capture every segment checkpoint. ");
     avx=calloc(exact.area,sizeof(double)); avy=calloc(exact.area,sizeof(double));
     asxx=calloc(exact.area,sizeof(double)); asyy=calloc(exact.area,sizeof(double));
     asxy=calloc(exact.area,sizeof(double)); ar=calloc(exact.area,sizeof(double));
@@ -216,7 +477,20 @@ void visco_psv_exact_finish(struct wavePSV_PML *pml, struct matPSV *mat,
         if (!physical[k]) err(" Out of memory for exact visco PSV physical gradient. ");
     }
     eta=mat->peta[1]; b=mat->bjm[1]; c=mat->cjm[1]; dt2=DT*0.5;
-    for (t=NT;t>=1;t--) {
+    for (segment = exact.full_storage ? 0 : exact.segment_count - 1;
+         segment >= 0; --segment) {
+        if (exact.full_storage) {
+            t_begin = 1;
+            t_end = NT;
+        } else {
+            phase_started = MPI_Wtime();
+            replay_forward_segment(request, segment);
+            exact.replay_seconds += MPI_Wtime() - phase_started;
+            t_begin = exact.segment_start[segment] + 1;
+            t_end = exact.segment_end[segment];
+        }
+        phase_started = MPI_Wtime();
+        for (t=t_end;t>=t_begin;t--) {
         /* Receiver samples are recorded after stress update; velocity is
          * unchanged there. Production sample one is excluded from L2. */
         if (t>1) for (k=1;k<=ntr;k++) {
@@ -272,7 +546,11 @@ void visco_psv_exact_finish(struct wavePSV_PML *pml, struct matPSV *mat,
             add_backward_y(asxy,j,i,xy,hc,1.0);
             add_forward_y(asyy,j,i,yy,hc,1.0);
         }
+        }
+        exact.reverse_seconds += MPI_Wtime() - phase_started;
+        if (exact.full_storage) break;
     }
+    exact.active = 0;
     init_q_tau_mapping(&mapping,Q_PARAMETERIZATION_MODE,L,FL,
                        Q_APPROX_FMIN,Q_APPROX_FMAX,Q_APPROX_DF);
     /* Local constitutive map: native f,g,d,e and corner f,dip. */
@@ -349,7 +627,14 @@ void visco_psv_exact_finish(struct wavePSV_PML *pml, struct matPSV *mat,
             write_field("qs",physical[4]);
         }
     }
-    for (k=0;k<NRECORD;k++) { free(exact.record[k]); exact.record[k]=NULL; }
+    write_segment_report();
+    free(exact.record_payload); exact.record_payload=NULL;
+    for (k=0;k<NRECORD;k++) exact.record[k]=NULL;
+    for (k=0;k<exact.checkpoint_count;k++)
+        visco_psv_checkpoint_destroy(exact.checkpoint[k]);
+    free(exact.checkpoint); exact.checkpoint=NULL;
+    free(exact.segment_start); exact.segment_start=NULL;
+    free(exact.segment_end); exact.segment_end=NULL;
     for (k=0;k<NPSI;k++) free(psi[k]);
     for (k=0;k<NNATIVE;k++) free(native[k]);
     for (k=0;k<5;k++) free(physical[k]);
