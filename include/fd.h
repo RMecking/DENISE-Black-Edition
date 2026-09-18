@@ -136,6 +136,10 @@ struct wavePSV_PML{
    float  **  absorb_coeff;
 } wavePSV_PML;
 
+/* Opaque, independently owned restart state for the frozen one-rank exact
+ * viscoelastic P/SV forward configuration. */
+struct visco_psv_checkpoint;
+
 /* PSV material parameters */
 struct matPSV{
    float  **prho, **prip, **prjp, **ppi, **pu, **puipjp;
@@ -609,6 +613,29 @@ void assemble_gradPSV_exact(struct fwiPSV *fwiPSV, struct matPSV *matPSV,
 
 int visco_psv_exact_supported(void);
 int visco_psv_exact_enabled(void);
+struct visco_psv_checkpoint *visco_psv_checkpoint_create(void);
+void visco_psv_checkpoint_capture(struct visco_psv_checkpoint *checkpoint,
+                                  const struct wavePSV *wave,
+                                  const struct wavePSV_PML *pml,
+                                  int timestep);
+void visco_psv_checkpoint_restore(const struct visco_psv_checkpoint *checkpoint,
+                                  struct wavePSV *wave,
+                                  struct wavePSV_PML *pml);
+void visco_psv_checkpoint_destroy(struct visco_psv_checkpoint *checkpoint);
+size_t visco_psv_checkpoint_payload_bytes(
+        const struct visco_psv_checkpoint *checkpoint);
+int visco_psv_checkpoint_timestep(
+        const struct visco_psv_checkpoint *checkpoint);
+int visco_psv_checkpoint_matches_live(
+        const struct visco_psv_checkpoint *checkpoint,
+        const struct wavePSV *wave, const struct wavePSV_PML *pml,
+        unsigned int *field_mismatch_mask);
+int visco_psv_checkpoint_equal(
+        const struct visco_psv_checkpoint *left,
+        const struct visco_psv_checkpoint *right,
+        unsigned int *field_mismatch_mask);
+void visco_psv_exact_replay_begin(int first_timestep);
+void visco_psv_exact_replay_end(size_t compared[6], size_t mismatches[6]);
 double visco_psv_exact_active_step(
         const struct visco_psv_exact_fwi_request *request);
 

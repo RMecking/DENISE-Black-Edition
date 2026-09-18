@@ -15,6 +15,67 @@
 #include "fd.h"
 
 void visco_psv_exact_step(int t);
+extern int NX, NY, FW;
+
+/* Test-only raw observation of the live restart state.  These deliberately
+ * traverse the allocated arrays directly instead of sharing any checkpoint
+ * packing, restore, or comparison helper. */
+static void write_live_matrix(FILE *stream, float **field,
+                              int j0, int j1, int i0, int i1) {
+	int i, j;
+	for (j = j0; j <= j1; ++j)
+		for (i = i0; i <= i1; ++i)
+			if (fwrite(&field[j][i], sizeof(float), 1, stream) != 1)
+				err(" Could not write exact visco PSV live-state test snapshot. ");
+}
+
+static void write_live_gsls_l1(FILE *stream, float ***field,
+					 int j0, int j1, int i0, int i1) {
+	int i, j;
+	for (j = j0; j <= j1; ++j)
+		for (i = i0; i <= i1; ++i)
+			if (fwrite(&field[j][i][1], sizeof(float), 1, stream) != 1)
+				err(" Could not write exact visco PSV live-state test snapshot. ");
+}
+
+static void write_live_state_snapshot(const char *prefix, const char *label,
+						  const struct wavePSV *wave,
+						  const struct wavePSV_PML *pml) {
+	char path[STRING_SIZE + 96];
+	FILE *stream;
+	int lo = -2, hi_j = NY + 3, hi_i = NX + 3;
+
+	snprintf(path, sizeof(path), "%s.checkpoint_replay.%s.primary.bin", prefix, label);
+	stream = fopen(path, "wb");
+	if (!stream) err(" Could not open exact visco PSV primary-state test snapshot. ");
+	write_live_matrix(stream, wave->pvx, lo, hi_j, lo, hi_i);
+	write_live_matrix(stream, wave->pvy, lo, hi_j, lo, hi_i);
+	write_live_matrix(stream, wave->psxx, lo, hi_j, lo, hi_i);
+	write_live_matrix(stream, wave->psyy, lo, hi_j, lo, hi_i);
+	write_live_matrix(stream, wave->psxy, lo, hi_j, lo, hi_i);
+	fclose(stream);
+
+	snprintf(path, sizeof(path), "%s.checkpoint_replay.%s.gsls.bin", prefix, label);
+	stream = fopen(path, "wb");
+	if (!stream) err(" Could not open exact visco PSV GSLS-state test snapshot. ");
+	write_live_gsls_l1(stream, wave->pr, lo, hi_j, lo, hi_i);
+	write_live_gsls_l1(stream, wave->pp, lo, hi_j, lo, hi_i);
+	write_live_gsls_l1(stream, wave->pq, lo, hi_j, lo, hi_i);
+	fclose(stream);
+
+	snprintf(path, sizeof(path), "%s.checkpoint_replay.%s.cpml.bin", prefix, label);
+	stream = fopen(path, "wb");
+	if (!stream) err(" Could not open exact visco PSV CPML-state test snapshot. ");
+	write_live_matrix(stream, pml->psi_sxx_x, 1, NY, 1, 2 * FW);
+	write_live_matrix(stream, pml->psi_sxy_x, 1, NY, 1, 2 * FW);
+	write_live_matrix(stream, pml->psi_vxx, 1, NY, 1, 2 * FW);
+	write_live_matrix(stream, pml->psi_vyx, 1, NY, 1, 2 * FW);
+	write_live_matrix(stream, pml->psi_syy_y, 1, 2 * FW, 1, NX);
+	write_live_matrix(stream, pml->psi_sxy_y, 1, 2 * FW, 1, NX);
+	write_live_matrix(stream, pml->psi_vyy, 1, 2 * FW, 1, NX);
+	write_live_matrix(stream, pml->psi_vxy, 1, 2 * FW, 1, NX);
+	fclose(stream);
+}
 
 void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV *matPSV, struct fwiPSV *fwiPSV, struct mpiPSV *mpiPSV,
 		 struct seisPSV *seisPSV, struct seisPSVfwi *seisPSVfwi, struct acq *acq, float *hc, int ishot, int nshots, int nsrc_loc,
@@ -27,17 +88,42 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 	extern int NX, NY, FREE_SURF, BOUNDARY, MODE, QUELLTYP, QUELLTYPB, QUELLART, FDORDER;
 	extern int NPROCX, NPROCY, POS[3], NDT, SEISMO, IDXI, IDYI, GRAD_FORM, DTINV;
 	extern int SNAP, INVMAT1, INV_STF, EPRECOND, NTDTINV, NXNYI, NT;
+	extern char JACOBIAN[STRING_SIZE];
 	extern FILE *FP;
 
 	/* local variables */
 	int i, j, nt, lsamp, lsnap, nsnap, nd, hin1, imat, imat1, imat2, infoout;
-	int exact_elastic_psv_adjoint;
+	int exact_elastic_psv_adjoint, checkpoint_test, replaying;
+	int checkpoint_timestep, replay_first_timestep, replay_last_timestep, replay_steps;
+	struct visco_psv_checkpoint *middle_checkpoint;
+	float *receiver_reference;
+	size_t receiver_compared, receiver_mismatches, operand_compared[6], operand_mismatches[6];
 	float tmp, tmp1, muss, lamss;
 
 	nd = FDORDER / 2 + 1;
 	exact_elastic_psv_adjoint=((MODE==1)&&(mode==1)&&(L==0)&&
 	                            (INVMAT1==1)&&
 	                            ((GRAD_FORM==1)||(GRAD_FORM==2)));
+	checkpoint_test = replaying = 0;
+	checkpoint_timestep = replay_first_timestep = replay_last_timestep = replay_steps = 0;
+	middle_checkpoint = NULL;
+	receiver_reference = NULL;
+	receiver_compared = receiver_mismatches = 0;
+	memset(operand_compared, 0, sizeof(operand_compared));
+	memset(operand_mismatches, 0, sizeof(operand_mismatches));
+	{
+		const char *flag = getenv("DENISE_PSV_CHECKPOINT_REPLAY_TEST");
+		checkpoint_test = mode == 0 && flag && flag[0] == '1' && flag[1] == '\0';
+	}
+	if (checkpoint_test)
+	{
+		if (!visco_psv_exact_supported() || nsrc_loc != 1 || SEISMO != 1 || ntr < 1)
+			err(" Exact visco PSV checkpoint replay test requires the frozen one-source exact envelope and receivers. ");
+		checkpoint_timestep = NT / 2;
+		if (checkpoint_timestep < 1 || checkpoint_timestep >= NT)
+			err(" Exact visco PSV checkpoint replay test needs at least three timesteps. ");
+		middle_checkpoint = visco_psv_checkpoint_create();
+	}
 
 	/*MPI_Barrier(MPI_COMM_WORLD);*/
 
@@ -100,6 +186,12 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 	for (nt = 1; nt <= NT; nt++)
 	{
 		if (mode == 0) visco_psv_exact_step(nt);
+		if (replaying)
+		{
+			if (!replay_steps) replay_first_timestep = nt;
+			replay_last_timestep = nt;
+			replay_steps++;
+		}
 
 		/* Check if simulation is still stable */
 		/*if (isnan(pvy[NY/2][NX/2])) err(" Simulation is unstable !");*/
@@ -276,6 +368,20 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 			seismo_ssg(nt, ntr, (*acq).recpos_loc, (*seisPSV).sectionvx, (*seisPSV).sectionvy,
 					   (*seisPSV).sectionp, (*seisPSV).sectioncurl, (*seisPSV).sectiondiv,
 					   (*wavePSV).pvx, (*wavePSV).pvy, (*wavePSV).psxx, (*wavePSV).psyy, (*matPSV).ppi, (*matPSV).pu, (*matPSV).prho, hc);
+			if (replaying)
+			{
+				for (i = 1; i <= ntr; ++i)
+				{
+					size_t sample = (size_t)(nt - checkpoint_timestep - 1) * ntr + (i - 1);
+					float ref_vx = receiver_reference[2 * sample];
+					float ref_vy = receiver_reference[2 * sample + 1];
+					receiver_compared += 2;
+					if (memcmp(&ref_vx, &(*seisPSV).sectionvx[i][nt], sizeof(float)) != 0)
+						receiver_mismatches++;
+					if (memcmp(&ref_vy, &(*seisPSV).sectionvy[i][nt], sizeof(float)) != 0)
+						receiver_mismatches++;
+				}
+			}
 			/*lsamp+=NDT;*/
 		}
 
@@ -294,7 +400,7 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 	      if (infoout)  fprintf(FP," total real time for timestep %d : %4.2f s.\n",nt,time8-time3);
 	      } */
 
-		if ((nt == hin1) && (mode == 0) && (MODE > 0))
+		if ((nt == hin1) && (mode == 0) && (MODE > 0) && !replaying)
 		{
 
 			/* store forward wavefields for time-domain inversion and RTM */
@@ -442,6 +548,104 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 			}
 
 			hin++;
+		}
+
+		/* Canonical M8c boundary: timestep nt is complete, including source,
+		 * exchanges, receiver sampling, and the existing trajectory recorder.
+		 * Restoring this state resumes with nt+1.  This environment-gated proof
+		 * leaves the active exact-FWI lifecycle and recorder unchanged. */
+		if (checkpoint_test && !replaying && nt == checkpoint_timestep)
+		{
+			write_live_state_snapshot(JACOBIAN, "t300_reference", wavePSV, wavePSV_PML);
+			visco_psv_checkpoint_capture(middle_checkpoint, wavePSV, wavePSV_PML, nt);
+		}
+
+		if (checkpoint_test && !replaying && nt == NT)
+		{
+			size_t trace_samples = (size_t)(NT - checkpoint_timestep) * ntr;
+			write_live_state_snapshot(JACOBIAN, "t600_reference", wavePSV, wavePSV_PML);
+			receiver_reference = malloc(2 * trace_samples * sizeof(float));
+			if (!receiver_reference)
+				err(" Out of memory retaining exact visco PSV replay traces. ");
+			for (j = checkpoint_timestep + 1; j <= NT; ++j)
+				for (i = 1; i <= ntr; ++i)
+				{
+					size_t sample = (size_t)(j - checkpoint_timestep - 1) * ntr + (i - 1);
+					receiver_reference[2 * sample] = (*seisPSV).sectionvx[i][j];
+					receiver_reference[2 * sample + 1] = (*seisPSV).sectionvy[i][j];
+				}
+			visco_psv_checkpoint_restore(middle_checkpoint, wavePSV, wavePSV_PML);
+			write_live_state_snapshot(JACOBIAN, "t300_restored", wavePSV, wavePSV_PML);
+			visco_psv_exact_replay_begin(checkpoint_timestep + 1);
+			replaying = 1;
+			nt = checkpoint_timestep;
+			continue;
+		}
+
+		if (checkpoint_test && replaying && nt == NT)
+		{
+			FILE *report;
+			char report_path[STRING_SIZE + 64];
+			size_t expected_operands = (size_t)(NT - checkpoint_timestep) * NX * NY;
+			size_t expected_receiver_values = 2 * (size_t)(NT - checkpoint_timestep) * ntr;
+			int operands_equal = 1, k;
+			int timing_equal;
+			write_live_state_snapshot(JACOBIAN, "t600_replayed", wavePSV, wavePSV_PML);
+			visco_psv_exact_replay_end(operand_compared, operand_mismatches);
+			for (k = 0; k < 6; ++k)
+				if (operand_compared[k] != expected_operands || operand_mismatches[k])
+					operands_equal = 0;
+			timing_equal = replay_first_timestep == checkpoint_timestep + 1 &&
+				replay_last_timestep == NT && replay_steps == NT - checkpoint_timestep;
+			snprintf(report_path, sizeof(report_path), "%s.checkpoint_replay.json", JACOBIAN);
+			report = fopen(report_path, "w");
+			if (!report) err(" Could not open exact visco PSV checkpoint replay report. ");
+			fprintf(report,
+				"{\n"
+				"  \"checkpoint_timestep\": %d,\n"
+				"  \"resume_first_timestep\": %d,\n"
+				"  \"resume_last_timestep\": %d,\n"
+				"  \"replay_steps\": %d,\n"
+				"  \"payload_bytes\": %zu,\n"
+				"  \"live_snapshot_full_extent\": [%d, %d],\n"
+				"  \"live_snapshot_full_elements_per_field\": %zu,\n"
+				"  \"live_snapshot_primary_elements\": %zu,\n"
+				"  \"live_snapshot_gsls_elements\": %zu,\n"
+				"  \"live_snapshot_cpml_x_extent\": [%d, %d],\n"
+				"  \"live_snapshot_cpml_y_extent\": [%d, %d],\n"
+				"  \"live_snapshot_cpml_elements\": %zu,\n"
+				"  \"operand_compared_per_field\": %zu,\n"
+				"  \"operand_compared\": [%zu, %zu, %zu, %zu, %zu, %zu],\n"
+				"  \"operand_mismatches\": [%zu, %zu, %zu, %zu, %zu, %zu],\n"
+				"  \"receiver_values_compared\": %zu,\n"
+				"  \"receiver_mismatches\": %zu,\n"
+				"  \"source_timing_equal\": %s,\n"
+				"  \"receiver_timing_equal\": %s,\n"
+				"  \"bit_identical_replay\": %s\n"
+				"}\n",
+				checkpoint_timestep, replay_first_timestep, replay_last_timestep,
+				replay_steps, visco_psv_checkpoint_payload_bytes(middle_checkpoint),
+				NX + 6, NY + 6, (size_t)(NX + 6) * (NY + 6),
+				5 * (size_t)(NX + 6) * (NY + 6),
+				3 * (size_t)(NX + 6) * (NY + 6),
+				NY, 2 * FW, 2 * FW, NX,
+				4 * ((size_t)NY * 2 * FW + (size_t)NX * 2 * FW),
+				expected_operands,
+				operand_compared[0], operand_compared[1], operand_compared[2],
+				operand_compared[3], operand_compared[4], operand_compared[5],
+				operand_mismatches[0], operand_mismatches[1], operand_mismatches[2],
+				operand_mismatches[3], operand_mismatches[4], operand_mismatches[5],
+				receiver_compared, receiver_mismatches,
+				timing_equal ? "true" : "false",
+				(timing_equal && receiver_compared == expected_receiver_values) ? "true" : "false",
+				(operands_equal && !receiver_mismatches && timing_equal &&
+				 receiver_compared == expected_receiver_values) ? "true" : "false");
+			fclose(report);
+			free(receiver_reference);
+			visco_psv_checkpoint_destroy(middle_checkpoint);
+			if (!operands_equal || receiver_mismatches ||
+				!timing_equal || receiver_compared != expected_receiver_values)
+				err(" Exact visco PSV checkpoint replay was not byte-identical. ");
 		}
 
 	} /*--------------------  End  of loop over timesteps ----------*/

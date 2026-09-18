@@ -15,8 +15,9 @@ enum {GF, GG, GFC, GD, GE, GDC, GRX, GRY, NNATIVE};
 enum {PSXX, PSXYX, PSXYY, PSYY, PVXX, PVYX, PVXY, PVYY, NPSI};
 
 static struct {
-    int active, step, pitch, area;
+    int active, step, pitch, area, replay_compare, replay_first;
     float *record[NRECORD];
+    size_t replay_compared[NRECORD], replay_mismatches[NRECORD];
 } exact;
 
 static size_t record_index(int t, int j, int i) {
@@ -50,6 +51,10 @@ void visco_psv_exact_begin(void) {
         if (!exact.record[k]) err(" Out of memory recording exact visco PSV forward operands. ");
     }
     exact.step = 0;
+    exact.replay_compare = 0;
+    exact.replay_first = 0;
+    memset(exact.replay_compared, 0, sizeof(exact.replay_compared));
+    memset(exact.replay_mismatches, 0, sizeof(exact.replay_mismatches));
     exact.active = 1;
 }
 
@@ -59,8 +64,17 @@ void visco_psv_exact_velocity(int j, int i, float force_x, float force_y) {
     size_t p;
     if (!exact.active) return;
     p = record_index(exact.step, j, i);
-    exact.record[FX][p] = force_x;
-    exact.record[FY][p] = force_y;
+    if (exact.replay_compare) {
+        exact.replay_compared[FX]++;
+        exact.replay_compared[FY]++;
+        if (memcmp(&exact.record[FX][p], &force_x, sizeof(float)) != 0)
+            exact.replay_mismatches[FX]++;
+        if (memcmp(&exact.record[FY][p], &force_y, sizeof(float)) != 0)
+            exact.replay_mismatches[FY]++;
+    } else {
+        exact.record[FX][p] = force_x;
+        exact.record[FY][p] = force_y;
+    }
 }
 
 void visco_psv_exact_strain(int j, int i, float vxx, float vyx,
@@ -68,10 +82,43 @@ void visco_psv_exact_strain(int j, int i, float vxx, float vyx,
     size_t p;
     if (!exact.active) return;
     p = record_index(exact.step, j, i);
-    exact.record[VXX][p] = vxx;
-    exact.record[VYX][p] = vyx;
-    exact.record[VXY][p] = vxy;
-    exact.record[VYY][p] = vyy;
+    if (exact.replay_compare) {
+        float value[NRECORD] = {vxx, vyx, vxy, vyy, 0.0f, 0.0f};
+        int k;
+        for (k = VXX; k <= VYY; ++k) {
+            exact.replay_compared[k]++;
+            if (memcmp(&exact.record[k][p], &value[k], sizeof(float)) != 0)
+                exact.replay_mismatches[k]++;
+        }
+    } else {
+        exact.record[VXX][p] = vxx;
+        exact.record[VYX][p] = vyx;
+        exact.record[VXY][p] = vxy;
+        exact.record[VYY][p] = vyy;
+    }
+}
+
+void visco_psv_exact_replay_begin(int first_timestep) {
+    if (!exact.active || exact.replay_compare || first_timestep < 1 ||
+        first_timestep > NT)
+        err(" Invalid exact visco PSV operand-replay comparison start. ");
+    exact.replay_first = first_timestep;
+    memset(exact.replay_compared, 0, sizeof(exact.replay_compared));
+    memset(exact.replay_mismatches, 0, sizeof(exact.replay_mismatches));
+    exact.replay_compare = 1;
+}
+
+void visco_psv_exact_replay_end(size_t compared[NRECORD],
+                                size_t mismatches[NRECORD]) {
+    int k;
+    if (!exact.active || !exact.replay_compare || exact.replay_first < 1)
+        err(" Invalid exact visco PSV operand-replay comparison finish. ");
+    for (k = 0; k < NRECORD; ++k) {
+        compared[k] = exact.replay_compared[k];
+        mismatches[k] = exact.replay_mismatches[k];
+    }
+    exact.replay_compare = 0;
+    exact.replay_first = 0;
 }
 
 /* Transpose of psi'=b psi+a D, D'=D/K+psi'.  psi_adj is the
@@ -147,6 +194,8 @@ void visco_psv_exact_finish(struct wavePSV_PML *pml, struct matPSV *mat,
     double tr, tp, tq, lambda_r, lambda_p, lambda_q;
     size_t r;
     if (!exact.active) return;
+    if (exact.replay_compare)
+        err(" Exact visco PSV operand replay was not finalized. ");
     exact.active = 0;
     avx=calloc(exact.area,sizeof(double)); avy=calloc(exact.area,sizeof(double));
     asxx=calloc(exact.area,sizeof(double)); asyy=calloc(exact.area,sizeof(double));

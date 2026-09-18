@@ -85,6 +85,7 @@ DENISE += alloc_fwiPSV.c \
 	  alloc_seisPSVfull.c \
 	  alloc_seisPSVfwi.c \
 	  assemble_gradPSV_exact.c \
+	  visco_psv_checkpoint.c \
 	  visco_psv_exact_gradient.c \
 	  visco_psv_exact_fwi.c \
 	  ass_gradPSV.c \
