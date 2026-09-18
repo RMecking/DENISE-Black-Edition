@@ -554,6 +554,8 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 		 * exchanges, receiver sampling, and the existing trajectory recorder.
 		 * Restoring this state resumes with nt+1.  This environment-gated proof
 		 * leaves the active exact-FWI lifecycle and recorder unchanged. */
+		if (mode == 0)
+			visco_psv_exact_forward_boundary(wavePSV, wavePSV_PML, nt);
 		if (checkpoint_test && !replaying && nt == checkpoint_timestep)
 		{
 			write_live_state_snapshot(JACOBIAN, "t300_reference", wavePSV, wavePSV_PML);

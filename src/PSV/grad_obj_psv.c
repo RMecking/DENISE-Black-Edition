@@ -8,13 +8,6 @@
 
 #include "fd.h"
 
-int visco_psv_exact_enabled(void);
-void visco_psv_exact_begin(void);
-void visco_psv_exact_finish(struct wavePSV_PML *pml, struct matPSV *mat,
-                            struct fwiPSV *fwi,
-                            struct seisPSV *seis, struct seisPSVfwi *data,
-                            struct acq *acq, float *hc, int ntr);
-
 double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV *matPSV, struct fwiPSV *fwiPSV, struct mpiPSV *mpiPSV,
 				   struct seisPSV *seisPSV, struct seisPSVfwi *seisPSVfwi, struct acq *acq, float *hc, int iter, int nsrc, int ns, int ntr, int ntr_glob, int nsrc_glob,
 				   int nsrc_loc, int ntr_loc, int nstage, float **We, float **Ws, float **Wr, float **taper_coeff, int hin, int *DTINV_help,
@@ -39,6 +32,7 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 	float tmp_dg;
 	double L2sum, L2_tmp;
 	char source_signal_file[STRING_SIZE];
+	struct visco_psv_exact_fwi_request exact_request;
 
 	FILE *FP;
 
@@ -205,8 +199,34 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 			calc_res_PSV(seisPSV, seisPSVfwi, (*acq).recswitch, (*acq).recpos, (*acq).recpos_loc, ntr_glob, ntr, nsrc_glob, (*acq).srcpos, ishot, ns, iter, swstestshot);
 		}
 		if (exact_visco_path)
-			visco_psv_exact_finish(wavePSV_PML, matPSV, fwiPSV, seisPSV,
-			                       seisPSVfwi, acq, hc, ntr);
+		{
+			memset(&exact_request, 0, sizeof(exact_request));
+			exact_request.wave = wavePSV;
+			exact_request.pml = wavePSV_PML;
+			exact_request.material = matPSV;
+			exact_request.fwi = fwiPSV;
+			exact_request.mpi = mpiPSV;
+			exact_request.seis = seisPSV;
+			exact_request.data = seisPSVfwi;
+			exact_request.acquisition = acq;
+			exact_request.hc = hc;
+			exact_request.Ws = Ws;
+			exact_request.Wr = Wr;
+			exact_request.iter = iter;
+			exact_request.stage = nstage;
+			exact_request.nsrc = nsrc;
+			exact_request.ns = ns;
+			exact_request.ntr = ntr;
+			exact_request.ntr_glob = ntr_glob;
+			exact_request.nsrc_glob = nsrc_glob;
+			exact_request.nsrc_loc = nsrc_loc;
+			exact_request.hin = hin;
+			exact_request.DTINV_help = DTINV_help;
+			exact_request.req_send = req_send;
+			exact_request.req_rec = req_rec;
+			exact_request.base_objective = (*seisPSVfwi).L2;
+			visco_psv_exact_finish(&exact_request);
+		}
 
 		swstestshot = 0;
 

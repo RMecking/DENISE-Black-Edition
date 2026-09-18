@@ -613,6 +613,12 @@ void assemble_gradPSV_exact(struct fwiPSV *fwiPSV, struct matPSV *matPSV,
 
 int visco_psv_exact_supported(void);
 int visco_psv_exact_enabled(void);
+void visco_psv_exact_begin(void);
+void visco_psv_exact_forward_boundary(struct wavePSV *wave,
+                                      struct wavePSV_PML *pml,
+                                      int timestep);
+void visco_psv_exact_finish(
+        const struct visco_psv_exact_fwi_request *request);
 struct visco_psv_checkpoint *visco_psv_checkpoint_create(void);
 void visco_psv_checkpoint_capture(struct visco_psv_checkpoint *checkpoint,
                                   const struct wavePSV *wave,
