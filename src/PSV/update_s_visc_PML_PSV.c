@@ -22,6 +22,7 @@ void update_s_visc_PML_PSV(int nx1, int nx2, int ny1, int ny2,
       float ** psi_vxx, float ** psi_vyy, float ** psi_vxy, float ** psi_vyx, int mode){
 
 	int i,j, m, fdoh, h, h1, l;
+	int bulk_ix1, bulk_ix2, bulk_iy1, bulk_iy2, bulk_fd8_l1;
 	float  vxx, vyy, vxy, vyx;
 	float  dhi, dthalbe;	
 	extern float DT, DH;
@@ -45,6 +46,72 @@ void update_s_visc_PML_PSV(int nx1, int nx2, int ny1, int ny2,
 		time1=MPI_Wtime();
 		fprintf(FP,"\n **Message from update_s (printed by PE %d):\n",MYID);
 		fprintf(FP," Updating stress components ...");
+	}
+
+	/* FD8/L=1 is the dominant production case.  Traverse its regular interior
+	 * through contiguous row aliases, then let the existing case-8 loop handle
+	 * only the boundary strips and corners.  The generic L path remains unchanged. */
+	bulk_ix1=nx1;
+	bulk_ix2=nx2;
+	bulk_iy1=ny1;
+	bulk_iy2=ny2;
+	if ((!BOUNDARY) && (POS[1]==0) && (bulk_ix1<=FW)) bulk_ix1=FW+1;
+	if ((!BOUNDARY) && (POS[1]==NPROCX-1)) bulk_ix2=nx2-FW;
+	if ((POS[2]==0) && (bulk_iy1<=FW)) bulk_iy1=FW+1;
+	if (POS[2]==NPROCY-1) bulk_iy2=ny2-FW;
+	bulk_fd8_l1=(FDORDER==8) && (L==1) &&
+	             (bulk_ix1<=bulk_ix2) && (bulk_iy1<=bulk_iy2);
+	if (bulk_fd8_l1) {
+		const float hc1=hc[1], hc2=hc[2], hc3=hc[3], hc4=hc[4];
+		const float bip1=bip[1], bjm1=bjm[1], cip1=cip[1], cjm1=cjm[1];
+		for (j=bulk_iy1;j<=bulk_iy2;j++) {
+			float *restrict vxjm3=vx[j-3], *restrict vxjm2=vx[j-2];
+			float *restrict vxjm1=vx[j-1], *restrict vxj=vx[j];
+			float *restrict vxjp1=vx[j+1], *restrict vxjp2=vx[j+2];
+			float *restrict vxjp3=vx[j+3], *restrict vxjp4=vx[j+4];
+			float *restrict vyjm4=vy[j-4], *restrict vyjm3=vy[j-3];
+			float *restrict vyjm2=vy[j-2], *restrict vyjm1=vy[j-1];
+			float *restrict vyj=vy[j], *restrict vyjp1=vy[j+1];
+			float *restrict vyjp2=vy[j+2], *restrict vyjp3=vy[j+3];
+			float *restrict sxxj=sxx[j], *restrict syyj=syy[j], *restrict sxyj=sxy[j];
+			float *restrict fj=f[j], *restrict gj=g[j], *restrict fipjpj=fipjp[j];
+			float *restrict uxj=ux[j], *restrict uyj=uy[j], *restrict uxyj=uxy[j];
+			float *restrict r1=&r[j][bulk_ix1][1]-bulk_ix1;
+			float *restrict p1=&p[j][bulk_ix1][1]-bulk_ix1;
+			float *restrict q1=&q[j][bulk_ix1][1]-bulk_ix1;
+			float *restrict dip1=&dip[j][bulk_ix1][1]-bulk_ix1;
+			float *restrict d1=&d[j][bulk_ix1][1]-bulk_ix1;
+			float *restrict e1=&e[j][bulk_ix1][1]-bulk_ix1;
+#pragma GCC ivdep
+			for (i=bulk_ix1;i<=bulk_ix2;i++) {
+				float sr=0.0, sp=0.0, sq=0.0;
+				float lvxx, lvyx, lvxy, lvyy;
+				lvxx=(hc1*(vxj[i]-vxj[i-1])+hc2*(vxj[i+1]-vxj[i-2])+
+				     hc3*(vxj[i+2]-vxj[i-3])+hc4*(vxj[i+3]-vxj[i-4]))*dhi;
+				lvyx=(hc1*(vyj[i+1]-vyj[i])+hc2*(vyj[i+2]-vyj[i-1])+
+				     hc3*(vyj[i+3]-vyj[i-2])+hc4*(vyj[i+4]-vyj[i-3]))*dhi;
+				lvxy=(hc1*(vxjp1[i]-vxj[i])+hc2*(vxjp2[i]-vxjm1[i])+
+				     hc3*(vxjp3[i]-vxjm2[i])+hc4*(vxjp4[i]-vxjm3[i]))*dhi;
+				lvyy=(hc1*(vyj[i]-vyjm1[i])+hc2*(vyjp1[i]-vyjm2[i])+
+				     hc3*(vyjp2[i]-vyjm3[i])+hc4*(vyjp3[i]-vyjm4[i]))*dhi;
+				sr+=r1[i]; sp+=p1[i]; sq+=q1[i];
+				sxyj[i]+=(fipjpj[i]*(lvxy+lvyx))+(dthalbe*sr);
+				sxxj[i]+=(gj[i]*(lvxx+lvyy))-(2.0*fj[i]*lvyy)+(dthalbe*sp);
+				syyj[i]+=(gj[i]*(lvxx+lvyy))-(2.0*fj[i]*lvxx)+(dthalbe*sq);
+				sr=sp=sq=0.0;
+				r1[i]=bip1*(r1[i]*cip1-(dip1[i]*(lvxy+lvyx)));
+				p1[i]=bjm1*(p1[i]*cjm1-(e1[i]*(lvxx+lvyy))+(2.0*d1[i]*lvyy));
+				q1[i]=bjm1*(q1[i]*cjm1-(e1[i]*(lvxx+lvyy))+(2.0*d1[i]*lvxx));
+				sr+=r1[i]; sp+=p1[i]; sq+=q1[i];
+				sxyj[i]+=(dthalbe*sr);
+				sxxj[i]+=(dthalbe*sp);
+				syyj[i]+=(dthalbe*sq);
+			}
+			if((mode==0)&&(GRAD_FORM==2))
+				for (i=bulk_ix1;i<=bulk_ix2;i++) {
+					uxj[i]=p1[i]; uyj[i]=q1[i]; uxyj[i]=r1[i];
+				}
+		}
 	}
 	
 
@@ -397,6 +464,8 @@ void update_s_visc_PML_PSV(int nx1, int nx2, int ny1, int ny2,
 
     for (j=ny1;j<=ny2;j++){
 	for (i=nx1;i<=nx2;i++){
+			if (bulk_fd8_l1 && i>=bulk_ix1 && i<=bulk_ix2 &&
+			    j>=bulk_iy1 && j<=bulk_iy2) continue;
 
 			vxx = (  hc[1]*(vx[j][i]  -vx[j][i-1])
 				       + hc[2]*(vx[j][i+1]-vx[j][i-2])
