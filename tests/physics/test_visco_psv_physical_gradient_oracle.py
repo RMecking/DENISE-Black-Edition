@@ -75,7 +75,9 @@ def _replace(records: list[str], key: str, value: str) -> None:
     records[matches[0]] = f"{key} ={value}"
 
 
-def _base_parameter_records(config: ViscoPSVOracleConfig, *, mode: int) -> list[str]:
+def _base_parameter_records(
+    config: ViscoPSVOracleConfig, *, mode: int, nprocx: int = 1, nprocy: int = 1
+) -> list[str]:
     base = HomogeneousPSVConfig(
         nx=config.nx, ny=config.ny, dh_m=config.dh_m, time_s=config.time_s,
         dt_s=config.dt_s, vp_m_s=config.vp_m_s, vs_m_s=config.vs_m_s,
@@ -85,7 +87,7 @@ def _base_parameter_records(config: ViscoPSVOracleConfig, *, mode: int) -> list[
         absorbing_width_gridpoints=8, damping_velocity_m_s=config.vp_m_s,
         pml_frequency_hz=config.source_frequency_hz,
     )
-    records = _parameter_lines(base, 1, 1)
+    records = _parameter_lines(base, nprocx, nprocy)
     overrides = {
         "MODE": str(mode), "MFILE": "model/current", "L": "1", "FL": "10.0",
         "SEIS_FORMAT": "1", "SEIS_FILE_VX": "su/synthetic_x.su",
@@ -119,7 +121,16 @@ def _write_float_grid(path: Path, values: Sequence[float]) -> None:
         array("f", values).tofile(stream)
 
 
-def _write_case(directory: Path, *, config: ViscoPSVOracleConfig, model: Mapping[str, Sequence[float]], mode: int, observed: Path | None = None) -> None:
+def _write_case(
+    directory: Path,
+    *,
+    config: ViscoPSVOracleConfig,
+    model: Mapping[str, Sequence[float]],
+    mode: int,
+    observed: Path | None = None,
+    nprocx: int = 1,
+    nprocy: int = 1,
+) -> None:
     for name in ("model", "su", "log", "snap", "wavelet", "jacobian", "taper", "picked_times", "trace_kill", "gravity", "observed"):
         (directory / name).mkdir(parents=True, exist_ok=True)
     for name in PHYSICAL_FIELDS:
@@ -128,7 +139,9 @@ def _write_case(directory: Path, *, config: ViscoPSVOracleConfig, model: Mapping
         _write_float_grid(directory / "model" / f"current.{name}", values)
     (directory / "source.dat").write_text(f"1\n{config.source_x_m} 0.0 {config.source_y_m} 0.0 {config.source_frequency_hz} 1.0 20.0 4\n", encoding="ascii")
     (directory / "receiver.dat").write_text("".join(f"{x} {y}\n" for x, y in config.receivers_m), encoding="ascii")
-    records = _base_parameter_records(config, mode=mode)
+    records = _base_parameter_records(
+        config, mode=mode, nprocx=nprocx, nprocy=nprocy
+    )
     (directory / "denise.inp").write_text("# M7c viscoelastic P/SV physical gradient oracle\n" + "".join(f"# positional parameter {index:03d}\n{record}\n" for index, record in enumerate(records, start=1)), encoding="ascii")
     (directory / "workflow.inp").write_text(_workflow(), encoding="ascii")
     if observed is not None:

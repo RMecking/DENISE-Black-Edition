@@ -1,14 +1,16 @@
-/* Raw, discrete viscoelastic P/SV physical gradient for the one-rank L=1,
- * FD4 receiver-velocity experiment.  The forward operators themselves remain
- * in update_v_PML_PSV and update_s_visc_PML_PSV; the hooks below record their
- * post-CPML derivative operands, including the velocity-update force. */
+/* Raw, discrete viscoelastic P/SV physical gradient for the supported L=1,
+ * FD4 receiver-velocity experiment, including Cartesian MPI decomposition.
+ * The forward operators themselves remain in update_v_PML_PSV and
+ * update_s_visc_PML_PSV; the hooks below record their post-CPML derivative
+ * operands, including the velocity-update force. */
 #include "fd.h"
 
-extern int NX, NY, NT, FW, BOUNDARY, FREE_SURF, NPROCX, NPROCY, NDT;
+extern int NX, NY, NXG, NYG, NT, FW, BOUNDARY, FREE_SURF, NPROCX, NPROCY, NDT;
 extern int MODE, L, INVMAT1, GRAD_FORM, FDORDER, Q_PARAMETERIZATION_MODE;
-extern int DTINV, LNORM, QUELLTYP;
+extern int DTINV, LNORM, QUELLTYP, READMOD, NSRC, MYID_SHOT, POS[3], INDEX[5];
 extern float DT, DH, *FL, Q_APPROX_FMIN, Q_APPROX_FMAX, Q_APPROX_DF;
 extern char JACOBIAN[STRING_SIZE];
+extern MPI_Comm SHOT_COMM;
 
 enum {VXX, VYX, VXY, VYY, FX, FY, NRECORD};
 enum {GF, GG, GFC, GD, GE, GDC, GRX, GRY, NNATIVE};
@@ -23,8 +25,12 @@ static struct {
     struct visco_psv_checkpoint **checkpoint;
     float *record_payload;
     float *record[NRECORD];
+    double *send_a, *send_b, *recv_a, *recv_b;
+    size_t communication_capacity;
     size_t replay_compared[NRECORD], replay_mismatches[NRECORD];
     double initial_started, initial_seconds, replay_seconds, reverse_seconds;
+    double global_objective;
+    int source_owners, receiver_ownership_valid;
 } exact;
 
 static size_t record_index(int t, int j, int i) {
@@ -61,9 +67,11 @@ static void allocate_records(int capacity) {
 }
 
 int visco_psv_exact_supported(void) {
+    int halo = FDORDER / 2 + 1;
     return MODE == 1 && L == 1 && INVMAT1 == 1 && GRAD_FORM == 2 &&
-           FDORDER == 4 && NPROCX == 1 && NPROCY == 1 && !FREE_SURF &&
-           !BOUNDARY && FW > 0 && NDT == 1 && DTINV == 1 && LNORM == 2;
+           FDORDER == 4 && !FREE_SURF && !BOUNDARY && FW > 0 &&
+           NDT == 1 && DTINV == 1 && LNORM == 2 && READMOD == 1 &&
+           NSRC == 1 && NX >= halo && NY >= halo && NX >= FW && NY >= FW;
 }
 
 int visco_psv_exact_enabled(void) {
@@ -75,12 +83,13 @@ int visco_psv_exact_enabled(void) {
 void visco_psv_exact_begin(void) {
     int k;
     if (!visco_psv_exact_enabled()) return;
-    if (MODE != 1 || L != 1 || INVMAT1 != 1 || GRAD_FORM != 2 ||
-        FDORDER != 4 || NPROCX != 1 || NPROCY != 1 || FREE_SURF ||
-        BOUNDARY || FW <= 0 || NDT != 1 || DTINV != 1 || LNORM != 2)
-        err(" Exact visco PSV raw gradient supports one-rank L=1 FD4, INVMAT1=1, GRAD_FORM=2, NDT=DTINV=1, LNORM=2, CPML interior only. ");
-    exact.pitch = NX + 5;
-    exact.area = (NY + 5) * exact.pitch;
+    if (!visco_psv_exact_supported())
+        err(" Exact visco PSV raw gradient supports one-source READMOD=1 L=1 FD4, INVMAT1=1, GRAD_FORM=2, NDT=DTINV=1, LNORM=2, CPML interior only, with local domains large enough for FD and CPML halos. ");
+    /* Forward matrices span -2..NX+3/-2..NY+3 for FD4.  The one-rank
+     * reverse stencil only touched through +2, but the distributed transpose
+     * must hold the complete component-specific +3 halo. */
+    exact.pitch = NX + 6;
+    exact.area = (NY + 6) * exact.pitch;
     exact.full_storage = enabled_flag("DENISE_PSV_EXACT_FULL_STORAGE_REFERENCE") ||
                          enabled_flag("DENISE_PSV_CHECKPOINT_REPLAY_TEST");
     exact.requested_segments = requested_segment_count();
@@ -90,6 +99,11 @@ void visco_psv_exact_begin(void) {
     exact.checkpoint_count = exact.checkpoints_captured = 0;
     exact.max_segment_length = 0;
     exact.replayed_steps = 0;
+    exact.global_objective = 0.0;
+    exact.source_owners = 0;
+    exact.receiver_ownership_valid = 0;
+    exact.send_a = exact.send_b = exact.recv_a = exact.recv_b = NULL;
+    exact.communication_capacity = 0;
     exact.initial_seconds = exact.replay_seconds = exact.reverse_seconds = 0.0;
     if (exact.full_storage) {
         allocate_records(NT + 1);
@@ -120,6 +134,16 @@ void visco_psv_exact_begin(void) {
         allocate_records(exact.max_segment_length);
         exact.record_first = 1;
         exact.recording = 0;
+    }
+    if (NPROCX * NPROCY > 1) {
+        size_t maximum = (size_t)(NX > NY ? NX : NY) + 1;
+        exact.communication_capacity = 5 * maximum;
+        exact.send_a = calloc(exact.communication_capacity, sizeof(double));
+        exact.send_b = calloc(exact.communication_capacity, sizeof(double));
+        exact.recv_a = calloc(exact.communication_capacity, sizeof(double));
+        exact.recv_b = calloc(exact.communication_capacity, sizeof(double));
+        if (!exact.send_a || !exact.send_b || !exact.recv_a || !exact.recv_b)
+            err(" Out of memory allocating distributed exact-visco adjoint exchange buffers. ");
     }
     exact.step = 0;
     exact.replay_compare = 0;
@@ -283,15 +307,242 @@ static void replay_forward_segment(
     exact.recording = 0;
 }
 
+static size_t adjoint_cell(int j, int i, int pitch) {
+    return (size_t)(j + 2) * pitch + i + 2;
+}
+
+/* Transpose of the stress halo-copy operator.  Forward exchange is vertical
+ * then horizontal, so this applies horizontal^T before vertical^T.  Ghost
+ * cotangents are extracted and cleared; received values are added to owners. */
+void exchange_s_adjoint_PSV(double *asxx, double *asyy, double *asxy,
+                            int pitch) {
+    int fdo = FDORDER / 2 + 1;
+    int left = POS[1] > 0 ? INDEX[1] : MPI_PROC_NULL;
+    int right = POS[1] < NPROCX - 1 ? INDEX[2] : MPI_PROC_NULL;
+    int top = POS[2] > 0 ? INDEX[3] : MPI_PROC_NULL;
+    int bottom = POS[2] < NPROCY - 1 ? INDEX[4] : MPI_PROC_NULL;
+    int i, j, l, n, horizontal_count, vertical_count;
+    MPI_Status status;
+
+    if (NPROCX * NPROCY == 1) return;
+    horizontal_count = NY * (2 * fdo - 3);
+    vertical_count = NX * (2 * fdo - 1);
+    if ((size_t)(horizontal_count > vertical_count ? horizontal_count : vertical_count) >
+        exact.communication_capacity)
+        err(" Exact-visco stress transpose exchange buffer is too small. ");
+
+    n = 0;
+    for (j = 1; j <= NY; ++j) {
+        for (l = 1; l < fdo - 1; ++l) {
+            size_t p = adjoint_cell(j, NX + l, pitch);
+            exact.send_a[n++] = asxy[p]; asxy[p] = 0.0;
+        }
+        for (l = 1; l < fdo; ++l) {
+            size_t p = adjoint_cell(j, NX + l, pitch);
+            exact.send_a[n++] = asxx[p]; asxx[p] = 0.0;
+        }
+    }
+    n = 0;
+    for (j = 1; j <= NY; ++j) {
+        for (l = 1; l < fdo; ++l) {
+            size_t p = adjoint_cell(j, 1 - l, pitch);
+            exact.send_b[n++] = asxy[p]; asxy[p] = 0.0;
+        }
+        for (l = 1; l < fdo - 1; ++l) {
+            size_t p = adjoint_cell(j, 1 - l, pitch);
+            exact.send_b[n++] = asxx[p]; asxx[p] = 0.0;
+        }
+    }
+    memset(exact.recv_a, 0, (size_t)horizontal_count * sizeof(double));
+    memset(exact.recv_b, 0, (size_t)horizontal_count * sizeof(double));
+    MPI_Sendrecv(exact.send_a, horizontal_count, MPI_DOUBLE, right, 1811,
+                 exact.recv_a, horizontal_count, MPI_DOUBLE, left, 1811,
+                 SHOT_COMM, &status);
+    MPI_Sendrecv(exact.send_b, horizontal_count, MPI_DOUBLE, left, 1812,
+                 exact.recv_b, horizontal_count, MPI_DOUBLE, right, 1812,
+                 SHOT_COMM, &status);
+    n = 0;
+    for (j = 1; j <= NY; ++j) {
+        for (l = 1; l < fdo - 1; ++l)
+            asxy[adjoint_cell(j, l, pitch)] += exact.recv_a[n++];
+        for (l = 1; l < fdo; ++l)
+            asxx[adjoint_cell(j, l, pitch)] += exact.recv_a[n++];
+    }
+    n = 0;
+    for (j = 1; j <= NY; ++j) {
+        for (l = 1; l < fdo; ++l)
+            asxy[adjoint_cell(j, NX - l + 1, pitch)] += exact.recv_b[n++];
+        for (l = 1; l < fdo - 1; ++l)
+            asxx[adjoint_cell(j, NX - l + 1, pitch)] += exact.recv_b[n++];
+    }
+
+    n = 0;
+    for (i = 1; i <= NX; ++i) {
+        for (l = 1; l < fdo; ++l) {
+            size_t p = adjoint_cell(NY + l, i, pitch);
+            exact.send_a[n++] = asxy[p]; asxy[p] = 0.0;
+        }
+        for (l = 1; l <= fdo; ++l) {
+            size_t p = adjoint_cell(NY + l, i, pitch);
+            exact.send_a[n++] = asyy[p]; asyy[p] = 0.0;
+        }
+    }
+    n = 0;
+    for (i = 1; i <= NX; ++i) {
+        for (l = 1; l <= fdo; ++l) {
+            size_t p = adjoint_cell(1 - l, i, pitch);
+            exact.send_b[n++] = asxy[p]; asxy[p] = 0.0;
+        }
+        for (l = 1; l < fdo; ++l) {
+            size_t p = adjoint_cell(1 - l, i, pitch);
+            exact.send_b[n++] = asyy[p]; asyy[p] = 0.0;
+        }
+    }
+    memset(exact.recv_a, 0, (size_t)vertical_count * sizeof(double));
+    memset(exact.recv_b, 0, (size_t)vertical_count * sizeof(double));
+    MPI_Sendrecv(exact.send_a, vertical_count, MPI_DOUBLE, bottom, 1813,
+                 exact.recv_a, vertical_count, MPI_DOUBLE, top, 1813,
+                 SHOT_COMM, &status);
+    MPI_Sendrecv(exact.send_b, vertical_count, MPI_DOUBLE, top, 1814,
+                 exact.recv_b, vertical_count, MPI_DOUBLE, bottom, 1814,
+                 SHOT_COMM, &status);
+    n = 0;
+    for (i = 1; i <= NX; ++i) {
+        for (l = 1; l < fdo; ++l)
+            asxy[adjoint_cell(l, i, pitch)] += exact.recv_a[n++];
+        for (l = 1; l <= fdo; ++l)
+            asyy[adjoint_cell(l, i, pitch)] += exact.recv_a[n++];
+    }
+    n = 0;
+    for (i = 1; i <= NX; ++i) {
+        for (l = 1; l <= fdo; ++l)
+            asxy[adjoint_cell(NY - l + 1, i, pitch)] += exact.recv_b[n++];
+        for (l = 1; l < fdo; ++l)
+            asyy[adjoint_cell(NY - l + 1, i, pitch)] += exact.recv_b[n++];
+    }
+}
+
+/* Transpose of the staggered velocity halo-copy operator, with the same
+ * extract/clear/send/add ownership semantics as the stress transpose. */
+void exchange_v_adjoint_PSV(double *avx, double *avy, int pitch) {
+    int fdo = FDORDER / 2 + 1;
+    int left = POS[1] > 0 ? INDEX[1] : MPI_PROC_NULL;
+    int right = POS[1] < NPROCX - 1 ? INDEX[2] : MPI_PROC_NULL;
+    int top = POS[2] > 0 ? INDEX[3] : MPI_PROC_NULL;
+    int bottom = POS[2] < NPROCY - 1 ? INDEX[4] : MPI_PROC_NULL;
+    int i, j, l, n, horizontal_count, vertical_count;
+    MPI_Status status;
+
+    if (NPROCX * NPROCY == 1) return;
+    horizontal_count = NY * (2 * fdo - 3);
+    vertical_count = NX * (2 * fdo - 1);
+    if ((size_t)(horizontal_count > vertical_count ? horizontal_count : vertical_count) >
+        exact.communication_capacity)
+        err(" Exact-visco velocity transpose exchange buffer is too small. ");
+
+    n = 0;
+    for (j = 1; j <= NY; ++j) {
+        for (l = 1; l < fdo; ++l) {
+            size_t p = adjoint_cell(j, NX + l, pitch);
+            exact.send_a[n++] = avy[p]; avy[p] = 0.0;
+        }
+        for (l = 1; l < fdo - 1; ++l) {
+            size_t p = adjoint_cell(j, NX + l, pitch);
+            exact.send_a[n++] = avx[p]; avx[p] = 0.0;
+        }
+    }
+    n = 0;
+    for (j = 1; j <= NY; ++j) {
+        for (l = 1; l < fdo - 1; ++l) {
+            size_t p = adjoint_cell(j, 1 - l, pitch);
+            exact.send_b[n++] = avy[p]; avy[p] = 0.0;
+        }
+        for (l = 1; l < fdo; ++l) {
+            size_t p = adjoint_cell(j, 1 - l, pitch);
+            exact.send_b[n++] = avx[p]; avx[p] = 0.0;
+        }
+    }
+    memset(exact.recv_a, 0, (size_t)horizontal_count * sizeof(double));
+    memset(exact.recv_b, 0, (size_t)horizontal_count * sizeof(double));
+    MPI_Sendrecv(exact.send_a, horizontal_count, MPI_DOUBLE, right, 1821,
+                 exact.recv_a, horizontal_count, MPI_DOUBLE, left, 1821,
+                 SHOT_COMM, &status);
+    MPI_Sendrecv(exact.send_b, horizontal_count, MPI_DOUBLE, left, 1822,
+                 exact.recv_b, horizontal_count, MPI_DOUBLE, right, 1822,
+                 SHOT_COMM, &status);
+    n = 0;
+    for (j = 1; j <= NY; ++j) {
+        for (l = 1; l < fdo; ++l)
+            avy[adjoint_cell(j, l, pitch)] += exact.recv_a[n++];
+        for (l = 1; l < fdo - 1; ++l)
+            avx[adjoint_cell(j, l, pitch)] += exact.recv_a[n++];
+    }
+    n = 0;
+    for (j = 1; j <= NY; ++j) {
+        for (l = 1; l < fdo - 1; ++l)
+            avy[adjoint_cell(j, NX - l + 1, pitch)] += exact.recv_b[n++];
+        for (l = 1; l < fdo; ++l)
+            avx[adjoint_cell(j, NX - l + 1, pitch)] += exact.recv_b[n++];
+    }
+
+    n = 0;
+    for (i = 1; i <= NX; ++i) {
+        for (l = 1; l < fdo; ++l) {
+            size_t p = adjoint_cell(NY + l, i, pitch);
+            exact.send_a[n++] = avy[p]; avy[p] = 0.0;
+        }
+        for (l = 1; l <= fdo; ++l) {
+            size_t p = adjoint_cell(NY + l, i, pitch);
+            exact.send_a[n++] = avx[p]; avx[p] = 0.0;
+        }
+    }
+    n = 0;
+    for (i = 1; i <= NX; ++i) {
+        for (l = 1; l <= fdo; ++l) {
+            size_t p = adjoint_cell(1 - l, i, pitch);
+            exact.send_b[n++] = avy[p]; avy[p] = 0.0;
+        }
+        for (l = 1; l < fdo; ++l) {
+            size_t p = adjoint_cell(1 - l, i, pitch);
+            exact.send_b[n++] = avx[p]; avx[p] = 0.0;
+        }
+    }
+    memset(exact.recv_a, 0, (size_t)vertical_count * sizeof(double));
+    memset(exact.recv_b, 0, (size_t)vertical_count * sizeof(double));
+    MPI_Sendrecv(exact.send_a, vertical_count, MPI_DOUBLE, bottom, 1823,
+                 exact.recv_a, vertical_count, MPI_DOUBLE, top, 1823,
+                 SHOT_COMM, &status);
+    MPI_Sendrecv(exact.send_b, vertical_count, MPI_DOUBLE, top, 1824,
+                 exact.recv_b, vertical_count, MPI_DOUBLE, bottom, 1824,
+                 SHOT_COMM, &status);
+    n = 0;
+    for (i = 1; i <= NX; ++i) {
+        for (l = 1; l < fdo; ++l)
+            avy[adjoint_cell(l, i, pitch)] += exact.recv_a[n++];
+        for (l = 1; l <= fdo; ++l)
+            avx[adjoint_cell(l, i, pitch)] += exact.recv_a[n++];
+    }
+    n = 0;
+    for (i = 1; i <= NX; ++i) {
+        for (l = 1; l <= fdo; ++l)
+            avy[adjoint_cell(NY - l + 1, i, pitch)] += exact.recv_b[n++];
+        for (l = 1; l < fdo; ++l)
+            avx[adjoint_cell(NY - l + 1, i, pitch)] += exact.recv_b[n++];
+    }
+}
+
 /* Transpose of psi'=b psi+a D, D'=D/K+psi'.  psi_adj is the
  * adjoint of the NEW psi on entry and the OLD psi on return. */
 static double reverse_cpml(double corrected, double *psi_adj, int p,
-                           int coordinate, int extent, float *K, float *a,
-                           float *b) {
+                           int coordinate, int extent, int axis, float *K,
+                           float *a, float *b) {
     int h;
     double combined;
-    if (coordinate <= FW) h = coordinate;
-    else if (coordinate >= extent - FW + 1)
+    int at_low_boundary = axis == 1 ? POS[1] == 0 : POS[2] == 0;
+    int at_high_boundary = axis == 1 ? POS[1] == NPROCX - 1
+                                     : POS[2] == NPROCY - 1;
+    if (at_low_boundary && coordinate <= FW) h = coordinate;
+    else if (at_high_boundary && coordinate >= extent - FW + 1)
         h = coordinate - extent + 2 * FW;
     else return corrected;
     combined = psi_adj[p] + corrected;
@@ -328,13 +579,71 @@ static void add_forward_y(double *field, int j, int i, double value,
     field[cell(j-1,i)] -= scale * hc[2] * value;
 }
 
+/* Sum constitutive-map contributions that land on the right and bottom
+ * model halos into the rank that owns the physical cell.  Horizontal first
+ * routes the bottom-right corner into the neighbour's bottom halo; vertical
+ * then completes that diagonal transfer. */
+static void reduce_physical_gradient_halos(double *physical[5]) {
+    int left = POS[1] > 0 ? INDEX[1] : MPI_PROC_NULL;
+    int right = POS[1] < NPROCX - 1 ? INDEX[2] : MPI_PROC_NULL;
+    int top = POS[2] > 0 ? INDEX[3] : MPI_PROC_NULL;
+    int bottom = POS[2] < NPROCY - 1 ? INDEX[4] : MPI_PROC_NULL;
+    int f, i, j, n, horizontal_count, vertical_count;
+    MPI_Status status;
+
+    if (NPROCX * NPROCY == 1) return;
+    horizontal_count = 5 * (NY + 1);
+    vertical_count = 5 * NX;
+    if ((size_t)(horizontal_count > vertical_count ? horizontal_count : vertical_count) >
+        exact.communication_capacity)
+        err(" Exact-visco physical-gradient reduction buffer is too small. ");
+
+    n = 0;
+    for (f = 0; f < 5; ++f)
+        for (j = 1; j <= NY + 1; ++j) {
+            size_t p = adjoint_cell(j, NX + 1, exact.pitch);
+            exact.send_a[n++] = physical[f][p];
+            physical[f][p] = 0.0;
+        }
+    memset(exact.recv_a, 0, (size_t)horizontal_count * sizeof(double));
+    MPI_Sendrecv(exact.send_a, horizontal_count, MPI_DOUBLE, right, 1831,
+                 exact.recv_a, horizontal_count, MPI_DOUBLE, left, 1831,
+                 SHOT_COMM, &status);
+    n = 0;
+    for (f = 0; f < 5; ++f)
+        for (j = 1; j <= NY + 1; ++j)
+            physical[f][adjoint_cell(j, 1, exact.pitch)] += exact.recv_a[n++];
+
+    n = 0;
+    for (f = 0; f < 5; ++f)
+        for (i = 1; i <= NX; ++i) {
+            size_t p = adjoint_cell(NY + 1, i, exact.pitch);
+            exact.send_a[n++] = physical[f][p];
+            physical[f][p] = 0.0;
+        }
+    memset(exact.recv_a, 0, (size_t)vertical_count * sizeof(double));
+    MPI_Sendrecv(exact.send_a, vertical_count, MPI_DOUBLE, bottom, 1832,
+                 exact.recv_a, vertical_count, MPI_DOUBLE, top, 1832,
+                 SHOT_COMM, &status);
+    n = 0;
+    for (f = 0; f < 5; ++f)
+        for (i = 1; i <= NX; ++i)
+            physical[f][adjoint_cell(1, i, exact.pitch)] += exact.recv_a[n++];
+}
+
 static void write_field(const char *suffix, double *gradient) {
-    char path[STRING_SIZE + 40];
+    char path[STRING_SIZE + 64], local_path[STRING_SIZE + 80];
     FILE *out;
     int i, j;
     float value;
     snprintf(path, sizeof(path), "%s.raw.%s", JACOBIAN, suffix);
-    out = fopen(path, "wb");
+    if (NPROCX * NPROCY == 1) {
+        snprintf(local_path, sizeof(local_path), "%s", path);
+    } else {
+        snprintf(local_path, sizeof(local_path), "%s.%d.%d",
+                 path, POS[1], POS[2]);
+    }
+    out = fopen(local_path, "wb");
     if (!out) err(" Could not open exact visco PSV raw-gradient output. ");
     for (i = 1; i <= NX; i++) for (j = 1; j <= NY; j++) {
         value = (float)gradient[cell(j,i)];
@@ -342,6 +651,12 @@ static void write_field(const char *suffix, double *gradient) {
             err(" Could not write exact visco PSV raw gradient. ");
     }
     fclose(out);
+    if (NPROCX * NPROCY > 1) {
+        MPI_Barrier(SHOT_COMM);
+        if (MYID_SHOT == 0) mergemod(path, 3);
+        MPI_Barrier(SHOT_COMM);
+        remove(local_path);
+    }
 }
 
 static size_t checkpoint_formula_bytes(int nx, int ny, int fw) {
@@ -350,7 +665,7 @@ static size_t checkpoint_formula_bytes(int nx, int ny, int fw) {
 }
 
 static void write_segment_report(void) {
-    char path[STRING_SIZE + 48];
+    char path[STRING_SIZE + 72];
     FILE *report;
     size_t cells = (size_t)NX * NY;
     size_t legacy_bytes = (size_t)NRECORD * (NT + 1) * cells * sizeof(float);
@@ -365,7 +680,11 @@ static void write_segment_report(void) {
     const int large_max = (large_nt + large_segments - 1) / large_segments;
     int k;
 
-    snprintf(path, sizeof(path), "%s.segmented_gradient.json", JACOBIAN);
+    if (NPROCX * NPROCY == 1)
+        snprintf(path, sizeof(path), "%s.segmented_gradient.json", JACOBIAN);
+    else
+        snprintf(path, sizeof(path), "%s.segmented_gradient.rank%d.json",
+                 JACOBIAN, MYID_SHOT);
     report = fopen(path, "w");
     if (!report) err(" Could not open exact visco PSV segmented-gradient report. ");
     fprintf(report,
@@ -385,6 +704,13 @@ static void write_segment_report(void) {
             "  \"legacy_six_field_bytes\": %zu,\n"
             "  \"reduction_factor\": %.17g,\n"
             "  \"replayed_forward_steps\": %d,\n"
+            "  \"rank\": %d,\n"
+            "  \"position\": [%d, %d],\n"
+            "  \"decomposition\": [%d, %d],\n"
+            "  \"local_grid\": [%d, %d],\n"
+            "  \"global_objective\": %.17g,\n"
+            "  \"source_owners\": %d,\n"
+            "  \"receiver_ownership_valid\": %s,\n"
             "  \"initial_forward_seconds\": %.17g,\n"
             "  \"forward_replay_seconds\": %.17g,\n"
             "  \"reverse_seconds\": %.17g,\n"
@@ -399,7 +725,11 @@ static void write_segment_report(void) {
             exact.full_storage ? 0 : checkpoint_total,
             segment_bytes, full_bytes, combined, legacy_bytes,
             combined ? (double)legacy_bytes / combined : 0.0,
-            exact.replayed_steps, exact.initial_seconds,
+            exact.replayed_steps, MYID_SHOT, POS[1], POS[2],
+            NPROCX, NPROCY, NX, NY, exact.global_objective,
+            exact.source_owners,
+            exact.receiver_ownership_valid ? "true" : "false",
+            exact.initial_seconds,
             exact.replay_seconds, exact.reverse_seconds);
     if (exact.full_storage) {
         fprintf(report, "[1, %d]", NT);
@@ -432,6 +762,52 @@ static void write_segment_report(void) {
             ((double)NRECORD * 1000 * 1000 * (large_nt + 1) * sizeof(float)) /
                 (1024.0 * 1024.0 * 1024.0));
     fclose(report);
+
+    if (NPROCX * NPROCY > 1) {
+        int checkpoint_min, checkpoint_max, replay_min, replay_max;
+        unsigned long long checkpoint_local_bytes =
+            (unsigned long long)checkpoint_total;
+        unsigned long long checkpoint_min_bytes, checkpoint_max_bytes;
+        MPI_Allreduce(&exact.checkpoint_count, &checkpoint_min, 1, MPI_INT,
+                      MPI_MIN, SHOT_COMM);
+        MPI_Allreduce(&exact.checkpoint_count, &checkpoint_max, 1, MPI_INT,
+                      MPI_MAX, SHOT_COMM);
+        MPI_Allreduce(&exact.replayed_steps, &replay_min, 1, MPI_INT,
+                      MPI_MIN, SHOT_COMM);
+        MPI_Allreduce(&exact.replayed_steps, &replay_max, 1, MPI_INT,
+                      MPI_MAX, SHOT_COMM);
+        MPI_Allreduce(&checkpoint_local_bytes, &checkpoint_min_bytes, 1,
+                      MPI_UNSIGNED_LONG_LONG, MPI_MIN, SHOT_COMM);
+        MPI_Allreduce(&checkpoint_local_bytes, &checkpoint_max_bytes, 1,
+                      MPI_UNSIGNED_LONG_LONG, MPI_MAX, SHOT_COMM);
+        if (MYID_SHOT == 0) {
+            snprintf(path, sizeof(path), "%s.distributed_gradient.json", JACOBIAN);
+            report = fopen(path, "w");
+            if (!report) err(" Could not open distributed exact-visco gradient report. ");
+            fprintf(report,
+                    "{\n"
+                    "  \"decomposition\": [%d, %d],\n"
+                    "  \"global_grid\": [%d, %d],\n"
+                    "  \"global_objective\": %.17g,\n"
+                    "  \"source_owners\": %d,\n"
+                    "  \"receiver_ownership_valid\": %s,\n"
+                    "  \"checkpoint_count_min\": %d,\n"
+                    "  \"checkpoint_count_max\": %d,\n"
+                    "  \"checkpoint_bytes_total_min\": %llu,\n"
+                    "  \"checkpoint_bytes_total_max\": %llu,\n"
+                    "  \"replayed_forward_steps_min\": %d,\n"
+                    "  \"replayed_forward_steps_max\": %d,\n"
+                    "  \"global_trajectory_replication\": false\n"
+                    "}\n",
+                    NPROCX, NPROCY, NXG, NYG, exact.global_objective,
+                    exact.source_owners,
+                    exact.receiver_ownership_valid ? "true" : "false",
+                    checkpoint_min, checkpoint_max,
+                    checkpoint_min_bytes, checkpoint_max_bytes,
+                    replay_min, replay_max);
+            fclose(report);
+        }
+    }
 }
 
 void visco_psv_exact_finish(
@@ -447,7 +823,7 @@ void visco_psv_exact_finish(
     double *avx, *avy, *asxx, *asyy, *asxy, *ar, *ap, *aq;
     double *psi[NPSI], *native[NNATIVE], *physical[5];
     struct q_tau_mapping mapping;
-    int t, i, j, k, p, cx, cy, segment, t_begin, t_end;
+    int t, i, j, k, p, cx, cy, gi, gj, segment, t_begin, t_end;
     double phase_started;
     double eta, b, c, dt2, div, shear, ax, ay, xx, yy, xy, yx;
     double tr, tp, tq, lambda_r, lambda_p, lambda_q;
@@ -458,6 +834,27 @@ void visco_psv_exact_finish(
     exact.initial_seconds = MPI_Wtime() - exact.initial_started;
     if (!exact.full_storage && exact.checkpoints_captured != exact.checkpoint_count)
         err(" Exact visco PSV forward did not capture every segment checkpoint. ");
+    {
+        int local_sources = request->nsrc_loc;
+        int *receiver_owners = calloc((size_t)request->ntr_glob, sizeof(int));
+        int receiver;
+        if (!receiver_owners)
+            err(" Out of memory validating exact-visco receiver ownership. ");
+        MPI_Allreduce(&local_sources, &exact.source_owners, 1, MPI_INT,
+                      MPI_SUM, SHOT_COMM);
+        MPI_Allreduce(acq->recswitch + 1, receiver_owners,
+                      request->ntr_glob, MPI_INT, MPI_SUM, SHOT_COMM);
+        exact.receiver_ownership_valid = 1;
+        for (receiver = 0; receiver < request->ntr_glob; ++receiver)
+            if (receiver_owners[receiver] != 1)
+                exact.receiver_ownership_valid = 0;
+        free(receiver_owners);
+        if (exact.source_owners != 1)
+            err(" Exact-visco distributed source ownership is not unique. ");
+        if (!exact.receiver_ownership_valid)
+            err(" Exact-visco distributed receiver ownership is not unique. ");
+    }
+    exact.global_objective = request->base_objective;
     avx=calloc(exact.area,sizeof(double)); avy=calloc(exact.area,sizeof(double));
     asxx=calloc(exact.area,sizeof(double)); asyy=calloc(exact.area,sizeof(double));
     asxy=calloc(exact.area,sizeof(double)); ar=calloc(exact.area,sizeof(double));
@@ -498,6 +895,7 @@ void visco_psv_exact_finish(
             avx[p] += (double)seis->sectionvx[k][t]-data->sectionvxdata[k][t];
             avy[p] += (double)seis->sectionvy[k][t]-data->sectionvydata[k][t];
         }
+        exchange_s_adjoint_PSV(asxx, asyy, asxy, exact.pitch);
         /* Transpose stress and all three relaxation-memory recurrences. */
         for (j=1;j<=NY;j++) for (i=1;i<=NX;i++) {
             p=cell(j,i); r=record_index(t,j,i);
@@ -521,15 +919,16 @@ void visco_psv_exact_finish(
             ar[p]=dt2*asxy[p]+b*c*lambda_r;
             ap[p]=dt2*asxx[p]+b*c*lambda_p;
             aq[p]=dt2*asyy[p]+b*c*lambda_q;
-            xx=reverse_cpml(ax,psi[PVXX],p,i,NX,pml->K_x,pml->a_x,pml->b_x);
-            yx=reverse_cpml(yx,psi[PVYX],p,i,NX,pml->K_x_half,pml->a_x_half,pml->b_x_half);
-            xy=reverse_cpml(xy,psi[PVXY],p,j,NY,pml->K_y_half,pml->a_y_half,pml->b_y_half);
-            yy=reverse_cpml(ay,psi[PVYY],p,j,NY,pml->K_y,pml->a_y,pml->b_y);
+            xx=reverse_cpml(ax,psi[PVXX],p,i,NX,1,pml->K_x,pml->a_x,pml->b_x);
+            yx=reverse_cpml(yx,psi[PVYX],p,i,NX,1,pml->K_x_half,pml->a_x_half,pml->b_x_half);
+            xy=reverse_cpml(xy,psi[PVXY],p,j,NY,2,pml->K_y_half,pml->a_y_half,pml->b_y_half);
+            yy=reverse_cpml(ay,psi[PVYY],p,j,NY,2,pml->K_y,pml->a_y,pml->b_y);
             add_backward_x(avx,j,i,xx,hc,1.0/DH);
             add_forward_x(avy,j,i,yx,hc,1.0/DH);
             add_forward_y(avx,j,i,xy,hc,1.0/DH);
             add_backward_y(avy,j,i,yy,hc,1.0/DH);
         }
+        exchange_v_adjoint_PSV(avx, avy, exact.pitch);
         /* Transpose velocity and its four independent CPML recurrences. */
         for (j=1;j<=NY;j++) for (i=1;i<=NX;i++) {
             p=cell(j,i); r=record_index(t,j,i);
@@ -537,10 +936,10 @@ void visco_psv_exact_finish(
             native[GRY][p]+=avy[p]*DT*exact.record[FY][r]/DH;
             ax=avx[p]*DT*mat->prip[j][i]/DH;
             ay=avy[p]*DT*mat->prjp[j][i]/DH;
-            xx=reverse_cpml(ax,psi[PSXX],p,i,NX,pml->K_x_half,pml->a_x_half,pml->b_x_half);
-            yx=reverse_cpml(ay,psi[PSXYX],p,i,NX,pml->K_x,pml->a_x,pml->b_x);
-            xy=reverse_cpml(ax,psi[PSXYY],p,j,NY,pml->K_y,pml->a_y,pml->b_y);
-            yy=reverse_cpml(ay,psi[PSYY],p,j,NY,pml->K_y_half,pml->a_y_half,pml->b_y_half);
+            xx=reverse_cpml(ax,psi[PSXX],p,i,NX,1,pml->K_x_half,pml->a_x_half,pml->b_x_half);
+            yx=reverse_cpml(ay,psi[PSXYX],p,i,NX,1,pml->K_x,pml->a_x,pml->b_x);
+            xy=reverse_cpml(ax,psi[PSXYY],p,j,NY,2,pml->K_y,pml->a_y,pml->b_y);
+            yy=reverse_cpml(ay,psi[PSYY],p,j,NY,2,pml->K_y_half,pml->a_y_half,pml->b_y_half);
             add_forward_x(asxx,j,i,xx,hc,1.0);
             add_backward_x(asxy,j,i,yx,hc,1.0);
             add_backward_y(asxy,j,i,xy,hc,1.0);
@@ -560,6 +959,8 @@ void visco_psv_exact_finish(
         double tp0=mat->ptaup[j][i], den_s=1.0+0.5*ts, den_p=1.0+0.5*tp0;
         double gM, gP, gts, gtp, H, T, den_c, gH, gT;
         p=cell(j,i);
+        gi=POS[1]*NX+i;
+        gj=POS[2]*NY+j;
         gM=native[GF][p]*DT*(1.0+ts)/den_s+
            native[GD][p]*eta*ts/den_s;
         gP=native[GG][p]*DT*(1.0+tp0)/den_p+
@@ -578,9 +979,9 @@ void visco_psv_exact_finish(
         gH=native[GFC][p]*DT*(1.0+T)/den_c+
            native[GDC][p]*eta*T/den_c;
         gT=native[GFC][p]*DT*H*0.5/(den_c*den_c)+
-           native[GDC][p]*eta*H/(den_c*den_c);
+            native[GDC][p]*eta*H/(den_c*den_c);
         for (cy=j;cy<=j+1;cy++) for (cx=i;cx<=i+1;cx++) {
-            if (cy>NY || cx>NX) continue;
+            if (gj+(cy-j)>NYG || gi+(cx-i)>NXG) continue;
             {
                 double local_rho=mat->prho[cy][cx], local_vs=mat->pu[cy][cx];
                 double local_M=local_rho*local_vs*local_vs;
@@ -594,11 +995,12 @@ void visco_psv_exact_finish(
         /* R_x and R_y are reciprocal arithmetic face densities. */
         physical[2][p]+=-0.5*mat->prip[j][i]*mat->prip[j][i]*native[GRX][p];
         physical[2][p]+=-0.5*mat->prjp[j][i]*mat->prjp[j][i]*native[GRY][p];
-        if (i<NX) physical[2][cell(j,i+1)]+=
+        if (gi<NXG) physical[2][cell(j,i+1)]+=
             -0.5*mat->prip[j][i]*mat->prip[j][i]*native[GRX][p];
-        if (j<NY) physical[2][cell(j+1,i)]+=
+        if (gj<NYG) physical[2][cell(j+1,i)]+=
             -0.5*mat->prjp[j][i]*mat->prjp[j][i]*native[GRY][p];
     }
+    reduce_physical_gradient_halos(physical);
     for (j=1;j<=NY;j++) for (i=1;i<=NX;i++) {
         double qp,qs;
         p=cell(j,i);
@@ -635,6 +1037,11 @@ void visco_psv_exact_finish(
     free(exact.checkpoint); exact.checkpoint=NULL;
     free(exact.segment_start); exact.segment_start=NULL;
     free(exact.segment_end); exact.segment_end=NULL;
+    free(exact.send_a); exact.send_a=NULL;
+    free(exact.send_b); exact.send_b=NULL;
+    free(exact.recv_a); exact.recv_a=NULL;
+    free(exact.recv_b); exact.recv_b=NULL;
+    exact.communication_capacity=0;
     for (k=0;k<NPSI;k++) free(psi[k]);
     for (k=0;k<NNATIVE;k++) free(native[k]);
     for (k=0;k<5;k++) free(physical[k]);

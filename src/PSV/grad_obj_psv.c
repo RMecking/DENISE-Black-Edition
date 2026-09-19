@@ -200,6 +200,10 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 		}
 		if (exact_visco_path)
 		{
+			double exact_objective_local = (*seisPSVfwi).L2;
+			double exact_objective_global = 0.0;
+			MPI_Allreduce(&exact_objective_local, &exact_objective_global, 1,
+			              MPI_DOUBLE, MPI_SUM, SHOT_COMM);
 			memset(&exact_request, 0, sizeof(exact_request));
 			exact_request.wave = wavePSV;
 			exact_request.pml = wavePSV_PML;
@@ -224,7 +228,7 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 			exact_request.DTINV_help = DTINV_help;
 			exact_request.req_send = req_send;
 			exact_request.req_rec = req_rec;
-			exact_request.base_objective = (*seisPSVfwi).L2;
+			exact_request.base_objective = exact_objective_global;
 			visco_psv_exact_finish(&exact_request);
 		}
 
@@ -437,6 +441,7 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 	L2sum = 0.0;
 	L2_tmp = (*seisPSVfwi).L2;
 	MPI_Allreduce(&L2_tmp, &L2sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+	if (exact_visco_path) L2sum = exact_request.base_objective;
 
 	return L2sum;
 }
