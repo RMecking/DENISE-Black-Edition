@@ -746,6 +746,7 @@ int LBFGS_pointer, int NLBFGS, int NLBFGS_vec);
 void store_PCG_PSV(float * PCG_old, float ** waveconv, float ** waveconv_u, float ** waveconv_rho);
 
 void update_s_elastic_PML_PSV(int nx1, int nx2, int ny1, int ny2,
+int domain_nx, int domain_ny,
 float **  vx, float **   vy, float **  ux, float **   uy, float **  uxy, float **   uyx, float **   sxx, float **   syy,
 float **   sxy, float ** pi, float ** u, float ** uipjp, float ** absorb_coeff, float **rho, float *hc, int infoout,
 float * K_x, float * a_x, float * b_x, float * K_x_half, float * a_x_half, float * b_x_half,
@@ -753,6 +754,7 @@ float * K_y, float * a_y, float * b_y, float * K_y_half, float * a_y_half, float
 float ** psi_vxx, float ** psi_vyy, float ** psi_vxy, float ** psi_vyx, int sws);
 
 void update_s_visc_PML_PSV(int nx1, int nx2, int ny1, int ny2,
+int domain_nx, int domain_ny,
 float **  vx, float **   vy, float **  ux, float **   uy, float **  uxy, float **   uyx, float **   sxx, float **   syy,
 float **   sxy, float ** pi, float ** u, float ** uipjp, float **rho, float *hc, int infoout,
 float ***r, float ***p, float ***q, float **fipjp, float **f, float **g, float *bip, float *bjm, float *cip, float *cjm, float ***d, float ***e, float ***dip, 

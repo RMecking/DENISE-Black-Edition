@@ -13,7 +13,20 @@
 void visco_psv_exact_strain(int j, int i, float vxx, float vyx,
                             float vxy, float vyy);
 
+#ifdef DENISE_REGION_TEST_HOOKS
+static size_t region_test_fd8_l1_fast_cells;
+
+void update_s_visc_PSV_region_test_reset(void) {
+	region_test_fd8_l1_fast_cells=0;
+}
+
+size_t update_s_visc_PSV_region_test_fast_cells(void) {
+	return region_test_fd8_l1_fast_cells;
+}
+#endif
+
 void update_s_visc_PML_PSV(int nx1, int nx2, int ny1, int ny2,
+	int domain_nx, int domain_ny,
 	float **  vx, float **   vy, float **  ux, float **   uy, float **  uxy, float **   uyx, float **   sxx, float **   syy,
 	float **   sxy, float ** pi, float ** u, float ** uipjp, float **rho, float *hc, int infoout,
 	float ***r, float ***p, float ***q, float **fipjp, float **f, float **g, float *bip, float *bjm, float *cip, float *cjm, float ***d, float ***e, float ***dip, 
@@ -56,12 +69,18 @@ void update_s_visc_PML_PSV(int nx1, int nx2, int ny1, int ny2,
 	bulk_iy1=ny1;
 	bulk_iy2=ny2;
 	if ((!BOUNDARY) && (POS[1]==0) && (bulk_ix1<=FW)) bulk_ix1=FW+1;
-	if ((!BOUNDARY) && (POS[1]==NPROCX-1)) bulk_ix2=nx2-FW;
+	if ((!BOUNDARY) && (POS[1]==NPROCX-1) && (bulk_ix2>domain_nx-FW))
+		bulk_ix2=domain_nx-FW;
 	if ((POS[2]==0) && (bulk_iy1<=FW)) bulk_iy1=FW+1;
-	if (POS[2]==NPROCY-1) bulk_iy2=ny2-FW;
+	if ((POS[2]==NPROCY-1) && (bulk_iy2>domain_ny-FW))
+		bulk_iy2=domain_ny-FW;
 	bulk_fd8_l1=(FDORDER==8) && (L==1) &&
 	             (bulk_ix1<=bulk_ix2) && (bulk_iy1<=bulk_iy2);
 	if (bulk_fd8_l1) {
+#ifdef DENISE_REGION_TEST_HOOKS
+		region_test_fd8_l1_fast_cells+=(size_t)(bulk_ix2-bulk_ix1+1)*
+		                                  (size_t)(bulk_iy2-bulk_iy1+1);
+#endif
 		const float hc1=hc[1], hc2=hc[2], hc3=hc[3], hc4=hc[4];
 		const float bip1=bip[1], bjm1=bjm[1], cip1=cip[1], cjm1=cjm[1];
 		for (j=bulk_iy1;j<=bulk_iy2;j++) {
@@ -140,9 +159,9 @@ void update_s_visc_PML_PSV(int nx1, int nx2, int ny1, int ny2,
          }
 
         /* right boundary */                                         
-        if((!BOUNDARY) && (POS[1]==NPROCX-1) && (i>=nx2-FW+1)){
+        if((!BOUNDARY) && (POS[1]==NPROCX-1) && (i>=domain_nx-FW+1)){
 		
-                        h1 = (i-nx2+2*FW);
+                        h1 = (i-domain_nx+2*FW);
                         h = i;
                         
                         psi_vxx[j][h1] = b_x[h1] * psi_vxx[j][h1] + a_x[h1] * vxx;
@@ -168,9 +187,9 @@ void update_s_visc_PML_PSV(int nx1, int nx2, int ny1, int ny2,
         }
 	
 	  /* bottom boundary */                                         
-        if((POS[2]==NPROCY-1) && (j>=ny2-FW+1)){
+        if((POS[2]==NPROCY-1) && (j>=domain_ny-FW+1)){
 
-                        h1 = (j-ny2+2*FW);                                        
+                        h1 = (j-domain_ny+2*FW);
                         h = j;
                                                 
                         psi_vyy[h1][i] = b_y[h1] * psi_vyy[h1][i] + a_y[h1] * vyy;                                            
@@ -254,9 +273,9 @@ void update_s_visc_PML_PSV(int nx1, int nx2, int ny1, int ny2,
          }
 
         /* right boundary */                                         
-        if((!BOUNDARY) && (POS[1]==NPROCX-1) && (i>=nx2-FW+1)){
+        if((!BOUNDARY) && (POS[1]==NPROCX-1) && (i>=domain_nx-FW+1)){
 		
-                        h1 = (i-nx2+2*FW);
+                        h1 = (i-domain_nx+2*FW);
                         h = i;
                         
                         psi_vxx[j][h1] = b_x[h1] * psi_vxx[j][h1] + a_x[h1] * vxx;
@@ -282,9 +301,9 @@ void update_s_visc_PML_PSV(int nx1, int nx2, int ny1, int ny2,
         }
 	
 	  /* bottom boundary */                                         
-        if((POS[2]==NPROCY-1) && (j>=ny2-FW+1)){
+        if((POS[2]==NPROCY-1) && (j>=domain_ny-FW+1)){
 
-                        h1 = (j-ny2+2*FW);                                        
+                        h1 = (j-domain_ny+2*FW);
                         h = j;
                                                 
                         psi_vyy[h1][i] = b_y[h1] * psi_vyy[h1][i] + a_y[h1] * vyy;                                            
@@ -373,9 +392,9 @@ void update_s_visc_PML_PSV(int nx1, int nx2, int ny1, int ny2,
          }
 
         /* right boundary */                                         
-        if((!BOUNDARY) && (POS[1]==NPROCX-1) && (i>=nx2-FW+1)){
+        if((!BOUNDARY) && (POS[1]==NPROCX-1) && (i>=domain_nx-FW+1)){
 		
-                        h1 = (i-nx2+2*FW);
+                        h1 = (i-domain_nx+2*FW);
                         h = i;
                         
                         psi_vxx[j][h1] = b_x[h1] * psi_vxx[j][h1] + a_x[h1] * vxx;
@@ -401,9 +420,9 @@ void update_s_visc_PML_PSV(int nx1, int nx2, int ny1, int ny2,
         }
 	
 	  /* bottom boundary */                                         
-        if((POS[2]==NPROCY-1) && (j>=ny2-FW+1)){
+        if((POS[2]==NPROCY-1) && (j>=domain_ny-FW+1)){
 
-                        h1 = (j-ny2+2*FW);                                        
+                        h1 = (j-domain_ny+2*FW);
                         h = j;
                                                 
                         psi_vyy[h1][i] = b_y[h1] * psi_vyy[h1][i] + a_y[h1] * vyy;                                            
@@ -498,9 +517,9 @@ void update_s_visc_PML_PSV(int nx1, int nx2, int ny1, int ny2,
          }
 
         /* right boundary */                                         
-        if((!BOUNDARY) && (POS[1]==NPROCX-1) && (i>=nx2-FW+1)){
+        if((!BOUNDARY) && (POS[1]==NPROCX-1) && (i>=domain_nx-FW+1)){
 		
-                        h1 = (i-nx2+2*FW);
+                        h1 = (i-domain_nx+2*FW);
                         h = i;
                         
                         psi_vxx[j][h1] = b_x[h1] * psi_vxx[j][h1] + a_x[h1] * vxx;
@@ -526,9 +545,9 @@ void update_s_visc_PML_PSV(int nx1, int nx2, int ny1, int ny2,
         }
 	
 	  /* bottom boundary */                                         
-        if((POS[2]==NPROCY-1) && (j>=ny2-FW+1)){
+        if((POS[2]==NPROCY-1) && (j>=domain_ny-FW+1)){
 
-                        h1 = (j-ny2+2*FW);                                        
+                        h1 = (j-domain_ny+2*FW);
                         h = j;
                                                 
                         psi_vyy[h1][i] = b_y[h1] * psi_vyy[h1][i] + a_y[h1] * vyy;                                            
@@ -623,9 +642,9 @@ void update_s_visc_PML_PSV(int nx1, int nx2, int ny1, int ny2,
          }
 
         /* right boundary */                                         
-        if((!BOUNDARY) && (POS[1]==NPROCX-1) && (i>=nx2-FW+1)){
+        if((!BOUNDARY) && (POS[1]==NPROCX-1) && (i>=domain_nx-FW+1)){
 		
-                        h1 = (i-nx2+2*FW);
+                        h1 = (i-domain_nx+2*FW);
                         h = i;
                         
                         psi_vxx[j][h1] = b_x[h1] * psi_vxx[j][h1] + a_x[h1] * vxx;
@@ -651,9 +670,9 @@ void update_s_visc_PML_PSV(int nx1, int nx2, int ny1, int ny2,
         }
 	
 	  /* bottom boundary */                                         
-        if((POS[2]==NPROCY-1) && (j>=ny2-FW+1)){
+        if((POS[2]==NPROCY-1) && (j>=domain_ny-FW+1)){
 
-                        h1 = (j-ny2+2*FW);                                        
+                        h1 = (j-domain_ny+2*FW);
                         h = j;
                                                 
                         psi_vyy[h1][i] = b_y[h1] * psi_vyy[h1][i] + a_y[h1] * vyy;                                            
@@ -754,9 +773,9 @@ void update_s_visc_PML_PSV(int nx1, int nx2, int ny1, int ny2,
          }
 
         /* right boundary */                                         
-        if((!BOUNDARY) && (POS[1]==NPROCX-1) && (i>=nx2-FW+1)){
+        if((!BOUNDARY) && (POS[1]==NPROCX-1) && (i>=domain_nx-FW+1)){
 		
-                        h1 = (i-nx2+2*FW);
+                        h1 = (i-domain_nx+2*FW);
                         h = i;
                         
                         psi_vxx[j][h1] = b_x[h1] * psi_vxx[j][h1] + a_x[h1] * vxx;
@@ -782,9 +801,9 @@ void update_s_visc_PML_PSV(int nx1, int nx2, int ny1, int ny2,
         }
 	
 	  /* bottom boundary */                                         
-        if((POS[2]==NPROCY-1) && (j>=ny2-FW+1)){
+        if((POS[2]==NPROCY-1) && (j>=domain_ny-FW+1)){
 
-                        h1 = (j-ny2+2*FW);                                        
+                        h1 = (j-domain_ny+2*FW);
                         h = j;
                                                 
                         psi_vyy[h1][i] = b_y[h1] * psi_vyy[h1][i] + a_y[h1] * vyy;                                            
