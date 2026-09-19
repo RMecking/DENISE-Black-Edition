@@ -619,6 +619,9 @@ void visco_psv_exact_forward_boundary(struct wavePSV *wave,
                                       int timestep);
 void visco_psv_exact_finish(
         const struct visco_psv_exact_fwi_request *request);
+void exchange_s_adjoint_PSV(double *asxx, double *asyy, double *asxy,
+                            int pitch);
+void exchange_v_adjoint_PSV(double *avx, double *avy, int pitch);
 struct visco_psv_checkpoint *visco_psv_checkpoint_create(void);
 void visco_psv_checkpoint_capture(struct visco_psv_checkpoint *checkpoint,
                                   const struct wavePSV *wave,

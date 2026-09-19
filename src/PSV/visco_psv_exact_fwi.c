@@ -1,7 +1,7 @@
 /* Active five-parameter viscoelastic P/SV steepest-descent lifecycle. */
 #include "fd.h"
 
-extern int NX, NY, MYID, POS[3], STEPMAX;
+extern int NX, NY, MYID, POS[3], STEPMAX, NPROCX, NPROCY;
 extern int INV_VP_ITER, INV_VS_ITER, INV_RHO_ITER, INV_QS_ITER;
 extern int Q_PARAMETERIZATION_MODE;
 extern float EPS_SCALE, SCALEFAC;
@@ -113,6 +113,8 @@ double visco_psv_exact_active_step(
 
     if(!request || !visco_psv_exact_supported())
         err(" Exact visco PSV active step called outside its verified configuration. ");
+    if(NPROCX*NPROCY>1)
+        err(" Distributed exact-visco active FWI requires M8d-1B. ");
     init_q_tau_mapping(&mapping,Q_PARAMETERIZATION_MODE,1,FL,
                        Q_APPROX_FMIN,Q_APPROX_FMAX,Q_APPROX_DF);
     gradient[EXACT_VP]=fwi->waveconv;

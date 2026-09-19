@@ -7,6 +7,11 @@
 
 #include "fd.h"
 
+static int distributed_exact_gradient_only(void) {
+  const char *value=getenv("DENISE_PSV_EXACT_DISTRIBUTED_GRADIENT_ONLY");
+  return value && value[0]=='1' && value[1]=='\0';
+}
+
 void FWI_PSV()
 {
 
@@ -16,6 +21,7 @@ void FWI_PSV()
   /* forward modelling */
   extern int MYID, MYID_SHOT, COLOR; 
   extern int FDORDER, NX, NY, NT, L, READMOD, QUELLART, RUN_MULTIPLE_SHOTS, TIME_FILT, READREC;
+  extern int NPROCX, NPROCY;
   extern int LOG, SEISMO, N_STREAMER, FW, NXG, NYG, IENDX, IENDY, NTDTINV, IDXI, IDYI, NXNYI, INV_STF, DTINV;
   extern float FC_SPIKE_1, FC_SPIKE_2, FC, FC_START, TIME, DT;
   extern char LOG_FILE[STRING_SIZE], MFILE[STRING_SIZE];
@@ -410,10 +416,12 @@ void FWI_PSV()
     exact_visco_fwi=(L>0);
     if(exact_visco_fwi){
       if(!visco_psv_exact_supported())
-        err(" Viscoelastic P/SV FWI is exact only for one-rank L=1, INVMAT1=1, GRAD_FORM=2, DTINV=NDT=1, LNORM=2, FD4, CPML interior. ");
+        err(" Viscoelastic P/SV FWI is exact only for one-source READMOD=1 L=1, INVMAT1=1, GRAD_FORM=2, DTINV=NDT=1, LNORM=2, FD4, CPML interior, with supported local domains. ");
       if(!READMOD || nsrc!=1 || GRAD_METHOD!=1 || EPRECOND!=0 ||
          MODEL_FILTER!=0 || INV_STF!=0 || TIME_FILT!=0 || GRAVITY!=0 || ROWI!=0)
         err(" Exact viscoelastic P/SV FWI requires READMOD=1, one source, the GRAD_METHOD=1 selector, and no filtering, preconditioning, STF, gravity, or ROWI. ");
+      if(NPROCX*NPROCY>1 && !distributed_exact_gradient_only())
+        err(" Distributed exact-visco active FWI requires M8d-1B. ");
     }
 
     if ((EPRECOND == 1) || (EPRECOND == 3))
@@ -628,6 +636,17 @@ void FWI_PSV()
       L2t[4] = L2sum;
 
       if(exact_visco_fwi){
+        if(distributed_exact_gradient_only()){
+          L2_hist[iter]=L2sum;
+          if(MYID==0){
+            fprintf(FPL2,"0.0 0.0 0.0 0.0 %e 0.0 0.0 %e %d\n",
+                    L2sum,L2sum,nstage);
+            fclose(FPL2);
+          }
+          iter++;
+          iter_true++;
+          continue;
+        }
         memset(&exact_request,0,sizeof(exact_request));
         exact_request.wave=&wavePSV;
         exact_request.pml=&wavePSV_PML;

@@ -10,6 +10,7 @@
 extern int NX, NY, NT, FW, FDORDER, L, MODE, INVMAT1, GRAD_FORM;
 extern int NPROCX, NPROCY, FREE_SURF, BOUNDARY, NDT, DTINV, LNORM;
 extern int READMOD, NSRC;
+extern int POS[3];
 
 enum { VX, VY, SXX, SYY, SXY, R, P, Q,
        PSI_SXX_X, PSI_SXY_X, PSI_VXX, PSI_VYX,
@@ -18,25 +19,37 @@ enum { VX, VY, SXX, SYY, SXY, R, P, Q,
 struct visco_psv_checkpoint {
     unsigned int layout_version;
     int timestep, nx, ny, fw, halo, mechanisms;
+    int pos_x, pos_y, nprocx, nprocy;
+    int mode, invmat1, grad_form, fdorder, ndt, dtinv, lnorm;
+    int readmod, free_surface, boundary;
     size_t full_count, x_cpml_count, y_cpml_count, payload_count;
     float *payload;
     float *field[CHECKPOINT_FIELD_COUNT];
 };
 
 static void require_supported(void) {
+    int halo = FDORDER / 2 + 1;
     if (MODE != 1 || L != 1 || INVMAT1 != 1 || GRAD_FORM != 2 ||
-        FDORDER != 4 || NPROCX != 1 || NPROCY != 1 || FREE_SURF ||
+        FDORDER != 4 || FREE_SURF ||
         BOUNDARY || FW <= 0 || NDT != 1 || DTINV != 1 || LNORM != 2 ||
-        READMOD != 1 || NSRC != 1)
-        err(" Exact visco PSV checkpointing supports MODE=1, one-rank/one-source L=1 FD4, INVMAT1=1, GRAD_FORM=2, NDT=DTINV=1, LNORM=2, READMOD=1, CPML interior only. ");
+        READMOD != 1 || NSRC != 1 || NX < halo || NY < halo ||
+        NX < FW || NY < FW)
+        err(" Exact visco PSV checkpointing supports MODE=1, one-source L=1 FD4, INVMAT1=1, GRAD_FORM=2, NDT=DTINV=1, LNORM=2, READMOD=1, CPML interior only, with local domains large enough for FD and CPML halos. ");
 }
 
 static void require_layout(const struct visco_psv_checkpoint *checkpoint) {
     if (!checkpoint) err(" Null exact visco PSV checkpoint. ");
     require_supported();
-    if (checkpoint->layout_version != 1U || checkpoint->nx != NX ||
+    if (checkpoint->layout_version != 2U || checkpoint->nx != NX ||
         checkpoint->ny != NY || checkpoint->fw != FW ||
-        checkpoint->halo != 3 || checkpoint->mechanisms != L)
+        checkpoint->halo != FDORDER / 2 + 1 || checkpoint->mechanisms != L ||
+        checkpoint->pos_x != POS[1] || checkpoint->pos_y != POS[2] ||
+        checkpoint->nprocx != NPROCX || checkpoint->nprocy != NPROCY ||
+        checkpoint->mode != MODE || checkpoint->invmat1 != INVMAT1 ||
+        checkpoint->grad_form != GRAD_FORM || checkpoint->fdorder != FDORDER ||
+        checkpoint->ndt != NDT || checkpoint->dtinv != DTINV ||
+        checkpoint->lnorm != LNORM || checkpoint->readmod != READMOD ||
+        checkpoint->free_surface != FREE_SURF || checkpoint->boundary != BOUNDARY)
         err(" Incompatible exact visco PSV checkpoint layout. ");
 }
 
@@ -79,9 +92,16 @@ struct visco_psv_checkpoint *visco_psv_checkpoint_create(void) {
     require_supported();
     checkpoint = calloc(1, sizeof(*checkpoint));
     if (!checkpoint) err(" Out of memory allocating exact visco PSV checkpoint. ");
-    checkpoint->layout_version = 1U;
+    checkpoint->layout_version = 2U;
     checkpoint->nx = NX; checkpoint->ny = NY; checkpoint->fw = FW;
     checkpoint->halo = FDORDER / 2 + 1; checkpoint->mechanisms = L;
+    checkpoint->pos_x = POS[1]; checkpoint->pos_y = POS[2];
+    checkpoint->nprocx = NPROCX; checkpoint->nprocy = NPROCY;
+    checkpoint->mode = MODE; checkpoint->invmat1 = INVMAT1;
+    checkpoint->grad_form = GRAD_FORM; checkpoint->fdorder = FDORDER;
+    checkpoint->ndt = NDT; checkpoint->dtinv = DTINV;
+    checkpoint->lnorm = LNORM; checkpoint->readmod = READMOD;
+    checkpoint->free_surface = FREE_SURF; checkpoint->boundary = BOUNDARY;
     checkpoint->full_count = (size_t)(NX + 6) * (NY + 6);
     checkpoint->x_cpml_count = (size_t)NY * 2 * FW;
     checkpoint->y_cpml_count = (size_t)NX * 2 * FW;
@@ -195,6 +215,11 @@ int visco_psv_checkpoint_equal(const struct visco_psv_checkpoint *left,
     require_layout(left); require_layout(right);
     if (left->layout_version != right->layout_version || left->nx != right->nx ||
         left->ny != right->ny || left->fw != right->fw ||
+        left->pos_x != right->pos_x || left->pos_y != right->pos_y ||
+        left->nprocx != right->nprocx || left->nprocy != right->nprocy ||
+        left->fdorder != right->fdorder || left->mode != right->mode ||
+        left->invmat1 != right->invmat1 ||
+        left->grad_form != right->grad_form ||
         left->payload_count != right->payload_count) {
         if (field_mismatch_mask) *field_mismatch_mask = ~0U;
         return 0;
