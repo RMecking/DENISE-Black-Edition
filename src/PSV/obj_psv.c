@@ -22,6 +22,8 @@ double obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct 
 
         /* local variables */
 	double L2sum, L2_tmp;
+        MPI_Comm collective_comm = visco_psv_exact_supported()
+                                   ? SHOT_COMM : MPI_COMM_WORLD;
         int ntr_loc, nt, ishot, nshots;
         FILE *FP;
 
@@ -37,7 +39,7 @@ double obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct 
 	else
 		matcopy_elastic_PSV((*matPSV).prho,(*matPSV).ppi,(*matPSV).pu);
 	
-	MPI_Barrier(MPI_COMM_WORLD);
+	MPI_Barrier(collective_comm);
 
 	av_mue((*matPSV).pu,(*matPSV).puipjp,(*matPSV).prho);
 	av_rho((*matPSV).prho,(*matPSV).prip,(*matPSV).prjp);
@@ -234,7 +236,7 @@ double obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct 
 	/* calculate L2 norm of all CPUs*/
 	L2sum = 0.0;
         L2_tmp = (*seisPSVfwi).L2;
-	MPI_Allreduce(&L2_tmp,&L2sum,1,MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD);
+	MPI_Allreduce(&L2_tmp,&L2sum,1,MPI_DOUBLE,MPI_SUM,collective_comm);
         
         return L2sum;
 	
