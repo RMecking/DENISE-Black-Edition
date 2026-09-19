@@ -77,6 +77,139 @@ static void write_live_state_snapshot(const char *prefix, const char *label,
 	fclose(stream);
 }
 
+static void write_psv_mpi_timing_report(
+		const char *path, const double local_timing[5], int mode) {
+	extern int MYID_SHOT, NX, NY, NT, FDORDER, L;
+	extern int NPROCX, NPROCY, POS[3], BOUNDARY, FREE_SURF;
+	extern MPI_Comm SHOT_COMM;
+	double local_record[14], *all_records = NULL;
+	double component_maxima[5], critical_communication, critical_compute;
+	int component_maximum_ranks[5], critical_communication_rank, critical_compute_rank;
+	int rank, ranks;
+	FILE *report;
+
+	MPI_Comm_size(SHOT_COMM, &ranks);
+	for (rank = 0; rank < 5; ++rank) local_record[rank] = local_timing[rank];
+	local_record[5] = MYID_SHOT;
+	local_record[6] = POS[1];
+	local_record[7] = POS[2];
+	local_record[8] = NX;
+	local_record[9] = NY;
+	local_record[10] = (!BOUNDARY && POS[1] == 0);
+	local_record[11] = (!BOUNDARY && POS[1] == NPROCX - 1);
+	local_record[12] = (POS[2] == 0);
+	local_record[13] = (POS[2] == NPROCY - 1);
+	if (MYID_SHOT == 0) {
+		all_records = malloc((size_t)ranks * 14 * sizeof(double));
+		if (!all_records) err(" Out of memory collecting P/SV MPI timing records. ");
+	}
+	MPI_Gather(local_record, 14, MPI_DOUBLE, all_records, 14, MPI_DOUBLE, 0, SHOT_COMM);
+	if (MYID_SHOT != 0) return;
+	for (rank = 0; rank < 5; ++rank) {
+		component_maxima[rank] = all_records[rank];
+		component_maximum_ranks[rank] = (int)all_records[5];
+	}
+	critical_communication = all_records[2] + all_records[4];
+	critical_compute = all_records[1] + all_records[3];
+	critical_communication_rank = critical_compute_rank = (int)all_records[5];
+	for (rank = 1; rank < ranks; ++rank) {
+		const double *record = all_records + 14 * rank;
+		int phase;
+		for (phase = 0; phase < 5; ++phase) {
+			if (record[phase] > component_maxima[phase]) {
+				component_maxima[phase] = record[phase];
+				component_maximum_ranks[phase] = (int)record[5];
+			}
+		}
+		if (record[2] + record[4] > critical_communication) {
+			critical_communication = record[2] + record[4];
+			critical_communication_rank = (int)record[5];
+		}
+		if (record[1] + record[3] > critical_compute) {
+			critical_compute = record[1] + record[3];
+			critical_compute_rank = (int)record[5];
+		}
+	}
+
+	report = fopen(path, "w");
+	if (!report) err(" Could not open P/SV MPI timing report. ");
+	fprintf(report,
+		"{\n"
+		"  \"schema\": \"denise.psv_mpi_timing.v2\",\n"
+		"  \"mode\": %d,\n"
+		"  \"ranks\": %d,\n"
+		"  \"decomposition\": [%d, %d],\n"
+		"  \"global_grid\": [%d, %d],\n"
+		"  \"timesteps\": %d,\n"
+		"  \"fd_order\": %d,\n"
+		"  \"stencil_radius\": %d,\n"
+		"  \"L\": %d,\n"
+		"  \"free_surface\": %s,\n"
+		"  \"boundary_periodic_x\": %s,\n"
+		"  \"m8b_fd8_l1_fast_path\": %s,\n"
+		"  \"timing_semantics\": {\n"
+		"    \"component_wise_rank_maxima\": \"Each phase is maximized independently across ranks; sums need not describe one rank.\",\n"
+		"    \"critical_communication\": \"max_r(velocity_exchange_r + stress_exchange_r)\",\n"
+		"    \"critical_compute\": \"max_r(velocity_update_r + stress_update_r)\",\n"
+		"    \"critical_total\": \"max_r(timestep_loop_r)\"\n"
+		"  },\n"
+		"  \"timer_resolution_seconds\": %.17g,\n"
+		"  \"timer_calls_per_timestep\": 8,\n"
+		"  \"barriers_inside_timestep_loop\": 0,\n"
+		"  \"component_wise_rank_maxima_seconds\": {\n"
+		"    \"timestep_loop\": %.17g,\n"
+		"    \"velocity_update\": %.17g,\n"
+		"    \"velocity_exchange\": %.17g,\n"
+		"    \"stress_update\": %.17g,\n"
+		"    \"stress_exchange\": %.17g\n"
+		"  },\n"
+		"  \"rank_consistent_critical_seconds\": {\n"
+		"    \"timestep_loop\": %.17g,\n"
+		"    \"communication\": %.17g,\n"
+		"    \"compute\": %.17g\n"
+		"  },\n"
+		"  \"critical_rank_ids\": {\n"
+		"    \"timestep_loop\": %d,\n"
+		"    \"communication\": %d,\n"
+		"    \"compute\": %d,\n"
+		"    \"velocity_update\": %d,\n"
+		"    \"velocity_exchange\": %d,\n"
+		"    \"stress_update\": %d,\n"
+		"    \"stress_exchange\": %d\n"
+		"  },\n"
+		"  \"rank_timings\": [\n",
+		mode, ranks, NPROCX, NPROCY, NX * NPROCX, NY * NPROCY, NT,
+		FDORDER, FDORDER / 2, L, FREE_SURF ? "true" : "false",
+		BOUNDARY ? "true" : "false", (FDORDER == 8 && L == 1) ? "true" : "false",
+		MPI_Wtick(),
+		component_maxima[0], component_maxima[1], component_maxima[2],
+		component_maxima[3], component_maxima[4], component_maxima[0],
+		critical_communication, critical_compute,
+		component_maximum_ranks[0], critical_communication_rank, critical_compute_rank,
+		component_maximum_ranks[1], component_maximum_ranks[2],
+		component_maximum_ranks[3], component_maximum_ranks[4]);
+	for (rank = 0; rank < ranks; ++rank) {
+		const double *record = all_records + 14 * rank;
+		fprintf(report,
+			"    {\"rank\": %d, \"position\": [%d, %d], \"local_grid\": [%d, %d], "
+			"\"left_physical_cpml\": %s, \"right_physical_cpml\": %s, "
+			"\"top_physical_boundary\": %s, \"bottom_physical_cpml\": %s, "
+			"\"seconds\": {\"timestep_loop\": %.17g, \"velocity_update\": %.17g, "
+			"\"velocity_exchange\": %.17g, \"stress_update\": %.17g, "
+			"\"stress_exchange\": %.17g, \"communication\": %.17g, "
+			"\"compute\": %.17g}}%s\n",
+			(int)record[5], (int)record[6], (int)record[7], (int)record[8], (int)record[9],
+			record[10] ? "true" : "false", record[11] ? "true" : "false",
+			record[12] ? "true" : "false", record[13] ? "true" : "false",
+			record[0], record[1], record[2], record[3], record[4],
+			record[2] + record[4], record[1] + record[3],
+			rank + 1 < ranks ? "," : "");
+	}
+	fprintf(report, "  ]\n}\n");
+	fclose(report);
+	free(all_records);
+}
+
 void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV *matPSV, struct fwiPSV *fwiPSV, struct mpiPSV *mpiPSV,
 		 struct seisPSV *seisPSV, struct seisPSVfwi *seisPSVfwi, struct acq *acq, float *hc, int ishot, int nshots, int nsrc_loc,
 		 int ns, int ntr, float **Ws, float **Wr, int hin, int *DTINV_help, int mode, MPI_Request *req_send, MPI_Request *req_rec)
@@ -90,6 +223,7 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 	extern int SNAP, INVMAT1, INV_STF, EPRECOND, NTDTINV, NXNYI, NT;
 	extern char JACOBIAN[STRING_SIZE];
 	extern FILE *FP;
+	extern MPI_Comm SHOT_COMM;
 
 	/* local variables */
 	int i, j, nt, lsamp, lsnap, nsnap, nd, hin1, imat, imat1, imat2, infoout;
@@ -99,6 +233,10 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 	float *receiver_reference;
 	size_t receiver_compared, receiver_mismatches, operand_compared[6], operand_mismatches[6];
 	float tmp, tmp1, muss, lamss;
+	const char *timing_path;
+	int timing_enabled;
+	double timing[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+	double timing_total_start = 0.0, timing_phase_start = 0.0;
 
 	nd = FDORDER / 2 + 1;
 	exact_elastic_psv_adjoint=((MODE==1)&&(mode==1)&&(L==0)&&
@@ -183,6 +321,13 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 		hin1 = 1;
 	}
 
+	timing_path = getenv("DENISE_PSV_MPI_TIMING_FILE");
+	timing_enabled = mode == 0 && timing_path && timing_path[0] != '\0';
+	if (timing_enabled) {
+		MPI_Barrier(SHOT_COMM);
+		timing_total_start = MPI_Wtime();
+	}
+
 	for (nt = 1; nt <= NT; nt++)
 	{
 		if (mode == 0) visco_psv_exact_step(nt);
@@ -211,6 +356,7 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 		}
 
 		/* update of particle velocities */
+		if (timing_enabled) timing_phase_start = MPI_Wtime();
 		if (mode == 0 || mode == 2)
 		{
 			update_v_PML_PSV(1, NX, 1, NY, nt, (*wavePSV).pvx, (*wavePSV).pvxp1, (*wavePSV).pvxm1, (*wavePSV).pvy, (*wavePSV).pvyp1, (*wavePSV).pvym1, (*wavePSV).uttx, (*wavePSV).utty, (*wavePSV).psxx, (*wavePSV).psyy,
@@ -218,6 +364,8 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 							 (*wavePSV_PML).b_x, (*wavePSV_PML).K_x_half, (*wavePSV_PML).a_x_half, (*wavePSV_PML).b_x_half, (*wavePSV_PML).K_y, (*wavePSV_PML).a_y, (*wavePSV_PML).b_y, (*wavePSV_PML).K_y_half,
 							 (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_sxx_x, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y, (*wavePSV_PML).psi_sxy_x, 0);
 		}
+
+		if (timing_enabled) timing[1] += MPI_Wtime() - timing_phase_start;
 
 
                 if(mode==1){
@@ -243,7 +391,9 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 		}*/
 
 		/* exchange of particle velocities between PEs */
+		if (timing_enabled) timing_phase_start = MPI_Wtime();
 		exchange_v_PSV((*wavePSV).pvx, (*wavePSV).pvy, (*mpiPSV).bufferlef_to_rig, (*mpiPSV).bufferrig_to_lef, (*mpiPSV).buffertop_to_bot, (*mpiPSV).bufferbot_to_top, req_send, req_rec);
+		if (timing_enabled) timing[2] += MPI_Wtime() - timing_phase_start;
 
 		/* Form 1 needs the B-state velocity multiplier: the time integral
 		 * immediately after receiver injection and the reverse V transpose. */
@@ -301,6 +451,7 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 		  if (infoout)  fprintf(FP," finished (real time: %4.2f s).\n",time5-time4);
 		}*/
 
+		if (timing_enabled) timing_phase_start = MPI_Wtime();
 		if (L) /* viscoelastic */
 			update_s_visc_PML_PSV(1, NX, 1, NY, (*wavePSV).pvx, (*wavePSV).pvy, (*wavePSV).ux, (*wavePSV).uy, (*wavePSV).uxy, (*wavePSV).uyx, (*wavePSV).psxx, (*wavePSV).psyy, (*wavePSV).psxy, (*matPSV).ppi, (*matPSV).pu,
 								  (*matPSV).puipjp, (*matPSV).prho, hc, infoout, (*wavePSV).pr, (*wavePSV).pp, (*wavePSV).pq, (*matPSV).fipjp, (*matPSV).f, (*matPSV).g, (*matPSV).bip, (*matPSV).bjm, (*matPSV).cip, (*matPSV).cjm,
@@ -312,6 +463,7 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 									 (*matPSV).puipjp, (*wavePSV_PML).absorb_coeff, (*matPSV).prho, hc, infoout, (*wavePSV_PML).K_x, (*wavePSV_PML).a_x, (*wavePSV_PML).b_x, (*wavePSV_PML).K_x_half, (*wavePSV_PML).a_x_half,
 									 (*wavePSV_PML).b_x_half, (*wavePSV_PML).K_y, (*wavePSV_PML).a_y, (*wavePSV_PML).b_y, (*wavePSV_PML).K_y_half, (*wavePSV_PML).a_y_half, (*wavePSV_PML).b_y_half, (*wavePSV_PML).psi_vxx,
 									 (*wavePSV_PML).psi_vyy, (*wavePSV_PML).psi_vxy, (*wavePSV_PML).psi_vyx, mode);
+		if (timing_enabled) timing[3] += MPI_Wtime() - timing_phase_start;
 
 		/* explosive source */
 		if (QUELLTYP == 1)
@@ -351,10 +503,12 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 	      }*/
 
 		/* stress exchange between PEs */
+		if (timing_enabled) timing_phase_start = MPI_Wtime();
 		exchange_s_PSV((*wavePSV).psxx, (*wavePSV).psyy, (*wavePSV).psxy,
 					   (*mpiPSV).bufferlef_to_rig, (*mpiPSV).bufferrig_to_lef,
 					   (*mpiPSV).buffertop_to_bot, (*mpiPSV).bufferbot_to_top,
 					   req_send, req_rec);
+		if (timing_enabled) timing[4] += MPI_Wtime() - timing_phase_start;
 
 		/*if (MYID_SHOT==0){
 	      time7=MPI_Wtime();
@@ -651,4 +805,8 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 		}
 
 	} /*--------------------  End  of loop over timesteps ----------*/
+	if (timing_enabled) {
+		timing[0] = MPI_Wtime() - timing_total_start;
+		write_psv_mpi_timing_report(timing_path, timing, mode);
+	}
 }
