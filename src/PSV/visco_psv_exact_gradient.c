@@ -277,7 +277,7 @@ static void replay_forward_segment(
                        mpi->bufferlef_to_rig, mpi->bufferrig_to_lef,
                        mpi->buffertop_to_bot, mpi->bufferbot_to_top,
                        request->req_send, request->req_rec);
-        update_s_visc_PML_PSV(1, NX, 1, NY,
+        update_s_visc_PML_PSV(1, NX, 1, NY, NX, NY,
                               wave->pvx, wave->pvy, wave->ux, wave->uy,
                               wave->uxy, wave->uyx,
                               wave->psxx, wave->psyy, wave->psxy,
