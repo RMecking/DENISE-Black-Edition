@@ -420,8 +420,6 @@ void FWI_PSV()
       if(!READMOD || nsrc!=1 || GRAD_METHOD!=1 || EPRECOND!=0 ||
          MODEL_FILTER!=0 || INV_STF!=0 || TIME_FILT!=0 || GRAVITY!=0 || ROWI!=0)
         err(" Exact viscoelastic P/SV FWI requires READMOD=1, one source, the GRAD_METHOD=1 selector, and no filtering, preconditioning, STF, gravity, or ROWI. ");
-      if(NPROCX*NPROCY>1 && !distributed_exact_gradient_only())
-        err(" Distributed exact-visco active FWI requires M8d-1B. ");
     }
 
     if ((EPRECOND == 1) || (EPRECOND == 3))
