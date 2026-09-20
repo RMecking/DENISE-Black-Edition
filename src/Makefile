@@ -28,6 +28,20 @@ CFLAGS=-O3 -w -fno-stack-protector -D_FORTIFY_SOURCE=0 -fcommon
 SFLAGS=-L./../libcseife
 IFLAGS=-I./../libcseife -I./../include
 
+# Optional CUDA foundation.  None of these variables or objects participate in
+# the ordinary denise target.  Select only architectures supported by NVCC in
+# the active toolkit, for example CUDA_ARCHS="86" locally.
+NVCC ?= nvcc
+CUDA_ARCHS ?= 86
+CUDA_CXXFLAGS ?= -O2 -std=c++14
+CUDA_GENCODE = $(foreach arch,$(CUDA_ARCHS),-gencode=arch=compute_$(arch),code=sm_$(arch))
+CUDA_BUILD_DIR = .cuda
+CUDA_BACKEND_OBJ = $(CUDA_BUILD_DIR)/denise_cuda_backend.o
+CUDA_HARNESS_OBJ = $(CUDA_BUILD_DIR)/cuda_foundation_harness.o
+CUDA_UTIL_OBJ = $(CUDA_BUILD_DIR)/util.o
+CUDA_FOUNDATION_BIN = $(EXEC)/denise_cuda_foundation
+MPI_LINK_FLAGS = $(shell $(CC) --showme:link 2>/dev/null)
+
 # On Linux NEC-cluster with Intel-MPI (Pre-2023)
 #CC=mpiicc
 #LFLAGS=-lm -lcseife -lfftw3 -ftz -lstdc++
@@ -298,6 +312,30 @@ snapmerge:	$(SNAPMERGE_OBJ)
 
 denise:		$(DENISE_OBJ)
 	$(CC) $(SFLAGS) $(DENISE_OBJ) -o $(EXEC)/denise $(LFLAGS)
+
+.PHONY: cuda_foundation cuda_clean
+
+cuda_foundation: $(CUDA_FOUNDATION_BIN)
+
+$(CUDA_BUILD_DIR):
+	mkdir -p $(CUDA_BUILD_DIR)
+
+$(CUDA_BACKEND_OBJ): CUDA/denise_cuda_backend.cu ../include/denise_cuda_backend.h | $(CUDA_BUILD_DIR)
+	@test -n "$(strip $(CUDA_ARCHS))" || { echo "CUDA_ARCHS must not be empty"; exit 2; }
+	$(NVCC) $(CUDA_CXXFLAGS) $(CUDA_GENCODE) -I./../include -c $< -o $@
+
+$(CUDA_HARNESS_OBJ): ../tests/utilities/cuda_foundation_harness.c ../include/denise_cuda_backend.h | $(CUDA_BUILD_DIR)
+	$(CC) $(CFLAGS) -std=c99 $(IFLAGS) -c $< -o $@
+
+$(CUDA_UTIL_OBJ): util.c | $(CUDA_BUILD_DIR)
+	$(CC) $(CFLAGS) -std=c99 $(IFLAGS) -c $< -o $@
+
+$(CUDA_FOUNDATION_BIN): $(CUDA_BACKEND_OBJ) $(CUDA_HARNESS_OBJ) $(CUDA_UTIL_OBJ)
+	$(NVCC) $(CUDA_CXXFLAGS) $(CUDA_GENCODE) -cudart shared $^ $(MPI_LINK_FLAGS) -lm -o $@
+
+cuda_clean:
+	rm -rf $(CUDA_BUILD_DIR)
+	rm -f $(CUDA_FOUNDATION_BIN)
 
 clean:
 	find . -name "*.o" -exec rm {} \; 
