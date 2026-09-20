@@ -486,6 +486,18 @@ performance, before any whole-code GPU architecture commitment.
 Multi-rank exact viscoelastic P/SV execution belongs here as the deferred
 compute/scalability expansion, without redesigning M8 in this ledger.
 
+### M8d — Distributed MPI performance decision: CLOSED
+
+M8d delivered distributed exact-visco P/SV gradient and physical-Q Active-FWI,
+checkpoint/recompute scalability in M8c, blocking-MPI characterization, and
+region-safe stress kernels. Experimental nonblocking V overlap was
+scientifically correct but a performance **NO-GO on the tested OpenMPI/WSL
+runtime**; it is not merged or enabled. S overlap is deferred, not failed.
+The next performance/compute milestone is **M8e — GPU / accelerator
+feasibility and design**. See
+[`docs/m8d_mpi_overlap_evaluation.md`](m8d_mpi_overlap_evaluation.md) for the
+bounded evidence and revisit conditions.
+
 ### M9 — RTM Scientific Redesign / Modernization
 
 The current simple RTM implementation is not the desired final scientific
