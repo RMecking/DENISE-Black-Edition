@@ -52,11 +52,18 @@ struct denise_cuda_psv_forward_stats {
     size_t source_sample_h2d_per_timestep;
     size_t receiver_sample_d2h_per_timestep;
     unsigned long long timesteps;
+    size_t forward_synchronization_calls;
+    size_t resident_event_records;
+    size_t resident_elapsed_queries;
+    size_t profile_event_records;
+    size_t profile_elapsed_queries;
+    int profiling_enabled;
     float velocity_kernel_ms;
     float stress_kernel_ms;
     float source_kernel_ms;
     float receiver_kernel_ms;
     float resident_timestep_ms;
+    float context_setup_ms;
     float initial_upload_ms;
     float trace_download_ms;
     float mutable_download_ms;

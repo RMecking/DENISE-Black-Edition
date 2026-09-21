@@ -2,9 +2,11 @@
 #include "denise_cuda_psv_forward.h"
 #include "denise_cuda_backend.h"
 #include <cuda_runtime.h>
+#include <chrono>
 #include <climits>
 #include <cstdarg>
 #include <cstdint>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -304,24 +306,32 @@ __global__ void stress_fd4_l1(device_fields d,int nx,int ny,int fw,size_t pitch,
 #undef A
 }
 
-int timed_velocity(denise_cuda_psv_fd4_l1_impl *c,cudaEvent_t a,cudaEvent_t b,float *ms) {
+int launch_velocity(denise_cuda_psv_fd4_l1_impl *c) {
     dim3 block(16,16),grid((c->config.nx+15)/16,(c->config.ny+15)/16);
-    PSV_CUDA_CALL("velocity event start",cudaEventRecord(a));
     velocity_fd4<<<grid,block>>>(c->fields,c->config.nx,c->config.ny,c->config.fw,
         c->full_nx,c->config.dt,c->config.dh,c->config.hc1,c->config.hc2);
     PSV_CUDA_CALL("velocity kernel launch",cudaGetLastError());
+    return 0;
+}
+int timed_velocity(denise_cuda_psv_fd4_l1_impl *c,cudaEvent_t a,cudaEvent_t b,float *ms) {
+    PSV_CUDA_CALL("velocity event start",cudaEventRecord(a));
+    if(launch_velocity(c)!=0) return -1;
     PSV_CUDA_CALL("velocity event stop",cudaEventRecord(b));
     PSV_CUDA_CALL("velocity kernel completion",cudaEventSynchronize(b));
     PSV_CUDA_CALL("velocity elapsed",cudaEventElapsedTime(ms,a,b));
     return 0;
 }
-int timed_stress(denise_cuda_psv_fd4_l1_impl *c,cudaEvent_t a,cudaEvent_t b,float *ms) {
+int launch_stress(denise_cuda_psv_fd4_l1_impl *c) {
     dim3 block(16,16),grid((c->config.nx+15)/16,(c->config.ny+15)/16);
-    PSV_CUDA_CALL("stress event start",cudaEventRecord(a));
     stress_fd4_l1<<<grid,block>>>(c->fields,c->config.nx,c->config.ny,c->config.fw,
         c->full_nx,c->config.dt,c->config.dh,c->config.hc1,c->config.hc2,
         c->config.bip1,c->config.bjm1,c->config.cip1,c->config.cjm1);
     PSV_CUDA_CALL("stress kernel launch",cudaGetLastError());
+    return 0;
+}
+int timed_stress(denise_cuda_psv_fd4_l1_impl *c,cudaEvent_t a,cudaEvent_t b,float *ms) {
+    PSV_CUDA_CALL("stress event start",cudaEventRecord(a));
+    if(launch_stress(c)!=0) return -1;
     PSV_CUDA_CALL("stress event stop",cudaEventRecord(b));
     PSV_CUDA_CALL("stress kernel completion",cudaEventSynchronize(b));
     PSV_CUDA_CALL("stress elapsed",cudaEventElapsedTime(ms,a,b));
@@ -341,6 +351,7 @@ struct denise_cuda_psv_forward {
     int *receiver_j;
     float *trace_vx;
     float *trace_vy;
+    bool profiling_enabled;
     denise_cuda_psv_forward_stats stats;
 };
 
@@ -598,32 +609,28 @@ __global__ void sample_velocity_receivers(device_fields d,size_t pitch,
     trace_vy[sample]=d.vy[q];
 }
 
-int timed_source(denise_cuda_psv_forward *f,int nt,
-                 cudaEvent_t a,cudaEvent_t b,float *ms) {
+int launch_source(denise_cuda_psv_forward *f,int nt) {
     denise_cuda_psv_fd4_l1_impl &c=f->core->impl;
-    PSV_CUDA_CALL("source event start",cudaEventRecord(a));
     explosive_source_fd4_l1<<<1,1>>>(c.fields,c.full_nx,f->source_xy,
         f->source_signal,nt,f->config.nt,f->config.core.dt);
     PSV_CUDA_CALL("source kernel launch",cudaGetLastError());
-    PSV_CUDA_CALL("source event stop",cudaEventRecord(b));
-    PSV_CUDA_CALL("source kernel completion",cudaEventSynchronize(b));
-    PSV_CUDA_CALL("source elapsed",cudaEventElapsedTime(ms,a,b));
     return 0;
 }
 
-int timed_receivers(denise_cuda_psv_forward *f,int nt,
-                    cudaEvent_t a,cudaEvent_t b,float *ms) {
+int launch_receivers(denise_cuda_psv_forward *f,int nt) {
     denise_cuda_psv_fd4_l1_impl &c=f->core->impl;
     int blocks=(f->config.ntr+127)/128;
-    PSV_CUDA_CALL("receiver event start",cudaEventRecord(a));
     sample_velocity_receivers<<<blocks,128>>>(c.fields,c.full_nx,
         f->receiver_i,f->receiver_j,f->trace_vx,f->trace_vy,
         f->config.ntr,nt,f->config.nt);
     PSV_CUDA_CALL("receiver kernel launch",cudaGetLastError());
-    PSV_CUDA_CALL("receiver event stop",cudaEventRecord(b));
-    PSV_CUDA_CALL("receiver kernel completion",cudaEventSynchronize(b));
-    PSV_CUDA_CALL("receiver elapsed",cudaEventElapsedTime(ms,a,b));
     return 0;
+}
+
+void destroy_event_array(cudaEvent_t *events,size_t count) {
+    if(!events) return;
+    for(size_t i=0;i<count;++i) if(events[i]) cudaEventDestroy(events[i]);
+    delete[] events;
 }
 
 void refresh_forward_stats(denise_cuda_psv_forward *f) {
@@ -688,6 +695,16 @@ int denise_cuda_psv_forward_create(
             return contract_failure("forward create",__FILE__,__LINE__,
                 "receiver %d coordinate (%d,%d) is outside physical grid",r,i,j);
     }
+    const char *profile_selector=std::getenv("DENISE_CUDA_PROFILE");
+    bool profiling_enabled=false;
+    if(profile_selector&&profile_selector[0]&&std::strcmp(profile_selector,"0")!=0) {
+        if(std::strcmp(profile_selector,"1")!=0)
+            return contract_failure("forward create",__FILE__,__LINE__,
+                "unknown DENISE_CUDA_PROFILE='%s' (expected 0 or 1)",profile_selector);
+        profiling_enabled=true;
+    }
+    const std::chrono::steady_clock::time_point setup_start=
+        std::chrono::steady_clock::now();
     denise_cuda_device_info info;
     if(denise_cuda_select_device(cfg->core.logical_device,
             cfg->core.safety_reserve_bytes,cfg->core.user_cap_bytes,&info)!=0)
@@ -703,7 +720,8 @@ int denise_cuda_psv_forward_create(
     if(!f||!core) { delete f; delete core; return contract_failure(
         "forward create",__FILE__,__LINE__,"host allocation failed"); }
     std::memset(f,0,sizeof(*f)); std::memset(core,0,sizeof(*core));
-    f->core=core; f->config=*cfg; f->stats=plan;
+    f->core=core; f->config=*cfg; f->profiling_enabled=profiling_enabled;
+    f->stats=plan; f->stats.profiling_enabled=profiling_enabled?1:0;
     f->stats.usable_budget_bytes=info.usable_budget_bytes;
     f->stats.remaining_budget_bytes=info.usable_budget_bytes-plan.total_mandatory_bytes;
 
@@ -721,6 +739,8 @@ int denise_cuda_psv_forward_create(
     if(rc!=cudaSuccess) { release_forward_partial(f); return cuda_failure(
         "aggregate forward cudaMalloc",rc,__FILE__,__LINE__); }
     assign_slices(&c);
+    f->stats.context_setup_ms=(float)std::chrono::duration<double,std::milli>(
+        std::chrono::steady_clock::now()-setup_start).count();
     unsigned char *cursor=(unsigned char*)c.storage+core_bytes;
     f->source_xy=(int*)cursor; cursor+=plan.source_geometry_bytes;
     f->source_signal=(float*)cursor; cursor+=plan.source_signal_bytes;
@@ -766,33 +786,56 @@ int denise_cuda_psv_forward_run(denise_cuda_psv_forward *f) {
     if(!f) return contract_failure("forward run",__FILE__,__LINE__,"context is null");
     if(f->core->impl.stats.timesteps)
         return contract_failure("forward run",__FILE__,__LINE__,"context has already run");
-    cudaEvent_t phase_a=nullptr,phase_b=nullptr,total_a=nullptr,total_b=nullptr;
-    cudaError_t rc=cudaEventCreate(&phase_a);
-    if(rc==cudaSuccess) rc=cudaEventCreate(&phase_b);
-    if(rc==cudaSuccess) rc=cudaEventCreate(&total_a);
-    if(rc==cudaSuccess) rc=cudaEventCreate(&total_b);
-    if(rc!=cudaSuccess) {
-        if(total_b) cudaEventDestroy(total_b); if(total_a) cudaEventDestroy(total_a);
-        if(phase_b) cudaEventDestroy(phase_b); if(phase_a) cudaEventDestroy(phase_a);
-        return cuda_failure("forward kernel event create",rc,__FILE__,__LINE__);
+    size_t event_count;
+    if(f->profiling_enabled) {
+        size_t phase_events;
+        if(!checked_mul((size_t)f->config.nt,4,&phase_events)||
+           !checked_add(phase_events,1,&event_count))
+            return contract_failure("forward run",__FILE__,__LINE__,
+                                    "profiling event count overflows size_t");
+    } else event_count=2;
+    cudaEvent_t *events=new(std::nothrow) cudaEvent_t[event_count]();
+    if(!events) return contract_failure("forward run",__FILE__,__LINE__,
+                                        "profiling event allocation failed");
+    cudaError_t rc=cudaSuccess;
+    size_t created=0;
+    for(;created<event_count;++created) {
+        rc=cudaEventCreate(&events[created]);
+        if(rc!=cudaSuccess) {
+            destroy_event_array(events,event_count);
+            return cuda_failure("forward kernel event create",rc,__FILE__,__LINE__);
+        }
     }
     denise_cuda_psv_fd4_l1_impl &c=f->core->impl;
+    rc=cudaEventRecord(events[0]);
+    if(rc!=cudaSuccess) goto fail;
+    if(f->profiling_enabled) ++f->stats.profile_event_records;
+    else ++f->stats.resident_event_records;
     for(int nt=1;nt<=f->config.nt;++nt) {
         size_t h2d_before=c.stats.h2d_transfer_calls;
         size_t d2h_before=c.stats.d2h_transfer_calls;
-        float vm=0.0f,sm=0.0f,qm=0.0f,rm=0.0f,total=0.0f;
-        rc=cudaEventRecord(total_a);
-        if(rc!=cudaSuccess||timed_velocity(&c,phase_a,phase_b,&vm)!=0||
-           timed_stress(&c,phase_a,phase_b,&sm)!=0||
-           timed_source(f,nt,phase_a,phase_b,&qm)!=0||
-           timed_receivers(f,nt,phase_a,phase_b,&rm)!=0) goto fail;
-        rc=cudaEventRecord(total_b); if(rc!=cudaSuccess) goto fail;
-        rc=cudaEventSynchronize(total_b); if(rc!=cudaSuccess) goto fail;
-        rc=cudaEventElapsedTime(&total,total_a,total_b); if(rc!=cudaSuccess) goto fail;
-        c.stats.velocity_kernel_ms+=vm; c.stats.stress_kernel_ms+=sm;
-        c.stats.combined_kernel_ms+=vm+sm; ++c.stats.timesteps;
-        f->stats.source_kernel_ms+=qm; f->stats.receiver_kernel_ms+=rm;
-        f->stats.resident_timestep_ms+=total;
+        size_t event=(size_t)(nt-1)*4;
+        if(launch_velocity(&c)!=0) goto launch_fail;
+        if(f->profiling_enabled) {
+            rc=cudaEventRecord(events[event+1]); if(rc!=cudaSuccess) goto fail;
+            ++f->stats.profile_event_records;
+        }
+        if(launch_stress(&c)!=0) goto launch_fail;
+        if(f->profiling_enabled) {
+            rc=cudaEventRecord(events[event+2]); if(rc!=cudaSuccess) goto fail;
+            ++f->stats.profile_event_records;
+        }
+        if(launch_source(f,nt)!=0) goto launch_fail;
+        if(f->profiling_enabled) {
+            rc=cudaEventRecord(events[event+3]); if(rc!=cudaSuccess) goto fail;
+            ++f->stats.profile_event_records;
+        }
+        if(launch_receivers(f,nt)!=0) goto launch_fail;
+        if(f->profiling_enabled) {
+            rc=cudaEventRecord(events[event+4]); if(rc!=cudaSuccess) goto fail;
+            ++f->stats.profile_event_records;
+        }
+        ++c.stats.timesteps;
         if(c.stats.h2d_transfer_calls!=h2d_before||
            c.stats.d2h_transfer_calls!=d2h_before) {
             contract_failure("forward timestep residency",__FILE__,__LINE__,
@@ -800,14 +843,40 @@ int denise_cuda_psv_forward_run(denise_cuda_psv_forward *f) {
             goto fail;
         }
     }
-    cudaEventDestroy(total_b); cudaEventDestroy(total_a);
-    cudaEventDestroy(phase_b); cudaEventDestroy(phase_a);
+    if(!f->profiling_enabled) {
+        rc=cudaEventRecord(events[1]); if(rc!=cudaSuccess) goto fail;
+        ++f->stats.resident_event_records;
+    }
+    rc=cudaEventSynchronize(events[event_count-1]); if(rc!=cudaSuccess) goto fail;
+    ++f->stats.forward_synchronization_calls;
+    rc=cudaEventElapsedTime(&f->stats.resident_timestep_ms,
+                            events[0],events[event_count-1]);
+    if(rc!=cudaSuccess) goto fail;
+    ++f->stats.resident_elapsed_queries;
+    if(f->profiling_enabled) {
+        for(int nt=1;nt<=f->config.nt;++nt) {
+            size_t event=(size_t)(nt-1)*4;
+            float vm=0.0f,sm=0.0f,qm=0.0f,rm=0.0f;
+            rc=cudaEventElapsedTime(&vm,events[event],events[event+1]);
+            if(rc==cudaSuccess) rc=cudaEventElapsedTime(&sm,events[event+1],events[event+2]);
+            if(rc==cudaSuccess) rc=cudaEventElapsedTime(&qm,events[event+2],events[event+3]);
+            if(rc==cudaSuccess) rc=cudaEventElapsedTime(&rm,events[event+3],events[event+4]);
+            if(rc!=cudaSuccess) goto fail;
+            f->stats.profile_elapsed_queries+=4;
+            c.stats.velocity_kernel_ms+=vm; c.stats.stress_kernel_ms+=sm;
+            c.stats.combined_kernel_ms+=vm+sm;
+            f->stats.source_kernel_ms+=qm; f->stats.receiver_kernel_ms+=rm;
+        }
+    }
+    destroy_event_array(events,event_count);
     refresh_forward_stats(f);
     return 0;
 fail:
-    cudaEventDestroy(total_b); cudaEventDestroy(total_a);
-    cudaEventDestroy(phase_b); cudaEventDestroy(phase_a);
+    destroy_event_array(events,event_count);
     if(rc!=cudaSuccess) return cuda_failure("forward timestep",rc,__FILE__,__LINE__);
+    return -1;
+launch_fail:
+    destroy_event_array(events,event_count);
     return -1;
 }
 
