@@ -40,6 +40,12 @@ CUDA_BACKEND_OBJ = $(CUDA_BUILD_DIR)/denise_cuda_backend.o
 CUDA_HARNESS_OBJ = $(CUDA_BUILD_DIR)/cuda_foundation_harness.o
 CUDA_UTIL_OBJ = $(CUDA_BUILD_DIR)/util.o
 CUDA_FOUNDATION_BIN = $(EXEC)/denise_cuda_foundation
+CUDA_PSV_OBJ = $(CUDA_BUILD_DIR)/psv_fd4_l1.o
+CUDA_PSV_HARNESS_OBJ = $(CUDA_BUILD_DIR)/cuda_psv_fd4_l1_harness.o
+CUDA_PSV_CPU_OBJ = $(CUDA_BUILD_DIR)/update_v_PML_PSV.o \
+	$(CUDA_BUILD_DIR)/update_s_visc_PML_PSV.o \
+	$(CUDA_BUILD_DIR)/prepare_update_s_visc_PSV.o
+CUDA_PSV_BIN = $(EXEC)/denise_cuda_psv_fd4_l1
 MPI_LINK_FLAGS = $(shell $(CC) --showme:link 2>/dev/null)
 
 # On Linux NEC-cluster with Intel-MPI (Pre-2023)
@@ -313,9 +319,11 @@ snapmerge:	$(SNAPMERGE_OBJ)
 denise:		$(DENISE_OBJ)
 	$(CC) $(SFLAGS) $(DENISE_OBJ) -o $(EXEC)/denise $(LFLAGS)
 
-.PHONY: cuda_foundation cuda_clean
+.PHONY: cuda_foundation cuda_psv_fd4_l1 cuda_clean
 
 cuda_foundation: $(CUDA_FOUNDATION_BIN)
+
+cuda_psv_fd4_l1: $(CUDA_PSV_BIN)
 
 $(CUDA_BUILD_DIR):
 	mkdir -p $(CUDA_BUILD_DIR)
@@ -333,9 +341,26 @@ $(CUDA_UTIL_OBJ): util.c | $(CUDA_BUILD_DIR)
 $(CUDA_FOUNDATION_BIN): $(CUDA_BACKEND_OBJ) $(CUDA_HARNESS_OBJ) $(CUDA_UTIL_OBJ)
 	$(NVCC) $(CUDA_CXXFLAGS) $(CUDA_GENCODE) -cudart shared $^ $(MPI_LINK_FLAGS) -lm -o $@
 
+$(CUDA_PSV_OBJ): CUDA/psv_fd4_l1.cu ../include/denise_cuda_psv.h ../include/denise_cuda_backend.h | $(CUDA_BUILD_DIR)
+	$(NVCC) $(CUDA_CXXFLAGS) $(CUDA_GENCODE) -I./../include -c $< -o $@
+
+$(CUDA_PSV_HARNESS_OBJ): ../tests/utilities/cuda_psv_fd4_l1_harness.c ../include/denise_cuda_psv.h | $(CUDA_BUILD_DIR)
+	$(CC) $(CFLAGS) -std=c99 $(IFLAGS) -c $< -o $@
+
+$(CUDA_BUILD_DIR)/update_v_PML_PSV.o: PSV/update_v_PML_PSV.c | $(CUDA_BUILD_DIR)
+	$(CC) $(CFLAGS) -std=c99 $(IFLAGS) -c $< -o $@
+
+$(CUDA_BUILD_DIR)/update_s_visc_PML_PSV.o: PSV/update_s_visc_PML_PSV.c | $(CUDA_BUILD_DIR)
+	$(CC) $(CFLAGS) -std=c99 $(IFLAGS) -c $< -o $@
+
+$(CUDA_BUILD_DIR)/prepare_update_s_visc_PSV.o: PSV/prepare_update_s_visc_PSV.c | $(CUDA_BUILD_DIR)
+	$(CC) $(CFLAGS) -std=c99 $(IFLAGS) -c $< -o $@
+
+$(CUDA_PSV_BIN): $(CUDA_BACKEND_OBJ) $(CUDA_PSV_OBJ) $(CUDA_PSV_HARNESS_OBJ) $(CUDA_UTIL_OBJ) $(CUDA_PSV_CPU_OBJ)
+	$(NVCC) $(CUDA_CXXFLAGS) $(CUDA_GENCODE) -cudart shared $^ $(MPI_LINK_FLAGS) -lm -o $@
 cuda_clean:
 	rm -rf $(CUDA_BUILD_DIR)
-	rm -f $(CUDA_FOUNDATION_BIN)
+	rm -f $(CUDA_FOUNDATION_BIN) $(CUDA_PSV_BIN)
 
 clean:
 	find . -name "*.o" -exec rm {} \; 
