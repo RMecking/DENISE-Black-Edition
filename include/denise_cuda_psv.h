@@ -124,6 +124,11 @@ int denise_cuda_psv_fd4_l1_download(
         struct denise_cuda_psv_fd4_l1 *context,
         struct denise_cuda_psv_fd4_l1_host *output);
 
+/* Copies only the 16 forward-evolving primary, GSLS, and CPML fields. */
+int denise_cuda_psv_fd4_l1_download_mutable(
+        struct denise_cuda_psv_fd4_l1 *context,
+        struct denise_cuda_psv_fd4_l1_host *output);
+
 int denise_cuda_psv_fd4_l1_get_stats(
         const struct denise_cuda_psv_fd4_l1 *context,
         struct denise_cuda_psv_fd4_l1_stats *stats);

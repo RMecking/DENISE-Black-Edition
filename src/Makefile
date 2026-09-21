@@ -46,6 +46,11 @@ CUDA_PSV_CPU_OBJ = $(CUDA_BUILD_DIR)/update_v_PML_PSV.o \
 	$(CUDA_BUILD_DIR)/update_s_visc_PML_PSV.o \
 	$(CUDA_BUILD_DIR)/prepare_update_s_visc_PSV.o
 CUDA_PSV_BIN = $(EXEC)/denise_cuda_psv_fd4_l1
+CUDA_PSV_DISPATCH_OBJ = $(CUDA_BUILD_DIR)/psv_cuda_dispatch.o
+CUDA_PSV_SOLVER_OBJ = $(CUDA_BUILD_DIR)/psv_cuda_solver.o
+CUDA_FORWARD_HARNESS_OBJ = $(CUDA_BUILD_DIR)/cuda_psv_forward_harness.o
+CUDA_DENISE_BIN ?= $(EXEC)/denise_cuda
+CUDA_FORWARD_BIN ?= $(EXEC)/denise_cuda_psv_forward
 MPI_LINK_FLAGS = $(shell $(CC) --showme:link 2>/dev/null)
 
 # On Linux NEC-cluster with Intel-MPI (Pre-2023)
@@ -312,6 +317,12 @@ DENISE += alloc_fwiSH.c \
 
 SNAPMERGE_OBJ = $(SNAPMERGE_SCR:.c=.o)
 DENISE_OBJ = $(DENISE:.c=.o)      
+CUDA_DENISE_OBJ = $(filter-out psv.o,$(DENISE_OBJ)) \
+	$(CUDA_PSV_SOLVER_OBJ) $(CUDA_PSV_DISPATCH_OBJ) \
+	$(CUDA_BACKEND_OBJ) $(CUDA_PSV_OBJ)
+CUDA_FORWARD_LINK_OBJ = $(filter-out denise.o psv.o,$(DENISE_OBJ)) \
+	$(CUDA_PSV_SOLVER_OBJ) $(CUDA_PSV_DISPATCH_OBJ) \
+	$(CUDA_BACKEND_OBJ) $(CUDA_PSV_OBJ) $(CUDA_FORWARD_HARNESS_OBJ)
 
 snapmerge:	$(SNAPMERGE_OBJ)
 	$(CC) $(SFLAGS) $(SNAPMERGE_OBJ) -o ../bin/snapmerge $(LFLAGS)
@@ -319,11 +330,15 @@ snapmerge:	$(SNAPMERGE_OBJ)
 denise:		$(DENISE_OBJ)
 	$(CC) $(SFLAGS) $(DENISE_OBJ) -o $(EXEC)/denise $(LFLAGS)
 
-.PHONY: cuda_foundation cuda_psv_fd4_l1 cuda_clean
+.PHONY: cuda_foundation cuda_psv_fd4_l1 denise_cuda cuda_psv_forward cuda_clean
 
 cuda_foundation: $(CUDA_FOUNDATION_BIN)
 
 cuda_psv_fd4_l1: $(CUDA_PSV_BIN)
+
+denise_cuda: $(CUDA_DENISE_BIN)
+
+cuda_psv_forward: $(CUDA_FORWARD_BIN)
 
 $(CUDA_BUILD_DIR):
 	mkdir -p $(CUDA_BUILD_DIR)
@@ -341,10 +356,19 @@ $(CUDA_UTIL_OBJ): util.c | $(CUDA_BUILD_DIR)
 $(CUDA_FOUNDATION_BIN): $(CUDA_BACKEND_OBJ) $(CUDA_HARNESS_OBJ) $(CUDA_UTIL_OBJ)
 	$(NVCC) $(CUDA_CXXFLAGS) $(CUDA_GENCODE) -cudart shared $^ $(MPI_LINK_FLAGS) -lm -o $@
 
-$(CUDA_PSV_OBJ): CUDA/psv_fd4_l1.cu ../include/denise_cuda_psv.h ../include/denise_cuda_backend.h | $(CUDA_BUILD_DIR)
+$(CUDA_PSV_OBJ): CUDA/psv_fd4_l1.cu ../include/denise_cuda_psv.h ../include/denise_cuda_psv_forward.h ../include/denise_cuda_backend.h | $(CUDA_BUILD_DIR)
 	$(NVCC) $(CUDA_CXXFLAGS) $(CUDA_GENCODE) -I./../include -c $< -o $@
 
 $(CUDA_PSV_HARNESS_OBJ): ../tests/utilities/cuda_psv_fd4_l1_harness.c ../include/denise_cuda_psv.h | $(CUDA_BUILD_DIR)
+	$(CC) $(CFLAGS) -std=c99 $(IFLAGS) -c $< -o $@
+
+$(CUDA_PSV_DISPATCH_OBJ): PSV/psv_cuda_dispatch.c ../include/denise_cuda_psv_dispatch.h ../include/denise_cuda_psv_forward.h | $(CUDA_BUILD_DIR)
+	$(CC) $(CFLAGS) -std=c99 $(IFLAGS) -c $< -o $@
+
+$(CUDA_PSV_SOLVER_OBJ): PSV/psv.c ../include/denise_cuda_psv_dispatch.h | $(CUDA_BUILD_DIR)
+	$(CC) $(CFLAGS) -std=c99 -DDENISE_ENABLE_CUDA_PSV $(IFLAGS) -c $< -o $@
+
+$(CUDA_FORWARD_HARNESS_OBJ): ../tests/utilities/cuda_psv_forward_harness.c ../include/denise_cuda_psv_dispatch.h ../include/denise_cuda_psv_forward.h | $(CUDA_BUILD_DIR)
 	$(CC) $(CFLAGS) -std=c99 $(IFLAGS) -c $< -o $@
 
 $(CUDA_BUILD_DIR)/update_v_PML_PSV.o: PSV/update_v_PML_PSV.c | $(CUDA_BUILD_DIR)
@@ -358,9 +382,16 @@ $(CUDA_BUILD_DIR)/prepare_update_s_visc_PSV.o: PSV/prepare_update_s_visc_PSV.c |
 
 $(CUDA_PSV_BIN): $(CUDA_BACKEND_OBJ) $(CUDA_PSV_OBJ) $(CUDA_PSV_HARNESS_OBJ) $(CUDA_UTIL_OBJ) $(CUDA_PSV_CPU_OBJ)
 	$(NVCC) $(CUDA_CXXFLAGS) $(CUDA_GENCODE) -cudart shared $^ $(MPI_LINK_FLAGS) -lm -o $@
+
+$(CUDA_DENISE_BIN): $(CUDA_DENISE_OBJ)
+	$(NVCC) $(CUDA_CXXFLAGS) $(CUDA_GENCODE) -cudart shared $(SFLAGS) $^ $(MPI_LINK_FLAGS) $(LFLAGS) -o $@
+
+$(CUDA_FORWARD_BIN): $(CUDA_FORWARD_LINK_OBJ)
+	$(NVCC) $(CUDA_CXXFLAGS) $(CUDA_GENCODE) -cudart shared $(SFLAGS) $^ $(MPI_LINK_FLAGS) $(LFLAGS) -o $@
+
 cuda_clean:
 	rm -rf $(CUDA_BUILD_DIR)
-	rm -f $(CUDA_FOUNDATION_BIN) $(CUDA_PSV_BIN)
+	rm -f $(CUDA_FOUNDATION_BIN) $(CUDA_PSV_BIN) $(CUDA_DENISE_BIN) $(CUDA_FORWARD_BIN)
 
 clean:
 	find . -name "*.o" -exec rm {} \; 

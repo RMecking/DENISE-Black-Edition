@@ -13,6 +13,9 @@
  *  --------------------------------------------------------------------------*/
 
 #include "fd.h"
+#ifdef DENISE_ENABLE_CUDA_PSV
+#include "denise_cuda_psv_dispatch.h"
+#endif
 
 void visco_psv_exact_step(int t);
 extern int NX, NY, FW;
@@ -237,6 +240,15 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 	int timing_enabled;
 	double timing[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
 	double timing_total_start = 0.0, timing_phase_start = 0.0;
+#ifdef DENISE_ENABLE_CUDA_PSV
+	enum denise_psv_backend psv_backend = DENISE_PSV_BACKEND_CPU;
+	if (denise_cuda_psv_backend_preflight(nsrc_loc, ntr, mode, &psv_backend) < 0) {
+		char cuda_error[1024];
+		snprintf(cuda_error, sizeof(cuda_error), "%s",
+			denise_cuda_psv_dispatch_last_error());
+		err(cuda_error);
+	}
+#endif
 
 	nd = FDORDER / 2 + 1;
 	exact_elastic_psv_adjoint=((MODE==1)&&(mode==1)&&(L==0)&&
@@ -299,6 +311,26 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 							  (*wavePSV_PML).psi_sxy_x, (*wavePSV_PML).psi_vxx, (*wavePSV_PML).psi_vyx, (*wavePSV_PML).psi_syy_y, (*wavePSV_PML).psi_sxy_y,
 							  (*wavePSV_PML).psi_vyy, (*wavePSV_PML).psi_vxy, (*wavePSV_PML).psi_vxxs);
 	}
+
+#ifdef DENISE_ENABLE_CUDA_PSV
+	/* Provisional M8e integration boundary.  The ordinary psv.o is compiled
+	 * without this block; only the optional CUDA executable recognizes the
+	 * selector and delegates the frozen B2A forward envelope as one resident
+	 * invocation.  A requested CUDA path never falls back to this CPU loop. */
+	{
+		int cuda_dispatch = denise_cuda_psv_dispatch(
+			wavePSV, wavePSV_PML, matPSV, seisPSV, acq, hc,
+			nsrc_loc, ntr, mode, psv_backend);
+		if (cuda_dispatch < 0) {
+			char cuda_error[1024];
+			snprintf(cuda_error, sizeof(cuda_error), "%s",
+				denise_cuda_psv_dispatch_last_error());
+			err(cuda_error);
+		}
+		if (cuda_dispatch > 0)
+			return;
+	}
+#endif
 
 	/*----------------------  loop over timesteps (forward model) ------------------*/
 
