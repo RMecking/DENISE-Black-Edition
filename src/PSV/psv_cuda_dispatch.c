@@ -104,11 +104,18 @@ static void write_dispatch_report(const struct denise_cuda_psv_forward_stats *s)
         "  \"source_sample_h2d_per_timestep\": %zu,\n"
         "  \"receiver_sample_d2h_per_timestep\": %zu,\n"
         "  \"timesteps\": %llu,\n"
+        "  \"forward_synchronization_calls\": %zu,\n"
+        "  \"resident_event_records\": %zu,\n"
+        "  \"resident_elapsed_queries\": %zu,\n"
+        "  \"profile_event_records\": %zu,\n"
+        "  \"profile_elapsed_queries\": %zu,\n"
+        "  \"profiling_enabled\": %d,\n"
         "  \"velocity_kernel_ms\": %.9g,\n"
         "  \"stress_kernel_ms\": %.9g,\n"
         "  \"source_kernel_ms\": %.9g,\n"
         "  \"receiver_kernel_ms\": %.9g,\n"
         "  \"resident_timestep_ms\": %.9g,\n"
+        "  \"context_setup_ms\": %.9g,\n"
         "  \"initial_upload_ms\": %.9g,\n"
         "  \"trace_download_ms\": %.9g,\n"
         "  \"mutable_download_ms\": %.9g,\n"
@@ -120,9 +127,12 @@ static void write_dispatch_report(const struct denise_cuda_psv_forward_stats *s)
         s->h2d_transfer_calls,s->d2h_transfer_calls,s->h2d_bytes,s->d2h_bytes,
         s->full_grid_h2d_per_timestep,s->full_grid_d2h_per_timestep,
         s->source_sample_h2d_per_timestep,s->receiver_sample_d2h_per_timestep,
-        s->timesteps,s->velocity_kernel_ms,s->stress_kernel_ms,
+        s->timesteps,s->forward_synchronization_calls,s->resident_event_records,
+        s->resident_elapsed_queries,s->profile_event_records,
+        s->profile_elapsed_queries,s->profiling_enabled,
+        s->velocity_kernel_ms,s->stress_kernel_ms,
         s->source_kernel_ms,s->receiver_kernel_ms,s->resident_timestep_ms,
-        s->initial_upload_ms,s->trace_download_ms,s->mutable_download_ms,
+        s->context_setup_ms,s->initial_upload_ms,s->trace_download_ms,s->mutable_download_ms,
         s->total_forward_ms);
     fclose(stream);
 }

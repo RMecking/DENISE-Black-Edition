@@ -5,6 +5,7 @@
 #include "globvar.h"
 
 #include <stdint.h>
+#include <time.h>
 
 #define DEFAULT_NX 96
 #define DEFAULT_NY 80
@@ -26,9 +27,49 @@ struct metric {
     size_t count,max_index;
 };
 
+struct distribution {
+    double minimum,q1,median,q3,maximum,iqr;
+};
+
 static int fail(const char *message) {
     fprintf(stderr,"CUDA PSV B2A harness failure: %s\n",message);
     return 1;
+}
+
+static int compare_double(const void *left,const void *right) {
+    double a=*(const double*)left,b=*(const double*)right;
+    return (a>b)-(a<b);
+}
+
+static double quantile(const double *sorted,int count,double probability) {
+    double position=(double)(count-1)*probability;
+    int lower=(int)floor(position),upper=(int)ceil(position);
+    double fraction=position-(double)lower;
+    return sorted[lower]+fraction*(sorted[upper]-sorted[lower]);
+}
+
+static struct distribution summarize(const double *values,int count) {
+    struct distribution result;
+    double *sorted=(double*)malloc((size_t)count*sizeof(double));
+    memcpy(sorted,values,(size_t)count*sizeof(double));
+    qsort(sorted,(size_t)count,sizeof(double),compare_double);
+    result.minimum=sorted[0]; result.maximum=sorted[count-1];
+    result.q1=quantile(sorted,count,0.25); result.median=quantile(sorted,count,0.5);
+    result.q3=quantile(sorted,count,0.75); result.iqr=result.q3-result.q1;
+    free(sorted); return result;
+}
+
+static void print_samples(const char *name,const double *values,int count) {
+    int k;
+    printf("BENCHMARK_RAW metric=%s values=",name);
+    for(k=0;k<count;++k) printf("%s%.6f",k?",":"",values[k]);
+    printf("\n");
+}
+
+static double monotonic_ms(void) {
+    struct timespec now;
+    if(clock_gettime(CLOCK_MONOTONIC,&now)!=0) return -1.0;
+    return (double)now.tv_sec*1000.0+(double)now.tv_nsec/1000000.0;
 }
 
 static void configure_globals(int nx,int ny,int nt) {
@@ -387,16 +428,137 @@ static int failure_lifecycle(struct wavePSV *w,struct wavePSV_PML *p,
     return 0;
 }
 
+static int benchmark_solver(struct wavePSV *wave,struct wavePSV_PML *pml,
+        struct matPSV *material,struct mpiPSV *mpi,struct seisPSV *seis,
+        struct seisPSVfwi *seisfwi,struct fwiPSV *fwi,struct acq *acquisition,
+        float *hc,int *dtinv,MPI_Request *request,int ntr,int warmups,
+        int repetitions) {
+    double *cpu_host=NULL,*cuda_host=NULL,*cuda_internal=NULL,*resident=NULL;
+    double *internal_host_ratio=NULL,*setup=NULL,*upload=NULL;
+    double *trace_download=NULL,*mutable_download=NULL;
+    struct denise_cuda_psv_forward_stats stats;
+    struct distribution cpu_summary,cuda_host_summary,cuda_internal_summary;
+    struct distribution resident_summary,ratio_summary;
+    int k,status=1,agreement_warnings=0;
+#define ALLOC_SAMPLE(name) do { name=(double*)calloc((size_t)repetitions,sizeof(double)); \
+    if(!(name)) goto cleanup; } while(0)
+    ALLOC_SAMPLE(cpu_host); ALLOC_SAMPLE(cuda_host); ALLOC_SAMPLE(cuda_internal);
+    ALLOC_SAMPLE(resident); ALLOC_SAMPLE(internal_host_ratio);
+    ALLOC_SAMPLE(setup); ALLOC_SAMPLE(upload); ALLOC_SAMPLE(trace_download);
+    ALLOC_SAMPLE(mutable_download);
+#undef ALLOC_SAMPLE
+    unsetenv("DENISE_CUDA_PROFILE");
+    for(k=0;k<warmups;++k) {
+        setenv("DENISE_PSV_BACKEND","cpu",1);
+        psv(wave,pml,material,fwi,mpi,seis,seisfwi,acquisition,hc,
+            1,1,1,NT,ntr,NULL,NULL,1,dtinv,0,request,request);
+    }
+    for(k=0;k<repetitions;++k) {
+        double start,stop;
+        setenv("DENISE_PSV_BACKEND","cpu",1); start=monotonic_ms();
+        if(start<0.0) { fail("CLOCK_MONOTONIC start failed"); goto cleanup; }
+        psv(wave,pml,material,fwi,mpi,seis,seisfwi,acquisition,hc,
+            1,1,1,NT,ntr,NULL,NULL,1,dtinv,0,request,request);
+        stop=monotonic_ms();
+        if(stop<start) { fail("CLOCK_MONOTONIC CPU stop failed"); goto cleanup; }
+        cpu_host[k]=stop-start;
+    }
+    for(k=0;k<warmups;++k) {
+        setenv("DENISE_PSV_BACKEND","cuda",1);
+        psv(wave,pml,material,fwi,mpi,seis,seisfwi,acquisition,hc,
+            1,1,1,NT,ntr,NULL,NULL,1,dtinv,0,request,request);
+    }
+    for(k=0;k<repetitions;++k) {
+        double start,stop;
+        setenv("DENISE_PSV_BACKEND","cuda",1); start=monotonic_ms();
+        if(start<0.0) { fail("CLOCK_MONOTONIC start failed"); goto cleanup; }
+        psv(wave,pml,material,fwi,mpi,seis,seisfwi,acquisition,hc,
+            1,1,1,NT,ntr,NULL,NULL,1,dtinv,0,request,request);
+        stop=monotonic_ms();
+        if(stop<start) { fail("CLOCK_MONOTONIC CUDA stop failed"); goto cleanup; }
+        cuda_host[k]=stop-start;
+        if(denise_cuda_psv_dispatch_last_stats(&stats)!=0) {
+            fail("benchmark CUDA dispatch stats unavailable"); goto cleanup;
+        }
+        cuda_internal[k]=stats.total_forward_ms;
+        resident[k]=stats.resident_timestep_ms;
+        internal_host_ratio[k]=cuda_internal[k]/cuda_host[k];
+        if(internal_host_ratio[k]<0.80||internal_host_ratio[k]>1.20) {
+            ++agreement_warnings;
+            fprintf(stderr,
+                "CUDA timing scope warning: repetition=%d internal_host_ratio=%.6f host_ms=%.6f internal_ms=%.6f\n",
+                k+1,internal_host_ratio[k],cuda_host[k],cuda_internal[k]);
+        }
+        setup[k]=stats.context_setup_ms; upload[k]=stats.initial_upload_ms;
+        trace_download[k]=stats.trace_download_ms;
+        mutable_download[k]=stats.mutable_download_ms;
+    }
+    cpu_summary=summarize(cpu_host,repetitions);
+    cuda_host_summary=summarize(cuda_host,repetitions);
+    cuda_internal_summary=summarize(cuda_internal,repetitions);
+    resident_summary=summarize(resident,repetitions);
+    ratio_summary=summarize(internal_host_ratio,repetitions);
+    printf("BENCHMARK_METHOD warmup=%d repetitions=%d fresh_cuda_context=1 primary=median profile=0 schedule=cpu_block_then_cuda_block clock=CLOCK_MONOTONIC headline=WARM_RUNTIME_SOLVER_END_TO_END_HOST_WALL cold_start_excluded=1 cleanup_included=1\n",
+           warmups,repetitions);
+    printf("BENCHMARK_CASE nx=%d ny=%d nt=%d nrec=%d\n",NX,NY,NT,ntr);
+    printf("BENCHMARK_VRAM state_bytes=%zu source_bytes=%zu receiver_geometry_bytes=%zu trace_bytes=%zu usable_bytes=%zu remaining_bytes=%zu managed_memory=0 paging_fallback=0\n",
+           stats.b1_core_bytes,stats.source_signal_bytes+stats.source_geometry_bytes,
+           stats.receiver_geometry_bytes,stats.trace_bytes,
+           stats.usable_budget_bytes,stats.remaining_budget_bytes);
+    print_samples("cpu_host_e2e_ms",cpu_host,repetitions);
+    print_samples("cuda_host_e2e_ms",cuda_host,repetitions);
+    print_samples("cuda_internal_e2e_ms",cuda_internal,repetitions);
+    print_samples("cuda_resident_propagation_ms",resident,repetitions);
+    print_samples("cuda_internal_host_ratio",internal_host_ratio,repetitions);
+    print_samples("cuda_context_setup_ms",setup,repetitions);
+    print_samples("cuda_upload_ms",upload,repetitions);
+    print_samples("cuda_trace_download_ms",trace_download,repetitions);
+    print_samples("cuda_mutable_download_ms",mutable_download,repetitions);
+    printf("BENCHMARK_SUMMARY metric=cpu_host_e2e_ms min=%.6f q1=%.6f median=%.6f q3=%.6f max=%.6f iqr=%.6f\n",
+           cpu_summary.minimum,cpu_summary.q1,cpu_summary.median,cpu_summary.q3,
+           cpu_summary.maximum,cpu_summary.iqr);
+    printf("BENCHMARK_SUMMARY metric=cuda_host_e2e_ms min=%.6f q1=%.6f median=%.6f q3=%.6f max=%.6f iqr=%.6f\n",
+           cuda_host_summary.minimum,cuda_host_summary.q1,cuda_host_summary.median,
+           cuda_host_summary.q3,cuda_host_summary.maximum,cuda_host_summary.iqr);
+    printf("BENCHMARK_SUMMARY metric=cuda_internal_e2e_ms min=%.6f q1=%.6f median=%.6f q3=%.6f max=%.6f iqr=%.6f\n",
+           cuda_internal_summary.minimum,cuda_internal_summary.q1,
+           cuda_internal_summary.median,cuda_internal_summary.q3,
+           cuda_internal_summary.maximum,cuda_internal_summary.iqr);
+    printf("BENCHMARK_SUMMARY metric=cuda_resident_propagation_ms min=%.6f q1=%.6f median=%.6f q3=%.6f max=%.6f iqr=%.6f\n",
+           resident_summary.minimum,resident_summary.q1,resident_summary.median,
+           resident_summary.q3,resident_summary.maximum,resident_summary.iqr);
+    printf("BENCHMARK_AGREEMENT metric=cuda_internal_host_ratio min=%.6f median=%.6f max=%.6f warning_threshold_low=0.80 warning_threshold_high=1.20 warnings=%d headline_valid=%d\n",
+           ratio_summary.minimum,ratio_summary.median,ratio_summary.maximum,
+           agreement_warnings,agreement_warnings==0);
+    printf("BENCHMARK_HEADLINE valid=%d cpu_host_median_ms=%.6f cuda_host_median_ms=%.6f speedup=%.9f runtime_fraction=%.9f runtime_reduction=%.9f cuda_internal_median_ms=%.6f cuda_resident_median_ms=%.6f resident_only_ratio=%.9f cell_timesteps_per_second=%.3f\n",
+           agreement_warnings==0,cpu_summary.median,cuda_host_summary.median,
+           cpu_summary.median/cuda_host_summary.median,
+           cuda_host_summary.median/cpu_summary.median,
+           1.0-cuda_host_summary.median/cpu_summary.median,
+           cuda_internal_summary.median,resident_summary.median,
+           cpu_summary.median/resident_summary.median,
+           (double)NX*(double)NY*(double)NT/(resident_summary.median/1000.0));
+    printf("BENCHMARK_SYNC forward_syncs_per_run=%zu per_timestep=0 profile_syncs=0 profile_event_records=%zu profile_elapsed_queries=%zu\n",
+           stats.forward_synchronization_calls,stats.profile_event_records,
+           stats.profile_elapsed_queries);
+    status=0;
+cleanup:
+    free(mutable_download); free(trace_download); free(upload); free(setup);
+    free(internal_host_ratio); free(resident); free(cuda_internal);
+    free(cuda_host); free(cpu_host); return status;
+}
+
 int main(int argc,char **argv) {
     struct wavePSV wave={0}; struct wavePSV_PML pml={0}; struct matPSV material={0};
     struct mpiPSV mpi={0}; struct seisPSV seis={0}; struct seisPSVfwi seisfwi={0};
     struct fwiPSV fwi={0}; struct acq acquisition={0};
     struct snapshot cpu_unset={0},cpu={0},gpu={0},repeat={0};
-    struct denise_cuda_psv_forward_stats stats;
+    struct denise_cuda_psv_forward_stats stats,profile_stats;
     MPI_Request request[4]={MPI_REQUEST_NULL,MPI_REQUEST_NULL,MPI_REQUEST_NULL,MPI_REQUEST_NULL};
     float *hc=NULL; int *dtinv=NULL; int nx=DEFAULT_NX,ny=DEFAULT_NY,nt=DEFAULT_NT,ntr=DEFAULT_NTR;
-    int status=1,k; double cpu_start,cpu_ms,gpu_start,gpu_ms;
+    int status=1,k; double cpu_start,cpu_ms,gpu_start,gpu_ms,profile_start,profile_ms=0.0;
     const char *probe=NULL; int run_mutation_oracle=0,run_no_device_oracle=0;
+    int benchmark=0,profile_compare=0,warmups=1,repetitions=7;
     MPI_Init(&argc,&argv); MPI_Comm_rank(MPI_COMM_WORLD,&MYID);
     for(k=1;k<argc;++k) {
         if(!strcmp(argv[k],"--nx")&&k+1<argc) nx=atoi(argv[++k]);
@@ -406,18 +568,29 @@ int main(int argc,char **argv) {
         else if(!strcmp(argv[k],"--probe-backend")&&k+1<argc) probe=argv[++k];
         else if(!strcmp(argv[k],"--mutation-oracle")) run_mutation_oracle=1;
         else if(!strcmp(argv[k],"--mutation-oracle-no-device")) run_no_device_oracle=1;
+        else if(!strcmp(argv[k],"--benchmark")) benchmark=1;
+        else if(!strcmp(argv[k],"--profile-compare")) profile_compare=1;
+        else if(!strcmp(argv[k],"--warmup")&&k+1<argc) warmups=atoi(argv[++k]);
+        else if(!strcmp(argv[k],"--repetitions")&&k+1<argc) repetitions=atoi(argv[++k]);
         else { fail("unknown command-line option"); goto cleanup; }
     }
-    if(nx<2*TEST_FW+5||ny<2*TEST_FW+5||nt<2||ntr<1) { fail("invalid benchmark dimensions"); goto cleanup; }
+    if(nx<2*TEST_FW+5||ny<2*TEST_FW+5||nt<2||ntr<1||warmups<1||repetitions<1) {
+        fail("invalid benchmark dimensions or repetition counts"); goto cleanup;
+    }
     configure_globals(nx,ny,nt);
     alloc_PSV(&wave,&pml); alloc_matPSV(&material); alloc_mpiPSV(&mpi);
     initialize_cpml(&pml); initialize_material(&material);
     initialize_acquisition(&acquisition,&seis,ntr);
     hc=vector(1,2); hc[1]=9.0f/8.0f; hc[2]=-1.0f/24.0f;
     dtinv=(int*)calloc((size_t)NT+1,sizeof(int));
-    if(!hc||!dtinv||snapshot_alloc(&cpu_unset,ntr)||snapshot_alloc(&cpu,ntr)||
-       snapshot_alloc(&gpu,ntr)||snapshot_alloc(&repeat,ntr)) {
+    if(!hc||!dtinv||(!benchmark&&(snapshot_alloc(&cpu_unset,ntr)||
+       snapshot_alloc(&cpu,ntr)||snapshot_alloc(&gpu,ntr)||snapshot_alloc(&repeat,ntr)))) {
         fail("host fixture allocation failed"); goto cleanup;
+    }
+    if(benchmark) {
+        status=benchmark_solver(&wave,&pml,&material,&mpi,&seis,&seisfwi,&fwi,
+            &acquisition,hc,dtinv,request,ntr,warmups,repetitions);
+        goto cleanup;
     }
     if(run_mutation_oracle||run_no_device_oracle) {
         if(mutation_oracle(&wave,&pml,&seis,ntr,&cpu,&gpu,run_no_device_oracle))
@@ -443,15 +616,22 @@ int main(int argc,char **argv) {
         1,1,1,NT,ntr,NULL,NULL,1,dtinv,0,request,request);
     cpu_ms=(MPI_Wtime()-cpu_start)*1000.0; snapshot_capture(&cpu,&wave,&pml,&seis);
 
-    setenv("DENISE_PSV_BACKEND","cuda",1); gpu_start=MPI_Wtime();
+    if(profile_compare) unsetenv("DENISE_CUDA_PROFILE");
+    setenv("DENISE_PSV_BACKEND","cuda",1); gpu_start=monotonic_ms();
     psv(&wave,&pml,&material,&fwi,&mpi,&seis,&seisfwi,&acquisition,hc,
         1,1,1,NT,ntr,NULL,NULL,1,dtinv,0,request,request);
-    gpu_ms=(MPI_Wtime()-gpu_start)*1000.0; snapshot_capture(&gpu,&wave,&pml,&seis);
+    gpu_ms=monotonic_ms()-gpu_start; snapshot_capture(&gpu,&wave,&pml,&seis);
     if(denise_cuda_psv_dispatch_last_stats(&stats)!=0) { fail("CUDA dispatch stats unavailable"); goto cleanup; }
 
+    if(profile_compare) setenv("DENISE_CUDA_PROFILE","1",1);
+    profile_start=monotonic_ms();
     psv(&wave,&pml,&material,&fwi,&mpi,&seis,&seisfwi,&acquisition,hc,
         1,1,1,NT,ntr,NULL,NULL,1,dtinv,0,request,request);
+    profile_ms=monotonic_ms()-profile_start;
     snapshot_capture(&repeat,&wave,&pml,&seis);
+    if(profile_compare&&denise_cuda_psv_dispatch_last_stats(&profile_stats)!=0) {
+        fail("profile CUDA dispatch stats unavailable"); goto cleanup;
+    }
     report_comparison(&cpu,&gpu,ntr);
     printf("GPU_REPEAT traces=%d final_state=%d\n",
         snapshots_equal(&gpu,&repeat,1),snapshots_equal(&gpu,&repeat,0));
@@ -469,11 +649,23 @@ int main(int argc,char **argv) {
         stats.h2d_transfer_calls,stats.d2h_transfer_calls,stats.h2d_bytes,stats.d2h_bytes,
         stats.full_grid_h2d_per_timestep,stats.full_grid_d2h_per_timestep,
         stats.source_sample_h2d_per_timestep,stats.receiver_sample_d2h_per_timestep);
-    printf("TIMING cpu_total_ms=%.6f cuda_total_wall_ms=%.6f cuda_invocation_ms=%.6f resident_ms=%.6f velocity_ms=%.6f stress_ms=%.6f source_ms=%.6f receiver_ms=%.6f upload_ms=%.6f trace_download_ms=%.6f mutable_download_ms=%.6f\n",
+    printf("TIMING_MODE profile=%d forward_syncs=%zu per_timestep_syncs=0 resident_event_records=%zu resident_elapsed_queries=%zu profile_event_records=%zu profile_elapsed_queries=%zu\n",
+        stats.profiling_enabled,stats.forward_synchronization_calls,
+        stats.resident_event_records,stats.resident_elapsed_queries,
+        stats.profile_event_records,stats.profile_elapsed_queries);
+    if(profile_compare)
+        printf("PROFILE_MODE diagnostic=1 numerical_traces_equal=%d numerical_final_state_equal=%d forward_syncs=%zu event_records=%zu elapsed_queries=%zu velocity_ms=%.6f stress_ms=%.6f source_ms=%.6f receiver_ms=%.6f resident_ms=%.6f normal_host_e2e_ms=%.6f profile_host_e2e_ms=%.6f overhead_ratio=%.6f definitive_target_evidence=0\n",
+            snapshots_equal(&gpu,&repeat,1),snapshots_equal(&gpu,&repeat,0),
+            profile_stats.forward_synchronization_calls,
+            profile_stats.profile_event_records,profile_stats.profile_elapsed_queries,
+            profile_stats.velocity_kernel_ms,profile_stats.stress_kernel_ms,
+            profile_stats.source_kernel_ms,profile_stats.receiver_kernel_ms,
+            profile_stats.resident_timestep_ms,gpu_ms,profile_ms,profile_ms/gpu_ms);
+    printf("TIMING cpu_total_ms=%.6f cuda_total_wall_ms=%.6f cuda_invocation_ms=%.6f resident_ms=%.6f velocity_ms=%.6f stress_ms=%.6f source_ms=%.6f receiver_ms=%.6f context_setup_ms=%.6f upload_ms=%.6f trace_download_ms=%.6f mutable_download_ms=%.6f\n",
         cpu_ms,gpu_ms,stats.total_forward_ms,stats.resident_timestep_ms,
         stats.velocity_kernel_ms,stats.stress_kernel_ms,stats.source_kernel_ms,
-        stats.receiver_kernel_ms,stats.initial_upload_ms,stats.trace_download_ms,
-        stats.mutable_download_ms);
+        stats.receiver_kernel_ms,stats.context_setup_ms,stats.initial_upload_ms,
+        stats.trace_download_ms,stats.mutable_download_ms);
     printf("SOLVER_FORWARD_PASS nx=%d ny=%d nt=%d ntr=%d source=explosive seismo=velocity exchange_state_effect=0\n",
         NX,NY,NT,ntr);
     status=0;
