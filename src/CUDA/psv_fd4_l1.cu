@@ -1,4 +1,5 @@
 #include "denise_cuda_psv.h"
+#include "denise_cuda_psv_forward.h"
 #include "denise_cuda_backend.h"
 #include <cuda_runtime.h>
 #include <climits>
@@ -331,6 +332,18 @@ int timed_stress(denise_cuda_psv_fd4_l1_impl *c,cudaEvent_t a,cudaEvent_t b,floa
 
 struct denise_cuda_psv_fd4_l1 { denise_cuda_psv_fd4_l1_impl impl; };
 
+struct denise_cuda_psv_forward {
+    denise_cuda_psv_fd4_l1 *core;
+    denise_cuda_psv_forward_config config;
+    int *source_xy;
+    float *source_signal;
+    int *receiver_i;
+    int *receiver_j;
+    float *trace_vx;
+    float *trace_vy;
+    denise_cuda_psv_forward_stats stats;
+};
+
 extern "C" {
 const char *denise_cuda_psv_fd4_l1_last_error(void) { return psv_last_error; }
 
@@ -442,6 +455,47 @@ fail:
     return cuda_failure("state download",rc,__FILE__,__LINE__);
 }
 
+int denise_cuda_psv_fd4_l1_download_mutable(
+        denise_cuda_psv_fd4_l1 *ctx,
+        denise_cuda_psv_fd4_l1_host *h) {
+    psv_last_error[0]='\0';
+    if(!ctx||!h) return contract_failure("mutable download",__FILE__,__LINE__,
+                                         "context or output is null");
+    if(!h->vx||!h->vy||!h->sxx||!h->syy||!h->sxy||
+       !h->r||!h->p||!h->q||
+       !h->psi_sxx_x||!h->psi_sxy_x||!h->psi_syy_y||!h->psi_sxy_y||
+       !h->psi_vxx||!h->psi_vyx||!h->psi_vyy||!h->psi_vxy)
+        return contract_failure("mutable download",__FILE__,__LINE__,
+                                "one or more mutable host fields are null");
+    denise_cuda_psv_fd4_l1_impl &c=ctx->impl;
+    size_t f=c.full_elements,x=c.x_cpml_elements,y=c.y_cpml_elements;
+    device_fields &d=c.fields;
+    cudaEvent_t a=nullptr,b=nullptr;
+    cudaError_t rc=cudaEventCreate(&a);
+    if(rc!=cudaSuccess) return cuda_failure("mutable download event create",rc,__FILE__,__LINE__);
+    rc=cudaEventCreate(&b);
+    if(rc!=cudaSuccess) { cudaEventDestroy(a); return cuda_failure("mutable download event create",rc,__FILE__,__LINE__); }
+    rc=cudaEventRecord(a); if(rc!=cudaSuccess) goto fail;
+#define DMM(host,dev,row,col,count) do { rc=d2h(&(host)[row][col],(dev),(count),&c.stats); if(rc!=cudaSuccess) goto fail; } while(0)
+#define DMT(host,dev,row,col,count) do { rc=d2h(&(host)[row][col][1],(dev),(count),&c.stats); if(rc!=cudaSuccess) goto fail; } while(0)
+    DMM(h->vx,d.vx,-2,-2,f); DMM(h->vy,d.vy,-2,-2,f);
+    DMM(h->sxx,d.sxx,-2,-2,f); DMM(h->syy,d.syy,-2,-2,f); DMM(h->sxy,d.sxy,-2,-2,f);
+    DMT(h->r,d.r1,-2,-2,f); DMT(h->p,d.p1,-2,-2,f); DMT(h->q,d.q1,-2,-2,f);
+    DMM(h->psi_sxx_x,d.psi_sxx_x,1,1,x); DMM(h->psi_sxy_x,d.psi_sxy_x,1,1,x);
+    DMM(h->psi_vxx,d.psi_vxx,1,1,x); DMM(h->psi_vyx,d.psi_vyx,1,1,x);
+    DMM(h->psi_syy_y,d.psi_syy_y,1,1,y); DMM(h->psi_sxy_y,d.psi_sxy_y,1,1,y);
+    DMM(h->psi_vyy,d.psi_vyy,1,1,y); DMM(h->psi_vxy,d.psi_vxy,1,1,y);
+#undef DMM
+#undef DMT
+    rc=cudaEventRecord(b); if(rc!=cudaSuccess) goto fail;
+    rc=cudaEventSynchronize(b); if(rc!=cudaSuccess) goto fail;
+    { float ms=0.0f; rc=cudaEventElapsedTime(&ms,a,b); if(rc!=cudaSuccess) goto fail; c.stats.download_ms+=ms; }
+    cudaEventDestroy(b); cudaEventDestroy(a); return 0;
+fail:
+    cudaEventDestroy(b); cudaEventDestroy(a);
+    return cuda_failure("mutable state download",rc,__FILE__,__LINE__);
+}
+
 int denise_cuda_psv_fd4_l1_get_stats(const denise_cuda_psv_fd4_l1 *ctx,
                                      denise_cuda_psv_fd4_l1_stats *stats) {
     psv_last_error[0]='\0';
@@ -459,6 +513,357 @@ int denise_cuda_psv_fd4_l1_destroy(denise_cuda_psv_fd4_l1 **handle) {
     delete ctx;
     if(rc!=cudaSuccess) return cuda_failure("destroy cudaFree",rc,__FILE__,__LINE__);
     return 0;
+}
+
+}  // extern "C"
+
+namespace {
+
+int validate_forward_config(const denise_cuda_psv_forward_config *c,
+                            const char *operation) {
+    if(!c) return contract_failure(operation,__FILE__,__LINE__,
+                                   "forward configuration is null");
+    if(validate_config(&c->core,operation)!=0) return -1;
+    if(c->nt<2||c->ntr<1)
+        return contract_failure(operation,__FILE__,__LINE__,
+                                "NT must be at least 2 and receiver count positive");
+    if(c->global_mode!=0||c->source_count!=1||c->source_type!=1||
+       c->seismo!=1||c->ndt!=1||c->snapshots!=0||c->inv_stf!=0)
+        return contract_failure(operation,__FILE__,__LINE__,
+            "requires MODE=0 one QUELLTYP=1 source SEISMO=1 NDT=1 SNAP=0 INV_STF=0");
+    return 0;
+}
+
+int calculate_forward_plan(const denise_cuda_psv_forward_config *c,
+                           denise_cuda_psv_forward_stats *plan) {
+    if(!plan) return contract_failure("forward required bytes",__FILE__,__LINE__,
+                                      "plan output is null");
+    std::memset(plan,0,sizeof(*plan));
+    if(validate_forward_config(c,"forward required bytes")!=0) return -1;
+    size_t fnx,fny,full,x,y,total,part,samples;
+    if(calculate_sizes(&c->core,&fnx,&fny,&full,&x,&y,&plan->b1_core_bytes)!=0)
+        return -1;
+    if(!checked_mul((size_t)c->nt,sizeof(float),&plan->source_signal_bytes)||
+       !checked_mul((size_t)2,sizeof(int),&plan->source_geometry_bytes)||
+       !checked_mul((size_t)c->ntr,2,&part)||
+       !checked_mul(part,sizeof(int),&plan->receiver_geometry_bytes)||
+       !checked_mul((size_t)c->ntr,(size_t)c->nt,&samples)||
+       !checked_mul(samples,2,&part)||
+       !checked_mul(part,sizeof(float),&plan->trace_bytes))
+        return contract_failure("forward required bytes",__FILE__,__LINE__,
+                                "forward state size overflows size_t");
+    total=plan->b1_core_bytes;
+    if(!checked_add(total,plan->source_signal_bytes,&total)||
+       !checked_add(total,plan->source_geometry_bytes,&total)||
+       !checked_add(total,plan->receiver_geometry_bytes,&total)||
+       !checked_add(total,plan->trace_bytes,&total)||
+       !checked_add(total,plan->workspace_bytes,&total))
+        return contract_failure("forward required bytes",__FILE__,__LINE__,
+                                "aggregate forward state size overflows size_t");
+    plan->total_mandatory_bytes=total;
+    return 0;
+}
+
+cudaError_t raw_h2d(void *device,const void *host,size_t bytes,
+                    denise_cuda_psv_fd4_l1_stats *stats) {
+    cudaError_t rc=cudaMemcpy(device,host,bytes,cudaMemcpyHostToDevice);
+    if(rc==cudaSuccess) { ++stats->h2d_transfer_calls; stats->h2d_bytes+=bytes; }
+    return rc;
+}
+
+__global__ void explosive_source_fd4_l1(device_fields d,size_t pitch,
+                                        const int *source_xy,
+                                        const float *signal,int nt,int total_nt,
+                                        float dt) {
+    if(blockIdx.x||threadIdx.x) return;
+    float amp;
+    if(nt==1) amp=signal[1]/dt;
+    else if(nt<total_nt) amp=(signal[nt]-signal[nt-2])/dt;
+    else amp=-signal[nt-2]/dt;
+    size_t q=fi(source_xy[0],source_xy[1],pitch);
+    d.sxx[q]+=amp;
+    d.syy[q]+=amp;
+}
+
+__global__ void sample_velocity_receivers(device_fields d,size_t pitch,
+                                           const int *receiver_i,
+                                           const int *receiver_j,
+                                           float *trace_vx,float *trace_vy,
+                                           int ntr,int nt,int total_nt) {
+    int receiver=(int)(blockIdx.x*blockDim.x+threadIdx.x);
+    if(receiver>=ntr) return;
+    size_t q=fi(receiver_i[receiver],receiver_j[receiver],pitch);
+    size_t sample=(size_t)receiver*(size_t)total_nt+(size_t)(nt-1);
+    trace_vx[sample]=d.vx[q];
+    trace_vy[sample]=d.vy[q];
+}
+
+int timed_source(denise_cuda_psv_forward *f,int nt,
+                 cudaEvent_t a,cudaEvent_t b,float *ms) {
+    denise_cuda_psv_fd4_l1_impl &c=f->core->impl;
+    PSV_CUDA_CALL("source event start",cudaEventRecord(a));
+    explosive_source_fd4_l1<<<1,1>>>(c.fields,c.full_nx,f->source_xy,
+        f->source_signal,nt,f->config.nt,f->config.core.dt);
+    PSV_CUDA_CALL("source kernel launch",cudaGetLastError());
+    PSV_CUDA_CALL("source event stop",cudaEventRecord(b));
+    PSV_CUDA_CALL("source kernel completion",cudaEventSynchronize(b));
+    PSV_CUDA_CALL("source elapsed",cudaEventElapsedTime(ms,a,b));
+    return 0;
+}
+
+int timed_receivers(denise_cuda_psv_forward *f,int nt,
+                    cudaEvent_t a,cudaEvent_t b,float *ms) {
+    denise_cuda_psv_fd4_l1_impl &c=f->core->impl;
+    int blocks=(f->config.ntr+127)/128;
+    PSV_CUDA_CALL("receiver event start",cudaEventRecord(a));
+    sample_velocity_receivers<<<blocks,128>>>(c.fields,c.full_nx,
+        f->receiver_i,f->receiver_j,f->trace_vx,f->trace_vy,
+        f->config.ntr,nt,f->config.nt);
+    PSV_CUDA_CALL("receiver kernel launch",cudaGetLastError());
+    PSV_CUDA_CALL("receiver event stop",cudaEventRecord(b));
+    PSV_CUDA_CALL("receiver kernel completion",cudaEventSynchronize(b));
+    PSV_CUDA_CALL("receiver elapsed",cudaEventElapsedTime(ms,a,b));
+    return 0;
+}
+
+void refresh_forward_stats(denise_cuda_psv_forward *f) {
+    const denise_cuda_psv_fd4_l1_stats &core=f->core->impl.stats;
+    f->stats.h2d_transfer_calls=core.h2d_transfer_calls;
+    f->stats.d2h_transfer_calls=core.d2h_transfer_calls;
+    f->stats.h2d_bytes=core.h2d_bytes;
+    f->stats.d2h_bytes=core.d2h_bytes;
+    f->stats.timesteps=core.timesteps;
+    f->stats.velocity_kernel_ms=core.velocity_kernel_ms;
+    f->stats.stress_kernel_ms=core.stress_kernel_ms;
+}
+
+void release_forward_partial(denise_cuda_psv_forward *f) {
+    if(!f) return;
+    if(f->core) {
+        if(f->core->impl.storage) cudaFree(f->core->impl.storage);
+        delete f->core;
+    }
+    delete f;
+}
+
+}  // namespace
+
+extern "C" {
+
+const char *denise_cuda_psv_forward_last_error(void) { return psv_last_error; }
+
+int denise_cuda_psv_forward_required_bytes(
+        const denise_cuda_psv_forward_config *config,
+        denise_cuda_psv_forward_stats *plan) {
+    psv_last_error[0]='\0';
+    return calculate_forward_plan(config,plan);
+}
+
+int denise_cuda_psv_forward_create(
+        const denise_cuda_psv_forward_config *cfg,
+        const denise_cuda_psv_forward_host *host,
+        denise_cuda_psv_forward **output) {
+    psv_last_error[0]='\0';
+    if(!output) return contract_failure("forward create",__FILE__,__LINE__,
+                                        "context output is null");
+    *output=nullptr;
+    if(!host) return contract_failure("forward create",__FILE__,__LINE__,
+                                      "host adapter is null");
+    denise_cuda_psv_forward_stats plan;
+    if(calculate_forward_plan(cfg,&plan)!=0||validate_host(&host->core)!=0) return -1;
+    if(!host->source_positions||!host->source_positions[1]||!host->source_positions[2]||
+       !host->source_signals||!host->source_signals[1]||
+       !host->receiver_positions||!host->receiver_positions[1]||!host->receiver_positions[2]||
+       !host->sectionvx||!host->sectionvy)
+        return contract_failure("forward create",__FILE__,__LINE__,
+                                "source, receiver, or trace host adapter is null");
+    int source_i=(int)host->source_positions[1][1];
+    int source_j=(int)host->source_positions[2][1];
+    if(source_i<1||source_i>cfg->core.nx||source_j<1||source_j>cfg->core.ny)
+        return contract_failure("forward create",__FILE__,__LINE__,
+                                "source coordinate (%d,%d) is outside physical grid",source_i,source_j);
+    for(int r=1;r<=cfg->ntr;++r) {
+        int i=host->receiver_positions[1][r],j=host->receiver_positions[2][r];
+        if(i<1||i>cfg->core.nx||j<1||j>cfg->core.ny)
+            return contract_failure("forward create",__FILE__,__LINE__,
+                "receiver %d coordinate (%d,%d) is outside physical grid",r,i,j);
+    }
+    denise_cuda_device_info info;
+    if(denise_cuda_select_device(cfg->core.logical_device,
+            cfg->core.safety_reserve_bytes,cfg->core.user_cap_bytes,&info)!=0)
+        return contract_failure("forward create device selection",__FILE__,__LINE__,
+                                "%s",denise_cuda_last_error());
+    if(plan.total_mandatory_bytes>info.usable_budget_bytes)
+        return contract_failure("forward create aggregate VRAM budget",__FILE__,__LINE__,
+            "mandatory forward state %zu exceeds usable budget %zu",
+            plan.total_mandatory_bytes,info.usable_budget_bytes);
+
+    denise_cuda_psv_forward *f=new(std::nothrow) denise_cuda_psv_forward();
+    denise_cuda_psv_fd4_l1 *core=new(std::nothrow) denise_cuda_psv_fd4_l1();
+    if(!f||!core) { delete f; delete core; return contract_failure(
+        "forward create",__FILE__,__LINE__,"host allocation failed"); }
+    std::memset(f,0,sizeof(*f)); std::memset(core,0,sizeof(*core));
+    f->core=core; f->config=*cfg; f->stats=plan;
+    f->stats.usable_budget_bytes=info.usable_budget_bytes;
+    f->stats.remaining_budget_bytes=info.usable_budget_bytes-plan.total_mandatory_bytes;
+
+    size_t fnx,fny,full,x,y,core_bytes;
+    if(calculate_sizes(&cfg->core,&fnx,&fny,&full,&x,&y,&core_bytes)!=0) {
+        release_forward_partial(f); return -1;
+    }
+    denise_cuda_psv_fd4_l1_impl &c=core->impl;
+    c.config=cfg->core; c.full_nx=fnx; c.full_ny=fny; c.full_elements=full;
+    c.x_cpml_elements=x; c.y_cpml_elements=y;
+    c.stats.mandatory_state_bytes=core_bytes;
+    c.stats.usable_budget_bytes=info.usable_budget_bytes;
+    c.stats.remaining_budget_bytes=info.usable_budget_bytes-plan.total_mandatory_bytes;
+    cudaError_t rc=cudaMalloc((void**)&c.storage,plan.total_mandatory_bytes);
+    if(rc!=cudaSuccess) { release_forward_partial(f); return cuda_failure(
+        "aggregate forward cudaMalloc",rc,__FILE__,__LINE__); }
+    assign_slices(&c);
+    unsigned char *cursor=(unsigned char*)c.storage+core_bytes;
+    f->source_xy=(int*)cursor; cursor+=plan.source_geometry_bytes;
+    f->source_signal=(float*)cursor; cursor+=plan.source_signal_bytes;
+    f->receiver_i=(int*)cursor; cursor+=(size_t)cfg->ntr*sizeof(int);
+    f->receiver_j=(int*)cursor; cursor+=(size_t)cfg->ntr*sizeof(int);
+    size_t trace_elements=(size_t)cfg->ntr*(size_t)cfg->nt;
+    f->trace_vx=(float*)cursor; cursor+=trace_elements*sizeof(float);
+    f->trace_vy=(float*)cursor;
+
+    if(upload_initial(&c,&host->core)!=0) { release_forward_partial(f); return -1; }
+    cudaEvent_t a=nullptr,b=nullptr;
+    rc=cudaEventCreate(&a);
+    if(rc!=cudaSuccess) { release_forward_partial(f); return cuda_failure(
+        "forward upload event create",rc,__FILE__,__LINE__); }
+    rc=cudaEventCreate(&b);
+    if(rc!=cudaSuccess) { cudaEventDestroy(a); release_forward_partial(f); return cuda_failure(
+        "forward upload event create",rc,__FILE__,__LINE__); }
+    rc=cudaEventRecord(a);
+    int source_xy[2]={source_i,source_j};
+    if(rc==cudaSuccess) rc=raw_h2d(f->source_xy,source_xy,sizeof(source_xy),&c.stats);
+    if(rc==cudaSuccess) rc=raw_h2d(f->source_signal,&host->source_signals[1][1],
+                                   plan.source_signal_bytes,&c.stats);
+    if(rc==cudaSuccess) rc=raw_h2d(f->receiver_i,&host->receiver_positions[1][1],
+                                   (size_t)cfg->ntr*sizeof(int),&c.stats);
+    if(rc==cudaSuccess) rc=raw_h2d(f->receiver_j,&host->receiver_positions[2][1],
+                                   (size_t)cfg->ntr*sizeof(int),&c.stats);
+    if(rc==cudaSuccess) rc=cudaMemset(f->trace_vx,0,plan.trace_bytes);
+    if(rc==cudaSuccess) rc=cudaEventRecord(b);
+    if(rc==cudaSuccess) rc=cudaEventSynchronize(b);
+    float extra_upload_ms=0.0f;
+    if(rc==cudaSuccess) rc=cudaEventElapsedTime(&extra_upload_ms,a,b);
+    cudaEventDestroy(b); cudaEventDestroy(a);
+    if(rc!=cudaSuccess) { release_forward_partial(f); return cuda_failure(
+        "forward source/receiver upload",rc,__FILE__,__LINE__); }
+    f->stats.initial_upload_ms=c.stats.upload_ms+extra_upload_ms;
+    refresh_forward_stats(f);
+    *output=f;
+    return 0;
+}
+
+int denise_cuda_psv_forward_run(denise_cuda_psv_forward *f) {
+    psv_last_error[0]='\0';
+    if(!f) return contract_failure("forward run",__FILE__,__LINE__,"context is null");
+    if(f->core->impl.stats.timesteps)
+        return contract_failure("forward run",__FILE__,__LINE__,"context has already run");
+    cudaEvent_t phase_a=nullptr,phase_b=nullptr,total_a=nullptr,total_b=nullptr;
+    cudaError_t rc=cudaEventCreate(&phase_a);
+    if(rc==cudaSuccess) rc=cudaEventCreate(&phase_b);
+    if(rc==cudaSuccess) rc=cudaEventCreate(&total_a);
+    if(rc==cudaSuccess) rc=cudaEventCreate(&total_b);
+    if(rc!=cudaSuccess) {
+        if(total_b) cudaEventDestroy(total_b); if(total_a) cudaEventDestroy(total_a);
+        if(phase_b) cudaEventDestroy(phase_b); if(phase_a) cudaEventDestroy(phase_a);
+        return cuda_failure("forward kernel event create",rc,__FILE__,__LINE__);
+    }
+    denise_cuda_psv_fd4_l1_impl &c=f->core->impl;
+    for(int nt=1;nt<=f->config.nt;++nt) {
+        size_t h2d_before=c.stats.h2d_transfer_calls;
+        size_t d2h_before=c.stats.d2h_transfer_calls;
+        float vm=0.0f,sm=0.0f,qm=0.0f,rm=0.0f,total=0.0f;
+        rc=cudaEventRecord(total_a);
+        if(rc!=cudaSuccess||timed_velocity(&c,phase_a,phase_b,&vm)!=0||
+           timed_stress(&c,phase_a,phase_b,&sm)!=0||
+           timed_source(f,nt,phase_a,phase_b,&qm)!=0||
+           timed_receivers(f,nt,phase_a,phase_b,&rm)!=0) goto fail;
+        rc=cudaEventRecord(total_b); if(rc!=cudaSuccess) goto fail;
+        rc=cudaEventSynchronize(total_b); if(rc!=cudaSuccess) goto fail;
+        rc=cudaEventElapsedTime(&total,total_a,total_b); if(rc!=cudaSuccess) goto fail;
+        c.stats.velocity_kernel_ms+=vm; c.stats.stress_kernel_ms+=sm;
+        c.stats.combined_kernel_ms+=vm+sm; ++c.stats.timesteps;
+        f->stats.source_kernel_ms+=qm; f->stats.receiver_kernel_ms+=rm;
+        f->stats.resident_timestep_ms+=total;
+        if(c.stats.h2d_transfer_calls!=h2d_before||
+           c.stats.d2h_transfer_calls!=d2h_before) {
+            contract_failure("forward timestep residency",__FILE__,__LINE__,
+                "host/device transfer detected during timestep %d",nt);
+            goto fail;
+        }
+    }
+    cudaEventDestroy(total_b); cudaEventDestroy(total_a);
+    cudaEventDestroy(phase_b); cudaEventDestroy(phase_a);
+    refresh_forward_stats(f);
+    return 0;
+fail:
+    cudaEventDestroy(total_b); cudaEventDestroy(total_a);
+    cudaEventDestroy(phase_b); cudaEventDestroy(phase_a);
+    if(rc!=cudaSuccess) return cuda_failure("forward timestep",rc,__FILE__,__LINE__);
+    return -1;
+}
+
+int denise_cuda_psv_forward_download_traces(denise_cuda_psv_forward *f,
+                                             float **sectionvx,
+                                             float **sectionvy) {
+    psv_last_error[0]='\0';
+    if(!f||!sectionvx||!sectionvy)
+        return contract_failure("trace download",__FILE__,__LINE__,"output is null");
+    size_t elements=(size_t)f->config.ntr*(size_t)f->config.nt;
+    cudaEvent_t a=nullptr,b=nullptr;
+    cudaError_t rc=cudaEventCreate(&a);
+    if(rc==cudaSuccess) rc=cudaEventCreate(&b);
+    if(rc!=cudaSuccess) { if(a) cudaEventDestroy(a); return cuda_failure(
+        "trace download event create",rc,__FILE__,__LINE__); }
+    rc=cudaEventRecord(a);
+    if(rc==cudaSuccess) rc=d2h(&sectionvx[1][1],f->trace_vx,elements,&f->core->impl.stats);
+    if(rc==cudaSuccess) rc=d2h(&sectionvy[1][1],f->trace_vy,elements,&f->core->impl.stats);
+    if(rc==cudaSuccess) rc=cudaEventRecord(b);
+    if(rc==cudaSuccess) rc=cudaEventSynchronize(b);
+    float ms=0.0f;
+    if(rc==cudaSuccess) rc=cudaEventElapsedTime(&ms,a,b);
+    cudaEventDestroy(b); cudaEventDestroy(a);
+    if(rc!=cudaSuccess) return cuda_failure("trace download",rc,__FILE__,__LINE__);
+    f->stats.trace_download_ms+=ms; refresh_forward_stats(f); return 0;
+}
+
+int denise_cuda_psv_forward_download_mutable(
+        denise_cuda_psv_forward *f,
+        denise_cuda_psv_fd4_l1_host *host) {
+    psv_last_error[0]='\0';
+    if(!f) return contract_failure("forward mutable download",__FILE__,__LINE__,
+                                   "context is null");
+    float before=f->core->impl.stats.download_ms;
+    if(denise_cuda_psv_fd4_l1_download_mutable(f->core,host)!=0) return -1;
+    f->stats.mutable_download_ms+=f->core->impl.stats.download_ms-before;
+    refresh_forward_stats(f); return 0;
+}
+
+int denise_cuda_psv_forward_get_stats(const denise_cuda_psv_forward *f,
+                                       denise_cuda_psv_forward_stats *stats) {
+    psv_last_error[0]='\0';
+    if(!f||!stats) return contract_failure("forward get stats",__FILE__,__LINE__,
+                                           "context or output is null");
+    denise_cuda_psv_forward *mutable_f=const_cast<denise_cuda_psv_forward*>(f);
+    refresh_forward_stats(mutable_f); *stats=mutable_f->stats; return 0;
+}
+
+int denise_cuda_psv_forward_destroy(denise_cuda_psv_forward **handle) {
+    psv_last_error[0]='\0';
+    if(!handle) return 0;
+    denise_cuda_psv_forward *f=*handle; *handle=nullptr;
+    if(!f) return 0;
+    int result=denise_cuda_psv_fd4_l1_destroy(&f->core);
+    delete f;
+    return result;
 }
 
 }  // extern "C"
