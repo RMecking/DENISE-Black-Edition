@@ -299,8 +299,8 @@ __global__ void stress_fd4_l1(device_fields d,int nx,int ny,int fw,size_t pitch,
     d.sxx[q]+=d.g[q]*(vxx+vyy)-(2.0*d.f[q]*vyy)+dth*oldp;
     d.syy[q]+=d.g[q]*(vxx+vyy)-(2.0*d.f[q]*vxx)+dth*oldq;
     float newr=bip1*(oldr*cip1-d.dip1[q]*(vxy+vyx));
-    float newp=bjm1*(oldp*cjm1-d.e1[q]*(vxx+vyy)+(2.0*d.d1[q]*vyy));
-    float newq=bjm1*(oldq*cjm1-d.e1[q]*(vxx+vyy)+(2.0*d.d1[q]*vxx));
+    float newp=bjm1*(oldp*cjm1-d.e1[q]*(vxx+vyy)+(2.0f*d.d1[q]*vyy));
+    float newq=bjm1*(oldq*cjm1-d.e1[q]*(vxx+vyy)+(2.0f*d.d1[q]*vxx));
     d.r1[q]=newr; d.p1[q]=newp; d.q1[q]=newq;
     d.sxy[q]+=dth*newr; d.sxx[q]+=dth*newp; d.syy[q]+=dth*newq;
 #undef A
