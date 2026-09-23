@@ -322,7 +322,7 @@ int timed_velocity(denise_cuda_psv_fd4_l1_impl *c,cudaEvent_t a,cudaEvent_t b,fl
     return 0;
 }
 int launch_stress(denise_cuda_psv_fd4_l1_impl *c) {
-    dim3 block(16,16),grid((c->config.nx+15)/16,(c->config.ny+15)/16);
+    dim3 block(32,4),grid((c->config.nx+31)/32,(c->config.ny+3)/4);
     stress_fd4_l1<<<grid,block>>>(c->fields,c->config.nx,c->config.ny,c->config.fw,
         c->full_nx,c->config.dt,c->config.dh,c->config.hc1,c->config.hc2,
         c->config.bip1,c->config.bjm1,c->config.cip1,c->config.cjm1);
