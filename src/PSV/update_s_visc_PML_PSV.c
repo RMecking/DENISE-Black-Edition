@@ -338,8 +338,8 @@ void update_s_visc_PML_PSV(int nx1, int nx2, int ny1, int ny2,
 			sumr=sump=sumq=0.0;
 			for (l=1;l<=L;l++){
 				r[j][i][l] = bip[l]*(r[j][i][l]*cip[l]-(dip[j][i][l]*(vxy+vyx)));
-				p[j][i][l] = bjm[l]*(p[j][i][l]*cjm[l]-(e[j][i][l]*(vxx+vyy))+(2.0*d[j][i][l]*vyy));
-				q[j][i][l] = bjm[l]*(q[j][i][l]*cjm[l]-(e[j][i][l]*(vxx+vyy))+(2.0*d[j][i][l]*vxx));
+				p[j][i][l] = bjm[l]*(p[j][i][l]*cjm[l]-(e[j][i][l]*(vxx+vyy))+(2.0f*d[j][i][l]*vyy));
+				q[j][i][l] = bjm[l]*(q[j][i][l]*cjm[l]-(e[j][i][l]*(vxx+vyy))+(2.0f*d[j][i][l]*vxx));
 				sumr += r[j][i][l];
 				sump += p[j][i][l];
 				sumq += q[j][i][l];
