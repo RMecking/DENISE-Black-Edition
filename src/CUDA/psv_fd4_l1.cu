@@ -307,7 +307,7 @@ __global__ void stress_fd4_l1(device_fields d,int nx,int ny,int fw,size_t pitch,
 }
 
 int launch_velocity(denise_cuda_psv_fd4_l1_impl *c) {
-    dim3 block(16,16),grid((c->config.nx+15)/16,(c->config.ny+15)/16);
+    dim3 block(32,4),grid((c->config.nx+31)/32,(c->config.ny+3)/4);
     velocity_fd4<<<grid,block>>>(c->fields,c->config.nx,c->config.ny,c->config.fw,
         c->full_nx,c->config.dt,c->config.dh,c->config.hc1,c->config.hc2);
     PSV_CUDA_CALL("velocity kernel launch",cudaGetLastError());
