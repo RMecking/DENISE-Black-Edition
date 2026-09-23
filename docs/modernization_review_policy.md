@@ -6,32 +6,47 @@ This document defines stable working and review rules for DENISE
 modernization. The rules are independent of any single milestone or
 implementation detail.
 
+The root [`AGENTS.md`](../AGENTS.md) defines the repository-wide operating
+model, worker roles, decision rights, safety boundaries, and publication
+authority. This policy specializes the modernization review/locking process and
+does not override `AGENTS.md`, frozen scientific contracts, or explicit task
+packets.
+
 ## Roles
 
-### Codex
+- `DENISE — NUMERICS` owns normal numerical implementation, solver-local
+  production work, performance work, and scoped implementation evidence.
+- `DENISE — NUMERICS-SPECIALIST` is an on-demand independent research/advice
+  role for a hard, bounded numerical question. It does not become a second
+  production owner; accepted ideas return to `NUMERICS` for integration.
+- `DENISE — SCIENTIFIC-VERIFICATION` independently reviews the exact candidate
+  state and evidence. It reports findings and does not silently repair
+  production code.
+- `DENISE — TEST-ORACLES` creates or maintains durable independent scientific
+  checks when a new behavior needs an independent target or a real oracle/
+  coverage gap exists. It is not an automatic stage after ordinary
+  optimization work.
+- `DENISE — DOCS-AUDIT` maintains durable scientific, provenance, milestone,
+  and context documentation when requested.
+- `DENISE — REPO-OPS` performs mechanical Git/GitHub publication operations
+  only after content acceptance and explicit authorization; it does not make
+  scientific or product changes.
 
-- Implements narrowly scoped work packages.
-- Executes required focused and regression verification.
-- Reports exact state, diffs, and results.
-- Stops at review gates.
+There is no permanent Codex orchestrator. Keep each worker on a stable role and
+configuration through a task. Delegate a hard bounded numerical question to
+`NUMERICS-SPECIALIST` instead of reconfiguring `NUMERICS` and discarding useful
+context.
 
-### Independent reviewer
-
-- Defines or reviews checkpoint scope and acceptance.
-- Inspects mathematical and implementation evidence.
-- Checks scope creep.
-- Grants explicit commit and publication gates.
-- Independently verifies published GitHub state.
-
-### Git and GitHub
+## Git and GitHub
 
 Git objects and GitHub publication state are the authoritative record of
 published work.
 
-### Tests and oracles
+## Tests and oracles
 
 Tests and oracles are authoritative evidence only for the specific contract
-they define.
+they define. An oracle must remain independent of the implementation property
+it is meant to check.
 
 ## Branch safety
 
@@ -44,26 +59,39 @@ they define.
 
 ## Review gates
 
-The normal sequence is:
+The default implementation/performance loop is:
 
-1. Define the work package with exact scope and exclusions.
-2. Codex implements locally.
-3. Run focused verification and relevant regressions.
-4. Before commit, review production changes from the actual current patch or
-   complete files.
-5. The reviewer grants explicit commit/push approval.
-6. Codex commits only approved paths and pushes normally.
-7. The reviewer independently checks GitHub for the SHA, parent, message,
-   exact file list, statistics, relevant file modes, and remote branch head.
-8. Only then is the checkpoint **LOCKED**.
+1. Define the work package with exact base, scope, exclusions, frozen
+   scientific behavior, and current publication authority.
+2. `NUMERICS` investigates/implements and produces focused evidence.
+3. If a genuinely hard bounded numerical question blocks progress,
+   `NUMERICS-SPECIALIST` may investigate it independently; `NUMERICS` integrates
+   any accepted approach.
+4. Run focused verification and relevant regressions required by the task and
+   the affected scientific contract.
+5. `SCIENTIFIC-VERIFICATION` independently reviews the exact candidate state,
+   scientific equivalence/correctness, scope, and adequacy of evidence. It does
+   not repair the candidate during verification.
+6. A failed verification returns to implementation/research. Call
+   `TEST-ORACLES` only when independent evidence is actually missing, a new
+   scientific behavior needs a frozen target, or verification identifies a
+   concrete oracle/coverage gap.
+7. After scientific/content acceptance, `REPO-OPS` may perform only the exact
+   commit/push/PR/CI/merge step explicitly authorized at that point.
+8. Published state is independently checked for the expected SHA, parent,
+   message, exact file list/statistics, relevant modes/blobs, remote branch
+   head, and applicable CI evidence before a publication lock is declared.
+9. Only then is the checkpoint **LOCKED**.
 
-Local test success alone does not lock a checkpoint.
+Local test success alone does not lock a checkpoint. Worker completion does not
+authorize the next publication step by itself.
 
 ## Uncommitted review artifacts
 
 - Uncommitted production changes must be reviewable as exact current diffs or
-  complete files.
-- Transient patch files, raw pytest output, and Codex reports normally are not
+  complete files tied to the verified base; after commit, exact Git object/blob
+  identity should be checked against the accepted candidate.
+- Transient patch files, raw pytest output, and worker reports normally are not
   committed merely as transport artifacts.
 - After publication, Git is the canonical patch history.
 
