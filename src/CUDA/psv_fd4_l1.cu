@@ -295,14 +295,18 @@ __global__ void stress_fd4_l1(device_fields d,int nx,int ny,int fw,size_t pitch,
 #undef YCPML
     size_t q=fi(i,j,pitch);
     float oldr=d.r1[q],oldp=d.p1[q],oldq=d.q1[q];
-    d.sxy[q]+=d.fipjp[q]*(vxy+vyx)+dth*oldr;
-    d.sxx[q]+=d.g[q]*(vxx+vyy)-(2.0*d.f[q]*vyy)+dth*oldp;
-    d.syy[q]+=d.g[q]*(vxx+vyy)-(2.0*d.f[q]*vxx)+dth*oldq;
+    float sxy_acc=d.sxy[q];
+    float sxx_acc=d.sxx[q];
+    float syy_acc=d.syy[q];
+    sxy_acc+=d.fipjp[q]*(vxy+vyx)+dth*oldr;
+    sxx_acc+=d.g[q]*(vxx+vyy)-(2.0*d.f[q]*vyy)+dth*oldp;
+    syy_acc+=d.g[q]*(vxx+vyy)-(2.0*d.f[q]*vxx)+dth*oldq;
     float newr=bip1*(oldr*cip1-d.dip1[q]*(vxy+vyx));
     float newp=bjm1*(oldp*cjm1-d.e1[q]*(vxx+vyy)+(2.0f*d.d1[q]*vyy));
     float newq=bjm1*(oldq*cjm1-d.e1[q]*(vxx+vyy)+(2.0f*d.d1[q]*vxx));
     d.r1[q]=newr; d.p1[q]=newp; d.q1[q]=newq;
-    d.sxy[q]+=dth*newr; d.sxx[q]+=dth*newp; d.syy[q]+=dth*newq;
+    sxy_acc+=dth*newr; sxx_acc+=dth*newp; syy_acc+=dth*newq;
+    d.sxy[q]=sxy_acc; d.sxx[q]=sxx_acc; d.syy[q]=syy_acc;
 #undef A
 }
 
