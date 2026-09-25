@@ -234,7 +234,8 @@ __device__ __forceinline__ size_t yi(int i,int h,int nx) {
  * select the four CPML strips/corners while bulk threads follow the same
  * instruction stream without host/device state movement between kernels. */
 __global__ void velocity_fd4(device_fields d,int nx,int ny,int fw,size_t pitch,
-                             float dt,float dh,float hc1,float hc2) {
+                             float dt,float dh,float hc1,float hc2,
+                             float *operands,int slot,size_t stride) {
     int i=1+(int)(blockIdx.x*blockDim.x+threadIdx.x);
     int j=1+(int)(blockIdx.y*blockDim.y+threadIdx.y);
     if(i>nx||j>ny) return;
@@ -260,14 +261,22 @@ __global__ void velocity_fd4(device_fields d,int nx,int ny,int fw,size_t pitch,
 #undef XCPML
 #undef YCPML
     size_t q=fi(i,j,pitch);
-    d.vx[q]+=dt*d.rip[q]*(sxx_x+sxy_y)/dh;
-    d.vy[q]+=dt*d.rjp[q]*(sxy_x+syy_y)/dh;
+    float fx=sxx_x+sxy_y,fy=sxy_x+syy_y;
+    if(operands) {
+        size_t cell=(size_t)(j-1)*(size_t)nx+(size_t)(i-1);
+        size_t offset=(size_t)slot*(size_t)nx*(size_t)ny+cell;
+        operands[offset]=fx;
+        operands[stride+offset]=fy;
+    }
+    d.vx[q]+=dt*d.rip[q]*fx/dh;
+    d.vy[q]+=dt*d.rjp[q]*fy/dh;
 #undef A
 }
 
 __global__ void stress_fd4_l1(device_fields d,int nx,int ny,int fw,size_t pitch,
                               float dt,float dh,float hc1,float hc2,
-                              float bip1,float bjm1,float cip1,float cjm1) {
+                              float bip1,float bjm1,float cip1,float cjm1,
+                              float *operands,int slot,size_t stride) {
     int i=1+(int)(blockIdx.x*blockDim.x+threadIdx.x);
     int j=1+(int)(blockIdx.y*blockDim.y+threadIdx.y);
     if(i>nx||j>ny) return;
@@ -294,6 +303,14 @@ __global__ void stress_fd4_l1(device_fields d,int nx,int ny,int fw,size_t pitch,
 #undef XCPML
 #undef YCPML
     size_t q=fi(i,j,pitch);
+    if(operands) {
+        size_t cell=(size_t)(j-1)*(size_t)nx+(size_t)(i-1);
+        size_t offset=(size_t)slot*(size_t)nx*(size_t)ny+cell;
+        operands[2*stride+offset]=vxx;
+        operands[3*stride+offset]=vyx;
+        operands[4*stride+offset]=vxy;
+        operands[5*stride+offset]=vyy;
+    }
     float oldr=d.r1[q],oldp=d.p1[q],oldq=d.q1[q];
     float sxy_acc=d.sxy[q];
     float sxx_acc=d.sxx[q];
@@ -310,10 +327,12 @@ __global__ void stress_fd4_l1(device_fields d,int nx,int ny,int fw,size_t pitch,
 #undef A
 }
 
-int launch_velocity(denise_cuda_psv_fd4_l1_impl *c) {
+int launch_velocity(denise_cuda_psv_fd4_l1_impl *c,float *operands=nullptr,
+                    int slot=0,size_t stride=0) {
     dim3 block(32,4),grid((c->config.nx+31)/32,(c->config.ny+3)/4);
     velocity_fd4<<<grid,block>>>(c->fields,c->config.nx,c->config.ny,c->config.fw,
-        c->full_nx,c->config.dt,c->config.dh,c->config.hc1,c->config.hc2);
+        c->full_nx,c->config.dt,c->config.dh,c->config.hc1,c->config.hc2,
+        operands,slot,stride);
     PSV_CUDA_CALL("velocity kernel launch",cudaGetLastError());
     return 0;
 }
@@ -325,11 +344,13 @@ int timed_velocity(denise_cuda_psv_fd4_l1_impl *c,cudaEvent_t a,cudaEvent_t b,fl
     PSV_CUDA_CALL("velocity elapsed",cudaEventElapsedTime(ms,a,b));
     return 0;
 }
-int launch_stress(denise_cuda_psv_fd4_l1_impl *c) {
+int launch_stress(denise_cuda_psv_fd4_l1_impl *c,float *operands=nullptr,
+                  int slot=0,size_t stride=0) {
     dim3 block(32,4),grid((c->config.nx+31)/32,(c->config.ny+3)/4);
     stress_fd4_l1<<<grid,block>>>(c->fields,c->config.nx,c->config.ny,c->config.fw,
         c->full_nx,c->config.dt,c->config.dh,c->config.hc1,c->config.hc2,
-        c->config.bip1,c->config.bjm1,c->config.cip1,c->config.cjm1);
+        c->config.bip1,c->config.bjm1,c->config.cip1,c->config.cjm1,
+        operands,slot,stride);
     PSV_CUDA_CALL("stress kernel launch",cudaGetLastError());
     return 0;
 }
@@ -360,6 +381,14 @@ struct denise_cuda_psv_forward {
     int checkpoint_completed_timestep;
     int next_timestep;
     bool checkpoint_valid;
+    float *segment_storage;
+    float *segment_operands;
+    denise_cuda_psv_forward_config segment_config;
+    int segment_count;
+    int segment_captured;
+    int segment_record_armed;
+    int segment_record_ready;
+    bool segment_original_complete;
     bool profiling_enabled;
     denise_cuda_psv_forward_stats stats;
 };
@@ -684,18 +713,17 @@ bool checkpoint_compatible(const denise_cuda_psv_forward_config &a,
         a.inv_stf==b.inv_stf;
 }
 
-int checkpoint_copy(denise_cuda_psv_forward *f,bool capture) {
+int checkpoint_copy_to(denise_cuda_psv_forward *f,float *storage,bool capture,
+                       const char *operation) {
     denise_cuda_psv_fd4_l1_impl &c=f->core->impl;
     device_fields &d=c.fields;
-    float *cursor=f->checkpoint_storage;
+    float *cursor=storage;
     const size_t full=c.full_elements,x=c.x_cpml_elements,y=c.y_cpml_elements;
 #define COPY(member,n) do {                                                  \
     const size_t bytes=(n)*sizeof(float);                                     \
     cudaError_t rc=cudaMemcpyAsync(capture?cursor:d.member,                   \
         capture?d.member:cursor,bytes,cudaMemcpyDeviceToDevice);              \
-    if(rc!=cudaSuccess) return cuda_failure(                                   \
-        capture?"checkpoint capture D2D":"checkpoint restore D2D",rc,       \
-        __FILE__,__LINE__);                                                    \
+    if(rc!=cudaSuccess) return cuda_failure(operation,rc,__FILE__,__LINE__);  \
     cursor+=(n); ++f->stats.checkpoint_d2d_calls;                              \
     f->stats.checkpoint_d2d_bytes+=bytes;                                      \
 } while(0)
@@ -707,9 +735,15 @@ int checkpoint_copy(denise_cuda_psv_forward *f,bool capture) {
     return 0;
 }
 
+int checkpoint_copy(denise_cuda_psv_forward *f,bool capture) {
+    return checkpoint_copy_to(f,f->checkpoint_storage,capture,
+        capture?"checkpoint capture D2D":"checkpoint restore D2D");
+}
+
 void release_forward_partial(denise_cuda_psv_forward *f) {
     if(!f) return;
     if(f->checkpoint_storage) cudaFree(f->checkpoint_storage);
+    if(f->segment_storage) cudaFree(f->segment_storage);
     if(f->core) {
         if(f->core->impl.storage) cudaFree(f->core->impl.storage);
         delete f->core;
@@ -854,6 +888,15 @@ int denise_cuda_psv_forward_run_range(denise_cuda_psv_forward *f,
         return contract_failure("forward range",__FILE__,__LINE__,
             "expected absolute begin=%d and 1<=begin<=end<=NT=%d; got [%d,%d]",
             f->next_timestep,f->config.nt,begin,end);
+    if(f->segment_record_armed) {
+        int k=f->segment_record_armed-1;
+        int expected_begin=(int)(((long long)k*f->config.nt)/f->segment_count)+1;
+        int expected_end=(int)(((long long)(k+1)*f->config.nt)/f->segment_count);
+        if(begin!=expected_begin||end!=expected_end)
+            return contract_failure("segment recording range",__FILE__,__LINE__,
+                "segment %d requires [%d,%d], got [%d,%d]",
+                k,expected_begin,expected_end,begin,end);
+    }
     const size_t count=(size_t)end-(size_t)begin+1;
     size_t event_count;
     if(f->profiling_enabled) {
@@ -876,6 +919,9 @@ int denise_cuda_psv_forward_run_range(denise_cuda_psv_forward *f,
         }
     }
     denise_cuda_psv_fd4_l1_impl &c=f->core->impl;
+    float *operands=f->segment_record_armed?f->segment_operands:nullptr;
+    size_t operand_stride=(size_t)f->stats.max_segment_length*
+        (size_t)f->config.core.nx*(size_t)f->config.core.ny;
     rc=cudaEventRecord(events[0]);
     if(rc!=cudaSuccess) goto fail;
     if(f->profiling_enabled) ++f->stats.profile_event_records;
@@ -884,12 +930,12 @@ int denise_cuda_psv_forward_run_range(denise_cuda_psv_forward *f,
         size_t h2d_before=c.stats.h2d_transfer_calls;
         size_t d2h_before=c.stats.d2h_transfer_calls;
         size_t event=((size_t)nt-(size_t)begin)*4;
-        if(launch_velocity(&c)!=0) goto launch_fail;
+        if(launch_velocity(&c,operands,nt-begin,operand_stride)!=0) goto launch_fail;
         if(f->profiling_enabled) {
             rc=cudaEventRecord(events[event+1]); if(rc!=cudaSuccess) goto fail;
             ++f->stats.profile_event_records;
         }
-        if(launch_stress(&c)!=0) goto launch_fail;
+        if(launch_stress(&c,operands,nt-begin,operand_stride)!=0) goto launch_fail;
         if(f->profiling_enabled) {
             rc=cudaEventRecord(events[event+2]); if(rc!=cudaSuccess) goto fail;
             ++f->stats.profile_event_records;
@@ -939,16 +985,22 @@ int denise_cuda_psv_forward_run_range(denise_cuda_psv_forward *f,
         }
     }
     destroy_event_array(events,event_count);
+    if(f->segment_record_armed) {
+        f->segment_record_ready=f->segment_record_armed;
+        f->segment_record_armed=0;
+    }
     f->next_timestep=end+1;
     refresh_forward_stats(f);
     return 0;
 fail:
     f->next_timestep=0; /* a partially launched range cannot be retried */
+    f->segment_record_armed=0; f->segment_record_ready=0;
     destroy_event_array(events,event_count);
     if(rc!=cudaSuccess) return cuda_failure("forward timestep",rc,__FILE__,__LINE__);
     return -1;
 launch_fail:
     f->next_timestep=0;
+    f->segment_record_armed=0; f->segment_record_ready=0;
     destroy_event_array(events,event_count);
     return -1;
 }
@@ -1009,6 +1061,153 @@ int denise_cuda_psv_forward_checkpoint_restore(denise_cuda_psv_forward *f,
     f->next_timestep=f->checkpoint_completed_timestep+1;
     *next_timestep=f->next_timestep;
     ++f->stats.checkpoint_restore_calls;
+    return 0;
+}
+
+int denise_cuda_psv_forward_segments_prepare(denise_cuda_psv_forward *f,
+                                               int requested_segments) {
+    psv_last_error[0]='\0';
+    if(!f||requested_segments<0||f->segment_storage||f->next_timestep!=1||
+       f->core->impl.stats.timesteps)
+        return contract_failure("segment prepare",__FILE__,__LINE__,
+            "requires an untouched context, nonnegative count, and no existing bank");
+    if(!requested_segments) requested_segments=32;
+    int count=requested_segments<f->config.nt?requested_segments:f->config.nt;
+    int max_length=(int)(((long long)f->config.nt+count-1)/count);
+    size_t bank,operand_elements,operand_bytes,total,cells;
+    if(!checked_mul((size_t)f->config.core.nx,(size_t)f->config.core.ny,&cells)||
+       !checked_mul((size_t)count,f->stats.checkpoint_bytes,&bank)||
+       !checked_mul((size_t)max_length,cells,&operand_elements)||
+       !checked_mul(operand_elements,6,&operand_elements)||
+       !checked_mul(operand_elements,sizeof(float),&operand_bytes)||
+       !checked_add(bank,operand_bytes,&total))
+        return contract_failure("segment prepare",__FILE__,__LINE__,
+                                "bank or operand size overflows size_t");
+    if(total>f->stats.remaining_budget_bytes)
+        return contract_failure("segment prepare budget",__FILE__,__LINE__,
+            "bank %zu plus operands %zu exceeds remaining usable budget %zu",
+            bank,operand_bytes,f->stats.remaining_budget_bytes);
+    float *storage=nullptr;
+    cudaError_t rc=cudaMalloc((void**)&storage,total);
+    if(rc!=cudaSuccess) return cuda_failure("segment aggregate cudaMalloc",rc,
+                                           __FILE__,__LINE__);
+    f->segment_storage=storage;
+    f->segment_operands=(float*)((unsigned char*)storage+bank);
+    f->segment_config=f->config;
+    f->segment_count=count;
+    f->stats.segment_count=count;
+    f->stats.max_segment_length=max_length;
+    f->stats.segment_bank_bytes=bank;
+    f->stats.segment_operand_bytes=operand_bytes;
+    f->stats.remaining_budget_bytes-=total;
+    f->core->impl.stats.remaining_budget_bytes=f->stats.remaining_budget_bytes;
+    /* Slot zero is the actual initial state; M8c assumes a zero initial state.
+     * This extra seed keeps the CUDA API exact for any valid uploaded state. */
+    if(checkpoint_copy_to(f,storage,true,"segment initial-state D2D")!=0) {
+        cudaFree(storage); f->segment_storage=nullptr; f->segment_operands=nullptr;
+        f->stats.remaining_budget_bytes+=total;
+        f->core->impl.stats.remaining_budget_bytes=f->stats.remaining_budget_bytes;
+        f->stats.segment_count=0; f->stats.max_segment_length=0;
+        f->stats.segment_bank_bytes=0; f->stats.segment_operand_bytes=0;
+        f->segment_count=0;
+        return -1;
+    }
+    f->stats.segment_d2d_calls+=16;
+    return 0;
+}
+
+int denise_cuda_psv_forward_segment_bounds(const denise_cuda_psv_forward *f,
+                                            int segment,int *begin,int *end) {
+    psv_last_error[0]='\0';
+    if(!f||!f->segment_storage||segment<0||segment>=f->segment_count||
+       !begin||!end)
+        return contract_failure("segment bounds",__FILE__,__LINE__,
+                                "invalid prepared context, segment, or outputs");
+    *begin=(int)(((long long)segment*f->config.nt)/f->segment_count)+1;
+    *end=(int)(((long long)(segment+1)*f->config.nt)/f->segment_count);
+    return 0;
+}
+
+int denise_cuda_psv_forward_segment_capture(denise_cuda_psv_forward *f,
+                                             int segment) {
+    psv_last_error[0]='\0';
+    int begin,end;
+    if(denise_cuda_psv_forward_segment_bounds(f,segment,&begin,&end)!=0)
+        return -1;
+    if(segment>=f->segment_count-1||segment!=f->segment_captured||
+       f->next_timestep!=end+1||
+       !checkpoint_compatible(f->config,f->segment_config))
+        return contract_failure("segment capture",__FILE__,__LINE__,
+            "expected next uncaptured interior boundary at timestep %d",end);
+    float *slot=f->segment_storage+(size_t)(segment+1)*
+        (f->stats.checkpoint_bytes/sizeof(float));
+    if(checkpoint_copy_to(f,slot,true,"segment boundary D2D")!=0) return -1;
+    ++f->segment_captured;
+    f->stats.segment_d2d_calls+=16;
+    return 0;
+}
+
+int denise_cuda_psv_forward_segment_record_next(denise_cuda_psv_forward *f,
+                                                 int segment) {
+    psv_last_error[0]='\0';
+    int begin,end;
+    if(denise_cuda_psv_forward_segment_bounds(f,segment,&begin,&end)!=0)
+        return -1;
+    if(f->next_timestep!=begin||f->segment_record_armed||
+       !checkpoint_compatible(f->config,f->segment_config))
+        return contract_failure("segment record",__FILE__,__LINE__,
+            "segment %d cannot record from next timestep %d",segment,f->next_timestep);
+    f->segment_record_ready=0;
+    f->segment_record_armed=segment+1;
+    return 0;
+}
+
+int denise_cuda_psv_forward_segment_replay(denise_cuda_psv_forward *f,
+                                            int segment) {
+    psv_last_error[0]='\0';
+    int begin,end;
+    if(denise_cuda_psv_forward_segment_bounds(f,segment,&begin,&end)!=0)
+        return -1;
+    if(f->segment_captured!=f->segment_count-1||
+       (!f->segment_original_complete&&f->next_timestep!=f->config.nt+1)||
+       f->segment_record_armed||
+       !checkpoint_compatible(f->config,f->segment_config))
+        return contract_failure("segment replay",__FILE__,__LINE__,
+            "forward trajectory, checkpoint bank, or configuration is incomplete");
+    f->segment_original_complete=true;
+    float *slot=f->segment_storage+(size_t)segment*
+        (f->stats.checkpoint_bytes/sizeof(float));
+    if(checkpoint_copy_to(f,slot,false,"segment replay restore D2D")!=0) {
+        f->next_timestep=0; return -1;
+    }
+    f->stats.segment_d2d_calls+=16;
+    f->next_timestep=begin;
+    if(denise_cuda_psv_forward_segment_record_next(f,segment)!=0) return -1;
+    return denise_cuda_psv_forward_run_range(f,begin,end);
+}
+
+int denise_cuda_psv_forward_segment_download_operands(
+        denise_cuda_psv_forward *f,int segment,float *host_fields,
+        size_t float_capacity) {
+    psv_last_error[0]='\0';
+    int begin,end;
+    if(denise_cuda_psv_forward_segment_bounds(f,segment,&begin,&end)!=0)
+        return -1;
+    size_t cells=(size_t)f->config.core.nx*(size_t)f->config.core.ny;
+    size_t field_elements=(size_t)(end-begin+1)*cells;
+    size_t stride=(size_t)f->stats.max_segment_length*cells;
+    if(!host_fields||float_capacity<6*field_elements||
+       f->segment_record_ready!=segment+1)
+        return contract_failure("segment operand download",__FILE__,__LINE__,
+                                "recorded segment or host capacity is invalid");
+    for(int k=0;k<6;++k) {
+        cudaError_t rc=d2h(host_fields+(size_t)k*field_elements,
+            f->segment_operands+(size_t)k*stride,field_elements,
+            &f->core->impl.stats);
+        if(rc!=cudaSuccess) return cuda_failure("segment diagnostic D2H",rc,
+                                               __FILE__,__LINE__);
+    }
+    refresh_forward_stats(f);
     return 0;
 }
 
@@ -1164,10 +1363,15 @@ int denise_cuda_psv_forward_destroy(denise_cuda_psv_forward **handle) {
     if(!f) return 0;
     cudaError_t checkpoint_rc=f->checkpoint_storage?
         cudaFree(f->checkpoint_storage):cudaSuccess;
+    cudaError_t segment_rc=f->segment_storage?
+        cudaFree(f->segment_storage):cudaSuccess;
     int result=denise_cuda_psv_fd4_l1_destroy(&f->core);
     delete f;
     if(checkpoint_rc!=cudaSuccess)
         return cuda_failure("checkpoint destroy cudaFree",checkpoint_rc,
+                            __FILE__,__LINE__);
+    if(segment_rc!=cudaSuccess)
+        return cuda_failure("segment destroy cudaFree",segment_rc,
                             __FILE__,__LINE__);
     return result;
 }

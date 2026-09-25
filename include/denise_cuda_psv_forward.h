@@ -10,6 +10,8 @@ extern "C" {
 /* Frozen M8e-1B2A solver-level envelope. CUDA runtime types stay private. */
 struct denise_cuda_psv_forward;
 
+/* M8c partitions NT into min(requested_segments,NT) nonempty segments. */
+
 struct denise_cuda_psv_forward_config {
     struct denise_cuda_psv_fd4_l1_config core;
     int nt;
@@ -48,6 +50,11 @@ struct denise_cuda_psv_forward_stats {
     size_t checkpoint_d2d_bytes;
     size_t checkpoint_capture_calls;
     size_t checkpoint_restore_calls;
+    size_t segment_bank_bytes; /* Includes the initial-state seed plus S-1 boundaries. */
+    size_t segment_operand_bytes; /* 6 * max_segment_length * NX * NY * sizeof(float). */
+    size_t segment_d2d_calls;
+    int segment_count;
+    int max_segment_length;
     size_t h2d_transfer_calls;
     size_t d2h_transfer_calls;
     size_t h2d_bytes;
@@ -107,6 +114,31 @@ int denise_cuda_psv_forward_checkpoint_capture(
         struct denise_cuda_psv_forward *context,int completed_timestep);
 int denise_cuda_psv_forward_checkpoint_restore(
         struct denise_cuda_psv_forward *context,int *next_timestep);
+
+/* Optional M8c-compatible segmentation. Call prepare before any propagation:
+ * requested_segments=0 selects the M8c default of 32; otherwise it must be
+ * positive. S=min(requested_segments,NT), start[k]=floor(k*NT/S),
+ * end[k]=floor((k+1)*NT/S), and segment k runs [start[k]+1,end[k]].
+ * S-1 interior boundary states and one initial-state seed remain on device.
+ * Run each segment in order with run_range, then capture each interior end.
+ * Recording is opt-in for an uninterrupted diagnostic reference; replay
+ * records the same six operands automatically into a bounded device buffer.
+ * Download is diagnostic and legal only after a complete recorded segment.
+ * Operand layout is field-major [FX,FY,VXX,VYX,VXY,VYY], then time, y, x. */
+int denise_cuda_psv_forward_segments_prepare(
+        struct denise_cuda_psv_forward *context,int requested_segments);
+int denise_cuda_psv_forward_segment_bounds(
+        const struct denise_cuda_psv_forward *context,int segment,
+        int *begin,int *end);
+int denise_cuda_psv_forward_segment_capture(
+        struct denise_cuda_psv_forward *context,int segment);
+int denise_cuda_psv_forward_segment_record_next(
+        struct denise_cuda_psv_forward *context,int segment);
+int denise_cuda_psv_forward_segment_replay(
+        struct denise_cuda_psv_forward *context,int segment);
+int denise_cuda_psv_forward_segment_download_operands(
+        struct denise_cuda_psv_forward *context,int segment,
+        float *host_fields,size_t float_capacity);
 
 int denise_cuda_psv_forward_download_traces(
         struct denise_cuda_psv_forward *context,
