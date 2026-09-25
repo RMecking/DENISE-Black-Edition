@@ -271,6 +271,20 @@ static int snapshots_equal(const struct snapshot *a,const struct snapshot *b,
     return 1;
 }
 
+static uint64_t snapshot_hash(const struct snapshot *s) {
+    uint64_t hash=UINT64_C(14695981039346656037);
+    int k;
+    for(k=0;k<18;++k) {
+        const unsigned char *bytes;
+        size_t size,p;
+        if(k<16) { bytes=(const unsigned char*)s->field[k]; size=s->count[k]*sizeof(float); }
+        else { bytes=(const unsigned char*)(k==16?s->trace_vx:s->trace_vy);
+               size=s->trace_count*sizeof(float); }
+        for(p=0;p<size;++p) { hash^=bytes[p]; hash*=UINT64_C(1099511628211); }
+    }
+    return hash;
+}
+
 static int snapshot_field_range_equal(const struct snapshot *a,
                                       const struct snapshot *b,
                                       int first,int last) {
@@ -428,6 +442,154 @@ static int failure_lifecycle(struct wavePSV *w,struct wavePSV_PML *p,
     return 0;
 }
 
+/* Engineering invariant only: identical GPU execution before/after D2D
+ * checkpoint replay. All contexts are created from the same initial host
+ * state before any result is downloaded into that host state. */
+static int checkpoint_gate(struct wavePSV *w,struct wavePSV_PML *p,
+                           struct matPSV *m,struct seisPSV *seis,
+                           struct acq *a,float *hc,int ntr,
+                           struct snapshot *reference,struct snapshot *observed) {
+    const int boundaries[3]={17,173,421};
+    struct denise_cuda_psv_forward_config config,budget_config;
+    struct denise_cuda_psv_forward_host host;
+    struct denise_cuda_psv_forward_stats plan,stats,before;
+    struct denise_cuda_psv_forward *contexts[5]={0},*budget_context=NULL;
+    enum denise_psv_backend backend=DENISE_PSV_BACKEND_CPU;
+    int k,next=0,status=1;
+    double start,uninterrupted_ms=0,split_ms=0;
+    bind_forward(&config,&host,w,p,m,seis,a,hc,ntr);
+    unsetenv("DENISE_PSV_BACKEND"); MODE=1;
+    if(denise_cuda_psv_backend_preflight(1,ntr,1,&backend)!=0||
+       backend!=DENISE_PSV_BACKEND_CPU) goto cleanup;
+    setenv("DENISE_PSV_BACKEND","cuda",1);
+    if(denise_cuda_psv_backend_preflight(1,ntr,1,&backend)==0) goto cleanup;
+    MODE=0; unsetenv("DENISE_PSV_BACKEND");
+    printf("CHECKPOINT_CPU_DEFAULT_MODE1=1 CUDA_MODE1_REJECTED=1\n");
+    if(denise_cuda_psv_forward_required_bytes(&config,&plan)!=0) goto cleanup;
+    budget_config=config;
+    budget_config.core.user_cap_bytes=config.core.safety_reserve_bytes+
+        plan.total_mandatory_bytes+plan.checkpoint_bytes-1;
+    if(denise_cuda_psv_forward_create(&budget_config,&host,&budget_context)!=0)
+        goto cleanup;
+    if(denise_cuda_psv_forward_checkpoint_reserve(budget_context)==0)
+        goto cleanup;
+    if(denise_cuda_psv_forward_get_stats(budget_context,&stats)!=0||stats.timesteps)
+        goto cleanup;
+    printf("CHECKPOINT_BUDGET_REJECT checkpoint_bytes=%zu remaining=%zu timesteps=0\n",
+           plan.checkpoint_bytes,stats.remaining_budget_bytes);
+    if(denise_cuda_psv_forward_destroy(&budget_context)!=0) goto cleanup;
+    for(k=0;k<5;++k) {
+        if(denise_cuda_psv_forward_create(&config,&host,&contexts[k])!=0) goto cleanup;
+        if(k>=2&&denise_cuda_psv_forward_checkpoint_reserve(contexts[k])!=0)
+            goto cleanup;
+    }
+    if(denise_cuda_psv_forward_get_stats(contexts[2],&stats)!=0||
+       stats.checkpoint_bytes!=plan.checkpoint_bytes||
+       stats.remaining_budget_bytes+plan.checkpoint_bytes!=
+           stats.usable_budget_bytes-plan.total_mandatory_bytes)
+        goto cleanup;
+    printf("CHECKPOINT_PLAN mandatory=%zu checkpoint=%zu usable=%zu remaining=%zu\n",
+           plan.total_mandatory_bytes,plan.checkpoint_bytes,
+           stats.usable_budget_bytes,stats.remaining_budget_bytes);
+    start=monotonic_ms();
+    if(denise_cuda_psv_forward_run(contexts[0])!=0) goto cleanup;
+    uninterrupted_ms=monotonic_ms()-start;
+    if(denise_cuda_psv_forward_download_traces(contexts[0],seis->sectionvx,
+                                               seis->sectionvy)!=0||
+       denise_cuda_psv_forward_download_mutable(contexts[0],&host.core)!=0)
+        goto cleanup;
+    snapshot_capture(reference,w,p,seis);
+    printf("CHECKPOINT_REFERENCE_HASH nx=%d ny=%d hash=%016llx\n",
+           NX,NY,(unsigned long long)snapshot_hash(reference));
+    if(denise_cuda_psv_forward_run_range(contexts[1],2,17)==0||
+       denise_cuda_psv_forward_get_stats(contexts[1],&stats)!=0||stats.timesteps)
+        goto cleanup;
+    start=monotonic_ms();
+    if(denise_cuda_psv_forward_run_range(contexts[1],1,17)!=0||
+       denise_cuda_psv_forward_run_range(contexts[1],18,173)!=0||
+       denise_cuda_psv_forward_run_range(contexts[1],174,421)!=0||
+       denise_cuda_psv_forward_run_range(contexts[1],422,NT)!=0)
+        goto cleanup;
+    split_ms=monotonic_ms()-start;
+    if(denise_cuda_psv_forward_download_traces(contexts[1],seis->sectionvx,
+                                               seis->sectionvy)!=0||
+       denise_cuda_psv_forward_download_mutable(contexts[1],&host.core)!=0)
+        goto cleanup;
+    snapshot_capture(observed,w,p,seis);
+    if(!snapshots_equal(reference,observed,1)) goto cleanup;
+    printf("CHECKPOINT_SPLIT nx=%d ny=%d state=1 traces_vx=%d traces_vy=%d hash=%016llx uninterrupted_ms=%.6f split_ms=%.6f\n",
+        NX,NY,memcmp(reference->trace_vx,observed->trace_vx,
+        reference->trace_count*sizeof(float))==0,
+        memcmp(reference->trace_vy,observed->trace_vy,
+        reference->trace_count*sizeof(float))==0,
+        (unsigned long long)snapshot_hash(observed),uninterrupted_ms,split_ms);
+    for(k=0;k<3;++k) {
+        int t=boundaries[k],mutate_until=t+29;
+        size_t h2d,d2h;
+        double capture_ms,restore_ms,resume_ms,cycle_ms,cycle_start;
+        struct denise_cuda_psv_forward *f=contexts[k+2];
+        cycle_start=monotonic_ms();
+        if(denise_cuda_psv_forward_run_range(f,1,t)!=0||
+           denise_cuda_psv_forward_get_stats(f,&before)!=0) goto cleanup;
+        if(denise_cuda_psv_forward_checkpoint_capture(f,t-1)==0||
+           denise_cuda_psv_forward_get_stats(f,&stats)!=0||
+           stats.checkpoint_d2d_calls)
+            goto cleanup;
+        h2d=before.h2d_transfer_calls; d2h=before.d2h_transfer_calls;
+        start=monotonic_ms();
+        if(denise_cuda_psv_forward_checkpoint_capture(f,t)!=0) goto cleanup;
+        capture_ms=monotonic_ms()-start;
+        if(denise_cuda_psv_forward_run_range(f,t+1,mutate_until)!=0) goto cleanup;
+        start=monotonic_ms();
+        if(denise_cuda_psv_forward_checkpoint_restore(f,&next)!=0||next!=t+1)
+            goto cleanup;
+        restore_ms=monotonic_ms()-start;
+        if(denise_cuda_psv_forward_run_range(f,next+1,NT)==0)
+            goto cleanup;
+        start=monotonic_ms();
+        if(denise_cuda_psv_forward_run_range(f,next,NT)!=0) goto cleanup;
+        resume_ms=monotonic_ms()-start;
+        cycle_ms=monotonic_ms()-cycle_start;
+        if(denise_cuda_psv_forward_get_stats(f,&stats)!=0||
+           stats.h2d_transfer_calls!=h2d||stats.d2h_transfer_calls!=d2h||
+           stats.checkpoint_capture_calls!=1||stats.checkpoint_restore_calls!=1||
+           stats.checkpoint_d2d_calls!=32||
+           stats.checkpoint_d2d_bytes!=2*plan.checkpoint_bytes||
+           stats.checkpoint_bytes!=plan.checkpoint_bytes||
+           stats.full_grid_h2d_per_timestep||stats.full_grid_d2h_per_timestep||
+           stats.source_sample_h2d_per_timestep||stats.receiver_sample_d2h_per_timestep)
+            goto cleanup;
+        if(denise_cuda_psv_forward_download_traces(f,seis->sectionvx,
+                                                   seis->sectionvy)!=0||
+           denise_cuda_psv_forward_download_mutable(f,&host.core)!=0)
+            goto cleanup;
+        snapshot_capture(observed,w,p,seis);
+        if(!snapshots_equal(reference,observed,1)) goto cleanup;
+        printf("CHECKPOINT_REPLAY nx=%d ny=%d boundary=%d next=%d fields=1 traces=1 d2d_calls=%zu d2d_bytes=%zu checkpoint_bytes=%zu hash=%016llx capture_enqueue_ms=%.6f restore_enqueue_ms=%.6f resume_ms=%.6f checkpoint_resume_cycle_ms=%.6f\n",
+            NX,NY,t,next,stats.checkpoint_d2d_calls,
+            stats.checkpoint_d2d_bytes,plan.checkpoint_bytes,
+            (unsigned long long)snapshot_hash(observed),
+            capture_ms,restore_ms,resume_ms,cycle_ms);
+        /* Reuse the same saved device checkpoint and verify a second replay. */
+        if(denise_cuda_psv_forward_checkpoint_restore(f,&next)!=0||
+           denise_cuda_psv_forward_run_range(f,next,NT)!=0||
+           denise_cuda_psv_forward_download_traces(f,seis->sectionvx,
+                                                   seis->sectionvy)!=0||
+           denise_cuda_psv_forward_download_mutable(f,&host.core)!=0)
+            goto cleanup;
+        snapshot_capture(observed,w,p,seis);
+        if(!snapshots_equal(reference,observed,1)) goto cleanup;
+    }
+    printf("CHECKPOINT_GATE_PASS nx=%d ny=%d nt=%d nrec=%d boundaries=17,173,421 repeat=1\n",
+           NX,NY,NT,ntr);
+    status=0;
+cleanup:
+    for(k=0;k<5;++k) if(contexts[k])
+        denise_cuda_psv_forward_destroy(&contexts[k]);
+    if(budget_context) denise_cuda_psv_forward_destroy(&budget_context);
+    return status;
+}
+
 static int benchmark_solver(struct wavePSV *wave,struct wavePSV_PML *pml,
         struct matPSV *material,struct mpiPSV *mpi,struct seisPSV *seis,
         struct seisPSVfwi *seisfwi,struct fwiPSV *fwi,struct acq *acquisition,
@@ -558,7 +720,7 @@ int main(int argc,char **argv) {
     float *hc=NULL; int *dtinv=NULL; int nx=DEFAULT_NX,ny=DEFAULT_NY,nt=DEFAULT_NT,ntr=DEFAULT_NTR;
     int status=1,k; double cpu_start,cpu_ms,gpu_start,gpu_ms,profile_start,profile_ms=0.0;
     const char *probe=NULL; int run_mutation_oracle=0,run_no_device_oracle=0;
-    int benchmark=0,profile_compare=0,warmups=1,repetitions=7;
+    int benchmark=0,profile_compare=0,checkpoint_test=0,warmups=1,repetitions=7;
     MPI_Init(&argc,&argv); MPI_Comm_rank(MPI_COMM_WORLD,&MYID);
     for(k=1;k<argc;++k) {
         if(!strcmp(argv[k],"--nx")&&k+1<argc) nx=atoi(argv[++k]);
@@ -570,6 +732,7 @@ int main(int argc,char **argv) {
         else if(!strcmp(argv[k],"--mutation-oracle-no-device")) run_no_device_oracle=1;
         else if(!strcmp(argv[k],"--benchmark")) benchmark=1;
         else if(!strcmp(argv[k],"--profile-compare")) profile_compare=1;
+        else if(!strcmp(argv[k],"--checkpoint-gate")) checkpoint_test=1;
         else if(!strcmp(argv[k],"--warmup")&&k+1<argc) warmups=atoi(argv[++k]);
         else if(!strcmp(argv[k],"--repetitions")&&k+1<argc) repetitions=atoi(argv[++k]);
         else { fail("unknown command-line option"); goto cleanup; }
@@ -590,6 +753,14 @@ int main(int argc,char **argv) {
     if(benchmark) {
         status=benchmark_solver(&wave,&pml,&material,&mpi,&seis,&seisfwi,&fwi,
             &acquisition,hc,dtinv,request,ntr,warmups,repetitions);
+        goto cleanup;
+    }
+    if(checkpoint_test) {
+        if(nt!=500||ntr!=5||!((nx==96&&ny==80)||(nx==97&&ny==83))) {
+            fail("checkpoint gate requires Standard or Edge fixture"); goto cleanup;
+        }
+        status=checkpoint_gate(&wave,&pml,&material,&seis,&acquisition,hc,
+                               ntr,&cpu,&gpu);
         goto cleanup;
     }
     if(run_mutation_oracle||run_no_device_oracle) {
