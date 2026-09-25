@@ -355,6 +355,11 @@ struct denise_cuda_psv_forward {
     int *receiver_j;
     float *trace_vx;
     float *trace_vy;
+    float *checkpoint_storage;
+    denise_cuda_psv_forward_config checkpoint_config;
+    int checkpoint_completed_timestep;
+    int next_timestep;
+    bool checkpoint_valid;
     bool profiling_enabled;
     denise_cuda_psv_forward_stats stats;
 };
@@ -539,9 +544,9 @@ int validate_forward_config(const denise_cuda_psv_forward_config *c,
     if(!c) return contract_failure(operation,__FILE__,__LINE__,
                                    "forward configuration is null");
     if(validate_config(&c->core,operation)!=0) return -1;
-    if(c->nt<2||c->ntr<1)
+    if(c->nt<2||c->nt==INT_MAX||c->ntr<1)
         return contract_failure(operation,__FILE__,__LINE__,
-                                "NT must be at least 2 and receiver count positive");
+                                "NT must be in [2,INT_MAX) and receiver count positive");
     if(c->global_mode!=0||c->source_count!=1||c->source_type!=1||
        c->seismo!=1||c->ndt!=1||c->snapshots!=0||c->inv_stf!=0)
         return contract_failure(operation,__FILE__,__LINE__,
@@ -555,9 +560,15 @@ int calculate_forward_plan(const denise_cuda_psv_forward_config *c,
                                       "plan output is null");
     std::memset(plan,0,sizeof(*plan));
     if(validate_forward_config(c,"forward required bytes")!=0) return -1;
-    size_t fnx,fny,full,x,y,total,part,samples;
+    size_t fnx,fny,full,x,y,total,part,samples,checkpoint_elements;
     if(calculate_sizes(&c->core,&fnx,&fny,&full,&x,&y,&plan->b1_core_bytes)!=0)
         return -1;
+    if(!checked_mul(full,8,&checkpoint_elements)||
+       !checked_mul(x,4,&part)||!checked_add(checkpoint_elements,part,&checkpoint_elements)||
+       !checked_mul(y,4,&part)||!checked_add(checkpoint_elements,part,&checkpoint_elements)||
+       !checked_mul(checkpoint_elements,sizeof(float),&plan->checkpoint_bytes))
+        return contract_failure("forward required bytes",__FILE__,__LINE__,
+                                "checkpoint size overflows size_t");
     if(!checked_mul((size_t)c->nt,sizeof(float),&plan->source_signal_bytes)||
        !checked_mul((size_t)2,sizeof(int),&plan->source_geometry_bytes)||
        !checked_mul((size_t)c->ntr,2,&part)||
@@ -648,8 +659,57 @@ void refresh_forward_stats(denise_cuda_psv_forward *f) {
     f->stats.stress_kernel_ms=core.stress_kernel_ms;
 }
 
+/* The checkpoint never leaves its context. This guard also catches accidental
+ * changes to the private configuration before restore. Compare floating
+ * parameters by representation, since this is an exact replay contract. */
+bool checkpoint_compatible(const denise_cuda_psv_forward_config &a,
+                           const denise_cuda_psv_forward_config &b) {
+    const denise_cuda_psv_fd4_l1_config &x=a.core,&y=b.core;
+    return x.nx==y.nx&&x.ny==y.ny&&x.fw==y.fw&&
+        x.fdorder==y.fdorder&&x.mechanisms==y.mechanisms&&
+        x.mpi_ranks_x==y.mpi_ranks_x&&x.mpi_ranks_y==y.mpi_ranks_y&&
+        x.boundary==y.boundary&&x.free_surface==y.free_surface&&
+        x.mode==y.mode&&x.logical_device==y.logical_device&&
+        std::memcmp(&x.dt,&y.dt,sizeof(float))==0&&
+        std::memcmp(&x.dh,&y.dh,sizeof(float))==0&&
+        std::memcmp(&x.hc1,&y.hc1,sizeof(float))==0&&
+        std::memcmp(&x.hc2,&y.hc2,sizeof(float))==0&&
+        std::memcmp(&x.bip1,&y.bip1,sizeof(float))==0&&
+        std::memcmp(&x.bjm1,&y.bjm1,sizeof(float))==0&&
+        std::memcmp(&x.cip1,&y.cip1,sizeof(float))==0&&
+        std::memcmp(&x.cjm1,&y.cjm1,sizeof(float))==0&&
+        a.nt==b.nt&&a.ntr==b.ntr&&a.global_mode==b.global_mode&&
+        a.source_count==b.source_count&&a.source_type==b.source_type&&
+        a.seismo==b.seismo&&a.ndt==b.ndt&&a.snapshots==b.snapshots&&
+        a.inv_stf==b.inv_stf;
+}
+
+int checkpoint_copy(denise_cuda_psv_forward *f,bool capture) {
+    denise_cuda_psv_fd4_l1_impl &c=f->core->impl;
+    device_fields &d=c.fields;
+    float *cursor=f->checkpoint_storage;
+    const size_t full=c.full_elements,x=c.x_cpml_elements,y=c.y_cpml_elements;
+#define COPY(member,n) do {                                                  \
+    const size_t bytes=(n)*sizeof(float);                                     \
+    cudaError_t rc=cudaMemcpyAsync(capture?cursor:d.member,                   \
+        capture?d.member:cursor,bytes,cudaMemcpyDeviceToDevice);              \
+    if(rc!=cudaSuccess) return cuda_failure(                                   \
+        capture?"checkpoint capture D2D":"checkpoint restore D2D",rc,       \
+        __FILE__,__LINE__);                                                    \
+    cursor+=(n); ++f->stats.checkpoint_d2d_calls;                              \
+    f->stats.checkpoint_d2d_bytes+=bytes;                                      \
+} while(0)
+    COPY(vx,full); COPY(vy,full); COPY(sxx,full); COPY(syy,full); COPY(sxy,full);
+    COPY(r1,full); COPY(p1,full); COPY(q1,full);
+    COPY(psi_sxx_x,x); COPY(psi_sxy_x,x); COPY(psi_vxx,x); COPY(psi_vyx,x);
+    COPY(psi_syy_y,y); COPY(psi_sxy_y,y); COPY(psi_vyy,y); COPY(psi_vxy,y);
+#undef COPY
+    return 0;
+}
+
 void release_forward_partial(denise_cuda_psv_forward *f) {
     if(!f) return;
+    if(f->checkpoint_storage) cudaFree(f->checkpoint_storage);
     if(f->core) {
         if(f->core->impl.storage) cudaFree(f->core->impl.storage);
         delete f->core;
@@ -725,6 +785,7 @@ int denise_cuda_psv_forward_create(
         "forward create",__FILE__,__LINE__,"host allocation failed"); }
     std::memset(f,0,sizeof(*f)); std::memset(core,0,sizeof(*core));
     f->core=core; f->config=*cfg; f->profiling_enabled=profiling_enabled;
+    f->next_timestep=1;
     f->stats=plan; f->stats.profiling_enabled=profiling_enabled?1:0;
     f->stats.usable_budget_bytes=info.usable_budget_bytes;
     f->stats.remaining_budget_bytes=info.usable_budget_bytes-plan.total_mandatory_bytes;
@@ -785,10 +846,176 @@ int denise_cuda_psv_forward_create(
     return 0;
 }
 
+int denise_cuda_psv_forward_run_range(denise_cuda_psv_forward *f,
+                                      int begin,int end) {
+    psv_last_error[0]='\0';
+    if(!f) return contract_failure("forward range",__FILE__,__LINE__,"context is null");
+    if(begin<1||begin!=f->next_timestep||end<begin||end>f->config.nt)
+        return contract_failure("forward range",__FILE__,__LINE__,
+            "expected absolute begin=%d and 1<=begin<=end<=NT=%d; got [%d,%d]",
+            f->next_timestep,f->config.nt,begin,end);
+    const size_t count=(size_t)end-(size_t)begin+1;
+    size_t event_count;
+    if(f->profiling_enabled) {
+        size_t phase_events;
+        if(!checked_mul(count,4,&phase_events)||
+           !checked_add(phase_events,1,&event_count))
+            return contract_failure("forward run",__FILE__,__LINE__,
+                                    "profiling event count overflows size_t");
+    } else event_count=2;
+    cudaEvent_t *events=new(std::nothrow) cudaEvent_t[event_count]();
+    if(!events) return contract_failure("forward run",__FILE__,__LINE__,
+                                        "profiling event allocation failed");
+    cudaError_t rc=cudaSuccess;
+    size_t created=0;
+    for(;created<event_count;++created) {
+        rc=cudaEventCreate(&events[created]);
+        if(rc!=cudaSuccess) {
+            destroy_event_array(events,event_count);
+            return cuda_failure("forward kernel event create",rc,__FILE__,__LINE__);
+        }
+    }
+    denise_cuda_psv_fd4_l1_impl &c=f->core->impl;
+    rc=cudaEventRecord(events[0]);
+    if(rc!=cudaSuccess) goto fail;
+    if(f->profiling_enabled) ++f->stats.profile_event_records;
+    else ++f->stats.resident_event_records;
+    for(int nt=begin;nt<=end;++nt) {
+        size_t h2d_before=c.stats.h2d_transfer_calls;
+        size_t d2h_before=c.stats.d2h_transfer_calls;
+        size_t event=((size_t)nt-(size_t)begin)*4;
+        if(launch_velocity(&c)!=0) goto launch_fail;
+        if(f->profiling_enabled) {
+            rc=cudaEventRecord(events[event+1]); if(rc!=cudaSuccess) goto fail;
+            ++f->stats.profile_event_records;
+        }
+        if(launch_stress(&c)!=0) goto launch_fail;
+        if(f->profiling_enabled) {
+            rc=cudaEventRecord(events[event+2]); if(rc!=cudaSuccess) goto fail;
+            ++f->stats.profile_event_records;
+        }
+        if(launch_source(f,nt)!=0) goto launch_fail;
+        if(f->profiling_enabled) {
+            rc=cudaEventRecord(events[event+3]); if(rc!=cudaSuccess) goto fail;
+            ++f->stats.profile_event_records;
+        }
+        if(launch_receivers(f,nt)!=0) goto launch_fail;
+        if(f->profiling_enabled) {
+            rc=cudaEventRecord(events[event+4]); if(rc!=cudaSuccess) goto fail;
+            ++f->stats.profile_event_records;
+        }
+        ++c.stats.timesteps;
+        if(c.stats.h2d_transfer_calls!=h2d_before||
+           c.stats.d2h_transfer_calls!=d2h_before) {
+            contract_failure("forward timestep residency",__FILE__,__LINE__,
+                "host/device transfer detected during timestep %d",nt);
+            goto fail;
+        }
+    }
+    if(!f->profiling_enabled) {
+        rc=cudaEventRecord(events[1]); if(rc!=cudaSuccess) goto fail;
+        ++f->stats.resident_event_records;
+    }
+    rc=cudaEventSynchronize(events[event_count-1]); if(rc!=cudaSuccess) goto fail;
+    ++f->stats.forward_synchronization_calls;
+    { float elapsed=0.0f;
+      rc=cudaEventElapsedTime(&elapsed,events[0],events[event_count-1]);
+      if(rc==cudaSuccess) f->stats.resident_timestep_ms+=elapsed; }
+    if(rc!=cudaSuccess) goto fail;
+    ++f->stats.resident_elapsed_queries;
+    if(f->profiling_enabled) {
+        for(int nt=begin;nt<=end;++nt) {
+            size_t event=((size_t)nt-(size_t)begin)*4;
+            float vm=0.0f,sm=0.0f,qm=0.0f,rm=0.0f;
+            rc=cudaEventElapsedTime(&vm,events[event],events[event+1]);
+            if(rc==cudaSuccess) rc=cudaEventElapsedTime(&sm,events[event+1],events[event+2]);
+            if(rc==cudaSuccess) rc=cudaEventElapsedTime(&qm,events[event+2],events[event+3]);
+            if(rc==cudaSuccess) rc=cudaEventElapsedTime(&rm,events[event+3],events[event+4]);
+            if(rc!=cudaSuccess) goto fail;
+            f->stats.profile_elapsed_queries+=4;
+            c.stats.velocity_kernel_ms+=vm; c.stats.stress_kernel_ms+=sm;
+            c.stats.combined_kernel_ms+=vm+sm;
+            f->stats.source_kernel_ms+=qm; f->stats.receiver_kernel_ms+=rm;
+        }
+    }
+    destroy_event_array(events,event_count);
+    f->next_timestep=end+1;
+    refresh_forward_stats(f);
+    return 0;
+fail:
+    f->next_timestep=0; /* a partially launched range cannot be retried */
+    destroy_event_array(events,event_count);
+    if(rc!=cudaSuccess) return cuda_failure("forward timestep",rc,__FILE__,__LINE__);
+    return -1;
+launch_fail:
+    f->next_timestep=0;
+    destroy_event_array(events,event_count);
+    return -1;
+}
+
+int denise_cuda_psv_forward_checkpoint_reserve(denise_cuda_psv_forward *f) {
+    psv_last_error[0]='\0';
+    if(!f) return contract_failure("checkpoint reserve",__FILE__,__LINE__,
+                                   "context is null");
+    if(f->checkpoint_storage) return 0;
+    const size_t bytes=f->stats.checkpoint_bytes;
+    if(bytes>f->stats.remaining_budget_bytes)
+        return contract_failure("checkpoint reserve budget",__FILE__,__LINE__,
+            "checkpoint %zu exceeds remaining usable budget %zu",
+            bytes,f->stats.remaining_budget_bytes);
+    float *storage=nullptr;
+    cudaError_t rc=cudaMalloc((void**)&storage,bytes);
+    if(rc!=cudaSuccess) return cuda_failure("checkpoint reserve cudaMalloc",rc,
+                                           __FILE__,__LINE__);
+    f->checkpoint_storage=storage;
+    f->stats.remaining_budget_bytes-=bytes;
+    f->core->impl.stats.remaining_budget_bytes=f->stats.remaining_budget_bytes;
+    return 0;
+}
+
+int denise_cuda_psv_forward_checkpoint_capture(denise_cuda_psv_forward *f,
+                                                int completed_timestep) {
+    psv_last_error[0]='\0';
+    if(!f||!f->checkpoint_storage)
+        return contract_failure("checkpoint capture",__FILE__,__LINE__,
+                                "context or reserved device storage is missing");
+    if(completed_timestep<1||completed_timestep>=f->config.nt||
+       completed_timestep!=f->next_timestep-1)
+        return contract_failure("checkpoint capture",__FILE__,__LINE__,
+            "completed timestep %d is not the current complete range boundary %d",
+            completed_timestep,f->next_timestep-1);
+    f->checkpoint_valid=false;
+    if(checkpoint_copy(f,true)!=0) return -1;
+    f->checkpoint_config=f->config;
+    f->checkpoint_completed_timestep=completed_timestep;
+    f->checkpoint_valid=true;
+    ++f->stats.checkpoint_capture_calls;
+    return 0;
+}
+
+int denise_cuda_psv_forward_checkpoint_restore(denise_cuda_psv_forward *f,
+                                                int *next_timestep) {
+    psv_last_error[0]='\0';
+    if(!f||!f->checkpoint_storage||!f->checkpoint_valid||!next_timestep)
+        return contract_failure("checkpoint restore",__FILE__,__LINE__,
+                                "context, captured checkpoint, or output is missing");
+    if(!checkpoint_compatible(f->config,f->checkpoint_config))
+        return contract_failure("checkpoint restore",__FILE__,__LINE__,
+                                "checkpoint configuration is incompatible");
+    if(checkpoint_copy(f,false)!=0) {
+        f->next_timestep=0; /* partial device copy: fail closed */
+        return -1;
+    }
+    f->next_timestep=f->checkpoint_completed_timestep+1;
+    *next_timestep=f->next_timestep;
+    ++f->stats.checkpoint_restore_calls;
+    return 0;
+}
+
 int denise_cuda_psv_forward_run(denise_cuda_psv_forward *f) {
     psv_last_error[0]='\0';
     if(!f) return contract_failure("forward run",__FILE__,__LINE__,"context is null");
-    if(f->core->impl.stats.timesteps)
+    if(f->core->impl.stats.timesteps||f->next_timestep!=1)
         return contract_failure("forward run",__FILE__,__LINE__,"context has already run");
     size_t event_count;
     if(f->profiling_enabled) {
@@ -873,6 +1100,7 @@ int denise_cuda_psv_forward_run(denise_cuda_psv_forward *f) {
         }
     }
     destroy_event_array(events,event_count);
+    f->next_timestep=f->config.nt+1;
     refresh_forward_stats(f);
     return 0;
 fail:
@@ -934,8 +1162,13 @@ int denise_cuda_psv_forward_destroy(denise_cuda_psv_forward **handle) {
     if(!handle) return 0;
     denise_cuda_psv_forward *f=*handle; *handle=nullptr;
     if(!f) return 0;
+    cudaError_t checkpoint_rc=f->checkpoint_storage?
+        cudaFree(f->checkpoint_storage):cudaSuccess;
     int result=denise_cuda_psv_fd4_l1_destroy(&f->core);
     delete f;
+    if(checkpoint_rc!=cudaSuccess)
+        return cuda_failure("checkpoint destroy cudaFree",checkpoint_rc,
+                            __FILE__,__LINE__);
     return result;
 }
 
