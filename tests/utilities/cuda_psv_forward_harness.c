@@ -590,6 +590,151 @@ cleanup:
     return status;
 }
 
+/* M8c partition identity: the reference records operands while advancing
+ * uninterrupted; the second context banks boundary states, then replays
+ * selected segments in nonmonotone order without rebuilding its context. */
+static int segmented_gate(struct wavePSV *w,struct wavePSV_PML *p,
+                          struct matPSV *m,struct seisPSV *seis,
+                          struct acq *a,float *hc,int ntr,
+                          struct snapshot *observed) {
+    const int selected[4]={0,1,16,31};
+    struct denise_cuda_psv_forward_config config,budget_config;
+    struct denise_cuda_psv_forward_host host;
+    struct denise_cuda_psv_forward_stats plan,stats,before;
+    struct denise_cuda_psv_forward *reference=NULL,*path=NULL,*budget=NULL;
+    struct snapshot expected[4]={{0}};
+    float *reference_ops[4]={0},*replayed=NULL;
+    size_t cells=(size_t)NX*(size_t)NY,capacity=6*16*cells;
+    size_t bank_bytes,operand_bytes,required;
+    int k,s,begin,end,reference_length[4]={0},status=1;
+    bind_forward(&config,&host,w,p,m,seis,a,hc,ntr);
+    if(denise_cuda_psv_forward_required_bytes(&config,&plan)!=0) goto cleanup;
+    bank_bytes=32*plan.checkpoint_bytes;
+    operand_bytes=capacity*sizeof(float);
+    required=bank_bytes+operand_bytes;
+    budget_config=config;
+    budget_config.core.user_cap_bytes=config.core.safety_reserve_bytes+
+        plan.total_mandatory_bytes+required-1;
+    if(denise_cuda_psv_forward_create(&budget_config,&host,&budget)!=0||
+       denise_cuda_psv_forward_segments_prepare(budget,32)==0||
+       denise_cuda_psv_forward_get_stats(budget,&stats)!=0||stats.timesteps)
+        goto cleanup;
+    printf("SEGMENT_BUDGET_REJECT bytes=%zu available=%zu timesteps=0\n",
+           required,required-1);
+    if(denise_cuda_psv_forward_destroy(&budget)!=0) goto cleanup;
+    for(s=0;s<4;++s) {
+        if(snapshot_alloc(&expected[s],ntr)!=0) goto cleanup;
+        reference_ops[s]=(float*)malloc(capacity*sizeof(float));
+        if(!reference_ops[s]) goto cleanup;
+    }
+    replayed=(float*)malloc(capacity*sizeof(float));
+    if(!replayed) goto cleanup;
+    if(denise_cuda_psv_forward_create(&config,&host,&reference)!=0||
+       denise_cuda_psv_forward_create(&config,&host,&path)!=0||
+       denise_cuda_psv_forward_segments_prepare(reference,0)!=0||
+       denise_cuda_psv_forward_segments_prepare(path,32)!=0)
+        goto cleanup;
+    if(denise_cuda_psv_forward_get_stats(path,&stats)!=0||
+       stats.segment_count!=32||stats.max_segment_length!=16||
+       stats.segment_bank_bytes!=bank_bytes||
+       stats.segment_operand_bytes!=operand_bytes||
+       stats.remaining_budget_bytes+bank_bytes+operand_bytes!=
+           stats.usable_budget_bytes-plan.total_mandatory_bytes)
+        goto cleanup;
+    printf("SEGMENT_PLAN segments=%d interior_checkpoints=%d seed=1 mandatory=%zu bank=%zu operands=%zu source_receiver=%zu remaining=%zu\n",
+           stats.segment_count,stats.segment_count-1,
+           plan.b1_core_bytes,stats.segment_bank_bytes,stats.segment_operand_bytes,
+           plan.total_mandatory_bytes-plan.b1_core_bytes,stats.remaining_budget_bytes);
+    if(denise_cuda_psv_forward_segment_replay(path,0)==0||
+       denise_cuda_psv_forward_segment_capture(path,1)==0)
+        goto cleanup;
+    for(k=0;k<32;++k) {
+        int chosen=-1;
+        if(denise_cuda_psv_forward_segment_bounds(reference,k,&begin,&end)!=0)
+            goto cleanup;
+        if(begin!=(int)(((long long)k*NT)/32)+1||
+           end!=(int)(((long long)(k+1)*NT)/32)) goto cleanup;
+        for(s=0;s<4;++s) if(k==selected[s]) chosen=s;
+        if(chosen>=0&&denise_cuda_psv_forward_segment_record_next(reference,k)!=0)
+            goto cleanup;
+        if(denise_cuda_psv_forward_run_range(reference,begin,end)!=0) goto cleanup;
+        if(chosen>=0) {
+            size_t n=6*(size_t)(end-begin+1)*cells;
+            reference_length[chosen]=end-begin+1;
+            if(denise_cuda_psv_forward_segment_download_operands(reference,k,
+                     reference_ops[chosen],n)!=0||
+               denise_cuda_psv_forward_download_traces(reference,seis->sectionvx,
+                                                        seis->sectionvy)!=0||
+               denise_cuda_psv_forward_download_mutable(reference,&host.core)!=0)
+                goto cleanup;
+            snapshot_capture(&expected[chosen],w,p,seis);
+        }
+    }
+    for(k=0;k<32;++k) {
+        if(denise_cuda_psv_forward_segment_bounds(path,k,&begin,&end)!=0||
+           denise_cuda_psv_forward_run_range(path,begin,end)!=0)
+            goto cleanup;
+        if(k<31&&denise_cuda_psv_forward_segment_capture(path,k)!=0)
+            goto cleanup;
+    }
+    if(denise_cuda_psv_forward_download_traces(path,seis->sectionvx,
+                                               seis->sectionvy)!=0||
+       denise_cuda_psv_forward_download_mutable(path,&host.core)!=0)
+        goto cleanup;
+    snapshot_capture(observed,w,p,seis);
+    if(!snapshots_equal(&expected[3],observed,1)) goto cleanup;
+    printf("SEGMENT_FORWARD_IDENTITY fields=1 traces=1\n");
+    for(s=3;s>=0;--s) {
+        size_t field_values=(size_t)reference_length[s]*cells;
+        int repetitions=s==2?2:1;
+        for(int rep=0;rep<repetitions;++rep) {
+            if(denise_cuda_psv_forward_get_stats(path,&before)!=0||
+               denise_cuda_psv_forward_segment_replay(path,selected[s])!=0||
+               denise_cuda_psv_forward_get_stats(path,&stats)!=0||
+               stats.h2d_transfer_calls!=before.h2d_transfer_calls||
+               stats.d2h_transfer_calls!=before.d2h_transfer_calls||
+               stats.full_grid_h2d_per_timestep||stats.full_grid_d2h_per_timestep||
+               stats.source_sample_h2d_per_timestep||
+               stats.receiver_sample_d2h_per_timestep)
+                goto cleanup;
+            if(denise_cuda_psv_forward_segment_download_operands(path,
+                    selected[s],replayed,6*field_values)!=0)
+                goto cleanup;
+            for(k=0;k<6;++k)
+                if(memcmp(reference_ops[s]+(size_t)k*field_values,
+                          replayed+(size_t)k*field_values,
+                          field_values*sizeof(float))) goto cleanup;
+            if(denise_cuda_psv_forward_download_traces(path,seis->sectionvx,
+                                                       seis->sectionvy)!=0||
+               denise_cuda_psv_forward_download_mutable(path,&host.core)!=0)
+                goto cleanup;
+            snapshot_capture(observed,w,p,seis);
+            if(!snapshots_equal(&expected[s],observed,0)||
+               !snapshot_traces_equal(&expected[3],observed)) goto cleanup;
+            printf("SEGMENT_REPLAY index=%d begin=%d end=%d length=%d repeat=%d fx=1 fy=1 vxx=1 vyx=1 vxy=1 vyy=1 fields=1 traces=1\n",
+                   selected[s],(int)(((long long)selected[s]*NT)/32)+1,
+                   (int)(((long long)(selected[s]+1)*NT)/32),
+                   reference_length[s],rep);
+        }
+    }
+    if(denise_cuda_psv_forward_segment_replay(path,32)==0||
+       denise_cuda_psv_forward_segment_capture(path,0)==0||
+       denise_cuda_psv_forward_segment_record_next(path,31)==0)
+        goto cleanup;
+    if(denise_cuda_psv_forward_get_stats(path,&stats)!=0) goto cleanup;
+    printf("SEGMENT_GATE_PASS nx=%d ny=%d nt=%d bank=%zu operands=%zu d2d_calls=%zu syncs=%zu\n",
+           NX,NY,NT,stats.segment_bank_bytes,stats.segment_operand_bytes,
+           stats.segment_d2d_calls,stats.forward_synchronization_calls);
+    status=0;
+cleanup:
+    if(reference) denise_cuda_psv_forward_destroy(&reference);
+    if(path) denise_cuda_psv_forward_destroy(&path);
+    if(budget) denise_cuda_psv_forward_destroy(&budget);
+    for(s=0;s<4;++s) { snapshot_free(&expected[s]); free(reference_ops[s]); }
+    free(replayed);
+    return status;
+}
+
 static int benchmark_solver(struct wavePSV *wave,struct wavePSV_PML *pml,
         struct matPSV *material,struct mpiPSV *mpi,struct seisPSV *seis,
         struct seisPSVfwi *seisfwi,struct fwiPSV *fwi,struct acq *acquisition,
@@ -720,7 +865,7 @@ int main(int argc,char **argv) {
     float *hc=NULL; int *dtinv=NULL; int nx=DEFAULT_NX,ny=DEFAULT_NY,nt=DEFAULT_NT,ntr=DEFAULT_NTR;
     int status=1,k; double cpu_start,cpu_ms,gpu_start,gpu_ms,profile_start,profile_ms=0.0;
     const char *probe=NULL; int run_mutation_oracle=0,run_no_device_oracle=0;
-    int benchmark=0,profile_compare=0,checkpoint_test=0,warmups=1,repetitions=7;
+    int benchmark=0,profile_compare=0,checkpoint_test=0,segment_test=0,warmups=1,repetitions=7;
     MPI_Init(&argc,&argv); MPI_Comm_rank(MPI_COMM_WORLD,&MYID);
     for(k=1;k<argc;++k) {
         if(!strcmp(argv[k],"--nx")&&k+1<argc) nx=atoi(argv[++k]);
@@ -733,6 +878,7 @@ int main(int argc,char **argv) {
         else if(!strcmp(argv[k],"--benchmark")) benchmark=1;
         else if(!strcmp(argv[k],"--profile-compare")) profile_compare=1;
         else if(!strcmp(argv[k],"--checkpoint-gate")) checkpoint_test=1;
+        else if(!strcmp(argv[k],"--segment-gate")) segment_test=1;
         else if(!strcmp(argv[k],"--warmup")&&k+1<argc) warmups=atoi(argv[++k]);
         else if(!strcmp(argv[k],"--repetitions")&&k+1<argc) repetitions=atoi(argv[++k]);
         else { fail("unknown command-line option"); goto cleanup; }
@@ -761,6 +907,14 @@ int main(int argc,char **argv) {
         }
         status=checkpoint_gate(&wave,&pml,&material,&seis,&acquisition,hc,
                                ntr,&cpu,&gpu);
+        goto cleanup;
+    }
+    if(segment_test) {
+        if(nt!=500||ntr!=5||!((nx==96&&ny==80)||(nx==97&&ny==83))) {
+            fail("segment gate requires Standard or Edge fixture"); goto cleanup;
+        }
+        status=segmented_gate(&wave,&pml,&material,&seis,&acquisition,hc,
+                              ntr,&gpu);
         goto cleanup;
     }
     if(run_mutation_oracle||run_no_device_oracle) {
