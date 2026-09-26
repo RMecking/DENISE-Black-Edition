@@ -82,6 +82,35 @@ struct denise_cuda_psv_forward_stats {
     float total_forward_ms;
 };
 
+/* FP64 exact-visco P/SV adjoint state. Main fields use the full halo layout
+ * (NX+6)*(NY+6). X CPML fields use NY*(2*FW); Y fields use (2*FW)*NX. */
+struct denise_cuda_psv_adjoint_host {
+    double *avx, *avy, *asxx, *asyy, *asxy, *ar, *ap, *aq;
+    double *psxx, *psxyx, *pvxx, *pvyx;
+    double *psxyy, *psyy, *pvxy, *pvyy;
+};
+
+struct denise_cuda_psv_adjoint_stats {
+    size_t main_state_bytes;
+    size_t cpml_state_bytes;
+    size_t workspace_bytes;
+    size_t residual_bytes;
+    size_t total_bytes;
+    size_t remaining_budget_bytes;
+    size_t initial_h2d_calls;
+    size_t diagnostic_d2h_calls;
+    /* Synchronous small-vector H2D copies performed before kernel launch. */
+    size_t residual_h2d_calls;
+    size_t residual_h2d_bytes;
+    size_t step_allocation_calls;
+    size_t step_full_state_h2d_calls;
+    size_t step_full_state_d2h_calls;
+    /* Explicit device/kernel synchronization calls, excluding H2D copies. */
+    size_t step_blocking_sync_calls;
+    unsigned long long steps;
+    size_t kernel_launches;
+};
+
 const char *denise_cuda_psv_forward_last_error(void);
 
 int denise_cuda_psv_forward_required_bytes(
@@ -139,6 +168,27 @@ int denise_cuda_psv_forward_segment_replay(
 int denise_cuda_psv_forward_segment_download_operands(
         struct denise_cuda_psv_forward *context,int segment,
         float *host_fields,size_t float_capacity);
+
+int denise_cuda_psv_adjoint_required_bytes(
+        const struct denise_cuda_psv_forward_config *config,
+        struct denise_cuda_psv_adjoint_stats *plan);
+int denise_cuda_psv_adjoint_prepare(
+        struct denise_cuda_psv_forward *context,
+        const struct denise_cuda_psv_adjoint_host *initial);
+/* timestep is the absolute production sample. Sample 1 injects no residual.
+ * Later samples synchronously copy four NREC float vectors before launching
+ * the exact resident reverse state operator, so caller ownership may end when
+ * this function returns. Calls evolve the current device state. */
+int denise_cuda_psv_adjoint_step(
+        struct denise_cuda_psv_forward *context,int timestep,
+        const float *modeled_vx,const float *observed_vx,
+        const float *modeled_vy,const float *observed_vy);
+int denise_cuda_psv_adjoint_download(
+        struct denise_cuda_psv_forward *context,
+        struct denise_cuda_psv_adjoint_host *host);
+int denise_cuda_psv_adjoint_get_stats(
+        const struct denise_cuda_psv_forward *context,
+        struct denise_cuda_psv_adjoint_stats *stats);
 
 int denise_cuda_psv_forward_download_traces(
         struct denise_cuda_psv_forward *context,

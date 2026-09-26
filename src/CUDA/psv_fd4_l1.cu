@@ -24,6 +24,13 @@ struct device_fields {
     float *K_y, *a_y, *b_y, *K_y_half, *a_y_half, *b_y_half;
 };
 
+struct adjoint_fields {
+    double *avx, *avy, *asxx, *asyy, *asxy, *ar, *ap, *aq;
+    double *psxx, *psxyx, *pvxx, *pvyx;
+    double *psxyy, *psyy, *pvxy, *pvyy;
+    double *wxx, *wyx, *wxy, *wyy;
+};
+
 struct denise_cuda_psv_fd4_l1_impl {
     denise_cuda_psv_fd4_l1_config config;
     device_fields fields;
@@ -363,6 +370,130 @@ int timed_stress(denise_cuda_psv_fd4_l1_impl *c,cudaEvent_t a,cudaEvent_t b,floa
     return 0;
 }
 
+__device__ __forceinline__ double adjoint_cpml_x(
+        double corrected,double *psi,int h,int j,int fw,
+        const float *K,const float *a,const float *b) {
+    if(!h) return corrected;
+    size_t m=xi(h,j,fw),c=(size_t)(h-1);
+    double combined=psi[m]+corrected;
+    psi[m]=(double)b[c]*combined;
+    return corrected/(double)K[c]+(double)a[c]*combined;
+}
+
+__device__ __forceinline__ double adjoint_cpml_y(
+        double corrected,double *psi,int h,int i,int nx,
+        const float *K,const float *a,const float *b) {
+    if(!h) return corrected;
+    size_t m=yi(i,h,nx),c=(size_t)(h-1);
+    double combined=psi[m]+corrected;
+    psi[m]=(double)b[c]*combined;
+    return corrected/(double)K[c]+(double)a[c]*combined;
+}
+
+__global__ void adjoint_inject_receivers(
+        adjoint_fields a,size_t pitch,const int *receiver_i,
+        const int *receiver_j,const float *residual,int ntr,int timestep) {
+    int r=(int)(blockIdx.x*blockDim.x+threadIdx.x);
+    if(r>=ntr||timestep<=1) return;
+    size_t p=fi(receiver_i[r],receiver_j[r],pitch);
+    a.avx[p]+=(double)residual[r]-(double)residual[ntr+r];
+    a.avy[p]+=(double)residual[2*ntr+r]-(double)residual[3*ntr+r];
+}
+
+__global__ void adjoint_stress_local(
+        device_fields d,adjoint_fields a,int nx,int ny,int fw,size_t pitch,
+        float dt,float bjm1,float cjm1) {
+    int i=1+(int)(blockIdx.x*blockDim.x+threadIdx.x);
+    int j=1+(int)(blockIdx.y*blockDim.y+threadIdx.y);
+    if(i>nx||j>ny) return;
+    size_t p=fi(i,j,pitch);
+    double dt2=(double)dt*0.5,b=(double)bjm1,c=(double)cjm1;
+    double lam_r=a.ar[p]+dt2*a.asxy[p];
+    double lam_p=a.ap[p]+dt2*a.asxx[p];
+    double lam_q=a.aq[p]+dt2*a.asyy[p];
+    double f=(double)d.f[p],g=(double)d.g[p];
+    double ax=a.asxx[p]*g+a.asyy[p]*(g-2.0*f);
+    double ay=a.asyy[p]*g+a.asxx[p]*(g-2.0*f);
+    ax+=b*(-(double)d.e1[p]*(lam_p+lam_q)+2.0*(double)d.d1[p]*lam_q);
+    ay+=b*(-(double)d.e1[p]*(lam_p+lam_q)+2.0*(double)d.d1[p]*lam_p);
+    double shear=a.asxy[p]*(double)d.fipjp[p]-b*lam_r*(double)d.dip1[p];
+    a.ar[p]=dt2*a.asxy[p]+b*c*lam_r;
+    a.ap[p]=dt2*a.asxx[p]+b*c*lam_p;
+    a.aq[p]=dt2*a.asyy[p]+b*c*lam_q;
+    int hx=i<=fw?i:(i>=nx-fw+1?i-nx+2*fw:0);
+    int hy=j<=fw?j:(j>=ny-fw+1?j-ny+2*fw:0);
+    a.wxx[p]=adjoint_cpml_x(ax,a.pvxx,hx,j,fw,d.K_x,d.a_x,d.b_x);
+    a.wyx[p]=adjoint_cpml_x(shear,a.pvyx,hx,j,fw,
+                            d.K_x_half,d.a_x_half,d.b_x_half);
+    a.wxy[p]=adjoint_cpml_y(shear,a.pvxy,hy,i,nx,
+                            d.K_y_half,d.a_y_half,d.b_y_half);
+    a.wyy[p]=adjoint_cpml_y(ay,a.pvyy,hy,i,nx,d.K_y,d.a_y,d.b_y);
+}
+
+__device__ __forceinline__ double adjoint_workspace(
+        const double *w,int i,int j,int nx,int ny,size_t pitch) {
+    return (i>=1&&i<=nx&&j>=1&&j<=ny)?w[fi(i,j,pitch)]:0.0;
+}
+
+__global__ void adjoint_stress_gather(
+        adjoint_fields a,int nx,int ny,size_t pitch,float dh,float hc1,float hc2) {
+    size_t q=(size_t)(blockIdx.x*blockDim.x+threadIdx.x);
+    size_t full=pitch*(size_t)(ny+6);
+    if(q>=full) return;
+    int j=(int)(q/pitch)-2,i=(int)(q%pitch)-2;
+#define W(m,ii,jj) adjoint_workspace(a.m,(ii),(jj),nx,ny,pitch)
+    double h1=(double)hc1,h2=(double)hc2;
+    double x=h1*(W(wxx,i,j)-W(wxx,i+1,j))+
+             h2*(W(wxx,i-1,j)-W(wxx,i+2,j));
+    double xy=h1*(W(wxy,i,j-1)-W(wxy,i,j))+
+              h2*(W(wxy,i,j-2)-W(wxy,i,j+1));
+    double yx=h1*(W(wyx,i-1,j)-W(wyx,i,j))+
+              h2*(W(wyx,i-2,j)-W(wyx,i+1,j));
+    double y=h1*(W(wyy,i,j)-W(wyy,i,j+1))+
+             h2*(W(wyy,i,j-1)-W(wyy,i,j+2));
+    a.avx[q]+=(x+xy)/(double)dh;
+    a.avy[q]+=(yx+y)/(double)dh;
+#undef W
+}
+
+__global__ void adjoint_velocity_local(
+        device_fields d,adjoint_fields a,int nx,int ny,int fw,size_t pitch,
+        float dt,float dh) {
+    int i=1+(int)(blockIdx.x*blockDim.x+threadIdx.x);
+    int j=1+(int)(blockIdx.y*blockDim.y+threadIdx.y);
+    if(i>nx||j>ny) return;
+    size_t p=fi(i,j,pitch);
+    double ax=a.avx[p]*(double)dt*(double)d.rip[p]/(double)dh;
+    double ay=a.avy[p]*(double)dt*(double)d.rjp[p]/(double)dh;
+    int hx=i<=fw?i:(i>=nx-fw+1?i-nx+2*fw:0);
+    int hy=j<=fw?j:(j>=ny-fw+1?j-ny+2*fw:0);
+    a.wxx[p]=adjoint_cpml_x(ax,a.psxx,hx,j,fw,
+                            d.K_x_half,d.a_x_half,d.b_x_half);
+    a.wyx[p]=adjoint_cpml_x(ay,a.psxyx,hx,j,fw,d.K_x,d.a_x,d.b_x);
+    a.wxy[p]=adjoint_cpml_y(ax,a.psxyy,hy,i,nx,d.K_y,d.a_y,d.b_y);
+    a.wyy[p]=adjoint_cpml_y(ay,a.psyy,hy,i,nx,
+                            d.K_y_half,d.a_y_half,d.b_y_half);
+}
+
+__global__ void adjoint_velocity_gather(
+        adjoint_fields a,int nx,int ny,size_t pitch,float hc1,float hc2) {
+    size_t q=(size_t)(blockIdx.x*blockDim.x+threadIdx.x);
+    size_t full=pitch*(size_t)(ny+6);
+    if(q>=full) return;
+    int j=(int)(q/pitch)-2,i=(int)(q%pitch)-2;
+#define W(m,ii,jj) adjoint_workspace(a.m,(ii),(jj),nx,ny,pitch)
+    double h1=(double)hc1,h2=(double)hc2;
+    a.asxx[q]+=h1*(W(wxx,i-1,j)-W(wxx,i,j))+
+               h2*(W(wxx,i-2,j)-W(wxx,i+1,j));
+    a.asxy[q]+=h1*(W(wyx,i,j)-W(wyx,i+1,j))+
+               h2*(W(wyx,i-1,j)-W(wyx,i+2,j))+
+               h1*(W(wxy,i,j)-W(wxy,i,j+1))+
+               h2*(W(wxy,i,j-1)-W(wxy,i,j+2));
+    a.asyy[q]+=h1*(W(wyy,i,j-1)-W(wyy,i,j))+
+               h2*(W(wyy,i,j-2)-W(wyy,i,j+1));
+#undef W
+}
+
 }  // namespace
 
 struct denise_cuda_psv_fd4_l1 { denise_cuda_psv_fd4_l1_impl impl; };
@@ -389,6 +520,11 @@ struct denise_cuda_psv_forward {
     int segment_record_armed;
     int segment_record_ready;
     bool segment_original_complete;
+    double *adjoint_storage;
+    float *adjoint_residual;
+    adjoint_fields adjoint;
+    denise_cuda_psv_adjoint_stats adjoint_stats;
+    bool receivers_unique;
     bool profiling_enabled;
     denise_cuda_psv_forward_stats stats;
 };
@@ -619,6 +755,51 @@ int calculate_forward_plan(const denise_cuda_psv_forward_config *c,
     return 0;
 }
 
+int calculate_adjoint_plan(const denise_cuda_psv_forward_config *c,
+                           denise_cuda_psv_adjoint_stats *plan) {
+    if(!plan) return contract_failure("adjoint required bytes",__FILE__,__LINE__,
+                                      "plan output is null");
+    std::memset(plan,0,sizeof(*plan));
+    if(validate_forward_config(c,"adjoint required bytes")!=0) return -1;
+    size_t fnx,fny,full,x,y,unused,part,total;
+    if(calculate_sizes(&c->core,&fnx,&fny,&full,&x,&y,&unused)!=0) return -1;
+    if(!checked_mul(full,8*sizeof(double),&plan->main_state_bytes)||
+       !checked_add(x,y,&part)||!checked_mul(part,4*sizeof(double),
+                                             &plan->cpml_state_bytes)||
+       !checked_mul(full,4*sizeof(double),&plan->workspace_bytes)||
+       !checked_mul((size_t)c->ntr,4*sizeof(float),&plan->residual_bytes))
+        return contract_failure("adjoint required bytes",__FILE__,__LINE__,
+                                "adjoint state size overflows size_t");
+    total=plan->main_state_bytes;
+    if(!checked_add(total,plan->cpml_state_bytes,&total)||
+       !checked_add(total,plan->workspace_bytes,&total)||
+       !checked_add(total,plan->residual_bytes,&total))
+        return contract_failure("adjoint required bytes",__FILE__,__LINE__,
+                                "adjoint aggregate size overflows size_t");
+    plan->total_bytes=total;
+    return 0;
+}
+
+bool valid_adjoint_host(const denise_cuda_psv_adjoint_host *h) {
+    return h&&h->avx&&h->avy&&h->asxx&&h->asyy&&h->asxy&&h->ar&&h->ap&&h->aq&&
+        h->psxx&&h->psxyx&&h->pvxx&&h->pvyx&&
+        h->psxyy&&h->psyy&&h->pvxy&&h->pvyy;
+}
+
+void assign_adjoint_slices(denise_cuda_psv_forward *f) {
+    denise_cuda_psv_fd4_l1_impl &c=f->core->impl;
+    double *p=f->adjoint_storage;
+    size_t n=c.full_elements,x=c.x_cpml_elements,y=c.y_cpml_elements;
+#define A(member,count) f->adjoint.member=p; p+=(count)
+    A(avx,n); A(avy,n); A(asxx,n); A(asyy,n); A(asxy,n);
+    A(ar,n); A(ap,n); A(aq,n);
+    A(psxx,x); A(psxyx,x); A(pvxx,x); A(pvyx,x);
+    A(psxyy,y); A(psyy,y); A(pvxy,y); A(pvyy,y);
+    A(wxx,n); A(wyx,n); A(wxy,n); A(wyy,n);
+#undef A
+    f->adjoint_residual=(float*)p;
+}
+
 cudaError_t raw_h2d(void *device,const void *host,size_t bytes,
                     denise_cuda_psv_fd4_l1_stats *stats) {
     cudaError_t rc=cudaMemcpy(device,host,bytes,cudaMemcpyHostToDevice);
@@ -744,6 +925,7 @@ void release_forward_partial(denise_cuda_psv_forward *f) {
     if(!f) return;
     if(f->checkpoint_storage) cudaFree(f->checkpoint_storage);
     if(f->segment_storage) cudaFree(f->segment_storage);
+    if(f->adjoint_storage) cudaFree(f->adjoint_storage);
     if(f->core) {
         if(f->core->impl.storage) cudaFree(f->core->impl.storage);
         delete f->core;
@@ -793,6 +975,13 @@ int denise_cuda_psv_forward_create(
             return contract_failure("forward create",__FILE__,__LINE__,
                 "receiver %d coordinate (%d,%d) is outside physical grid",r,i,j);
     }
+    bool receivers_unique=true;
+    for(int r=1;r<=cfg->ntr&&receivers_unique;++r)
+        for(int s=r+1;s<=cfg->ntr;++s)
+            if(host->receiver_positions[1][r]==host->receiver_positions[1][s]&&
+               host->receiver_positions[2][r]==host->receiver_positions[2][s]) {
+                receivers_unique=false; break;
+            }
     const char *profile_selector=std::getenv("DENISE_CUDA_PROFILE");
     bool profiling_enabled=false;
     if(profile_selector&&profile_selector[0]&&std::strcmp(profile_selector,"0")!=0) {
@@ -819,6 +1008,7 @@ int denise_cuda_psv_forward_create(
         "forward create",__FILE__,__LINE__,"host allocation failed"); }
     std::memset(f,0,sizeof(*f)); std::memset(core,0,sizeof(*core));
     f->core=core; f->config=*cfg; f->profiling_enabled=profiling_enabled;
+    f->receivers_unique=receivers_unique;
     f->next_timestep=1;
     f->stats=plan; f->stats.profiling_enabled=profiling_enabled?1:0;
     f->stats.usable_budget_bytes=info.usable_budget_bytes;
@@ -1211,6 +1401,148 @@ int denise_cuda_psv_forward_segment_download_operands(
     return 0;
 }
 
+int denise_cuda_psv_adjoint_required_bytes(
+        const denise_cuda_psv_forward_config *config,
+        denise_cuda_psv_adjoint_stats *plan) {
+    psv_last_error[0]='\0';
+    return calculate_adjoint_plan(config,plan);
+}
+
+int denise_cuda_psv_adjoint_prepare(
+        denise_cuda_psv_forward *f,
+        const denise_cuda_psv_adjoint_host *initial) {
+    psv_last_error[0]='\0';
+    if(!f||!valid_adjoint_host(initial)||f->adjoint_storage)
+        return contract_failure("adjoint prepare",__FILE__,__LINE__,
+            "context/initial state is invalid or adjoint is already prepared");
+    if(!f->receivers_unique)
+        return contract_failure("adjoint prepare receivers",__FILE__,__LINE__,
+                                "duplicate receiver cells are unsupported");
+    denise_cuda_psv_adjoint_stats plan;
+    if(calculate_adjoint_plan(&f->config,&plan)!=0) return -1;
+    if(plan.total_bytes>f->stats.remaining_budget_bytes)
+        return contract_failure("adjoint prepare budget",__FILE__,__LINE__,
+            "adjoint foundation %zu exceeds remaining usable budget %zu",
+            plan.total_bytes,f->stats.remaining_budget_bytes);
+    double *storage=nullptr;
+    cudaError_t rc=cudaMalloc((void**)&storage,plan.total_bytes);
+    if(rc!=cudaSuccess) return cuda_failure("adjoint aggregate cudaMalloc",rc,
+                                           __FILE__,__LINE__);
+    f->adjoint_storage=storage;
+    f->adjoint_stats=plan;
+    f->adjoint_stats.remaining_budget_bytes=
+        f->stats.remaining_budget_bytes-plan.total_bytes;
+    assign_adjoint_slices(f);
+    denise_cuda_psv_fd4_l1_impl &c=f->core->impl;
+    size_t n=c.full_elements,x=c.x_cpml_elements,y=c.y_cpml_elements;
+#define AU(member,count) do { rc=cudaMemcpy(f->adjoint.member,initial->member, \
+    (count)*sizeof(double),cudaMemcpyHostToDevice);                           \
+    if(rc!=cudaSuccess) goto fail; ++f->adjoint_stats.initial_h2d_calls; } while(0)
+    AU(avx,n); AU(avy,n); AU(asxx,n); AU(asyy,n); AU(asxy,n);
+    AU(ar,n); AU(ap,n); AU(aq,n);
+    AU(psxx,x); AU(psxyx,x); AU(pvxx,x); AU(pvyx,x);
+    AU(psxyy,y); AU(psyy,y); AU(pvxy,y); AU(pvyy,y);
+#undef AU
+    rc=cudaMemset(f->adjoint.wxx,0,plan.workspace_bytes);
+    if(rc!=cudaSuccess) goto fail;
+    f->stats.remaining_budget_bytes-=plan.total_bytes;
+    c.stats.remaining_budget_bytes=f->stats.remaining_budget_bytes;
+    return 0;
+fail:
+    cudaFree(storage);
+    f->adjoint_storage=nullptr; f->adjoint_residual=nullptr;
+    std::memset(&f->adjoint,0,sizeof(f->adjoint));
+    std::memset(&f->adjoint_stats,0,sizeof(f->adjoint_stats));
+    return cuda_failure("adjoint initial upload",rc,__FILE__,__LINE__);
+}
+
+int denise_cuda_psv_adjoint_step(
+        denise_cuda_psv_forward *f,int timestep,
+        const float *modeled_vx,const float *observed_vx,
+        const float *modeled_vy,const float *observed_vy) {
+    psv_last_error[0]='\0';
+    if(!f||!f->adjoint_storage||timestep<1||timestep>f->config.nt)
+        return contract_failure("adjoint step",__FILE__,__LINE__,
+                                "context is unprepared or timestep is invalid");
+    denise_cuda_psv_fd4_l1_impl &c=f->core->impl;
+    cudaError_t rc=cudaSuccess;
+    size_t bytes=(size_t)f->config.ntr*sizeof(float);
+    if(timestep>1) {
+        if(!modeled_vx||!observed_vx||!modeled_vy||!observed_vy)
+            return contract_failure("adjoint residual upload",__FILE__,__LINE__,
+                                    "sample >1 requires four receiver vectors");
+        const float *input[4]={modeled_vx,observed_vx,modeled_vy,observed_vy};
+        for(int k=0;k<4;++k) {
+            /* Copy pageable caller storage before kernel execution so the
+             * input lifetime ends with this call's host-side copy. */
+            rc=cudaMemcpy(f->adjoint_residual+(size_t)k*f->config.ntr,
+                          input[k],bytes,cudaMemcpyHostToDevice);
+            if(rc!=cudaSuccess) return cuda_failure("adjoint residual H2D",rc,
+                                                    __FILE__,__LINE__);
+            ++f->adjoint_stats.residual_h2d_calls;
+            f->adjoint_stats.residual_h2d_bytes+=bytes;
+        }
+    }
+    dim3 block(32,4),grid((c.config.nx+31)/32,(c.config.ny+3)/4);
+    size_t full=c.full_elements;
+    int linear_block=256;
+    int linear_grid=(int)((full+(size_t)linear_block-1)/(size_t)linear_block);
+    int receiver_grid=(f->config.ntr+127)/128;
+    adjoint_inject_receivers<<<receiver_grid,128>>>(f->adjoint,c.full_nx,
+        f->receiver_i,f->receiver_j,f->adjoint_residual,f->config.ntr,timestep);
+    rc=cudaGetLastError(); if(rc!=cudaSuccess) goto launch_fail;
+    adjoint_stress_local<<<grid,block>>>(c.fields,f->adjoint,c.config.nx,
+        c.config.ny,c.config.fw,c.full_nx,c.config.dt,c.config.bjm1,
+        c.config.cjm1);
+    rc=cudaGetLastError(); if(rc!=cudaSuccess) goto launch_fail;
+    adjoint_stress_gather<<<linear_grid,linear_block>>>(f->adjoint,c.config.nx,
+        c.config.ny,c.full_nx,c.config.dh,c.config.hc1,c.config.hc2);
+    rc=cudaGetLastError(); if(rc!=cudaSuccess) goto launch_fail;
+    adjoint_velocity_local<<<grid,block>>>(c.fields,f->adjoint,c.config.nx,
+        c.config.ny,c.config.fw,c.full_nx,c.config.dt,c.config.dh);
+    rc=cudaGetLastError(); if(rc!=cudaSuccess) goto launch_fail;
+    adjoint_velocity_gather<<<linear_grid,linear_block>>>(f->adjoint,c.config.nx,
+        c.config.ny,c.full_nx,c.config.hc1,c.config.hc2);
+    rc=cudaGetLastError(); if(rc!=cudaSuccess) goto launch_fail;
+    ++f->adjoint_stats.steps;
+    f->adjoint_stats.kernel_launches+=5;
+    return 0;
+launch_fail:
+    return cuda_failure("adjoint kernel launch",rc,__FILE__,__LINE__);
+}
+
+int denise_cuda_psv_adjoint_download(
+        denise_cuda_psv_forward *f,denise_cuda_psv_adjoint_host *host) {
+    psv_last_error[0]='\0';
+    if(!f||!f->adjoint_storage||!valid_adjoint_host(host))
+        return contract_failure("adjoint download",__FILE__,__LINE__,
+                                "context is unprepared or output is invalid");
+    denise_cuda_psv_fd4_l1_impl &c=f->core->impl;
+    size_t n=c.full_elements,x=c.x_cpml_elements,y=c.y_cpml_elements;
+    cudaError_t rc=cudaSuccess;
+#define AD(member,count) do { rc=cudaMemcpy(host->member,f->adjoint.member, \
+    (count)*sizeof(double),cudaMemcpyDeviceToHost);                           \
+    if(rc!=cudaSuccess) return cuda_failure("adjoint diagnostic D2H",rc,     \
+                                            __FILE__,__LINE__);               \
+    ++f->adjoint_stats.diagnostic_d2h_calls; } while(0)
+    AD(avx,n); AD(avy,n); AD(asxx,n); AD(asyy,n); AD(asxy,n);
+    AD(ar,n); AD(ap,n); AD(aq,n);
+    AD(psxx,x); AD(psxyx,x); AD(pvxx,x); AD(pvyx,x);
+    AD(psxyy,y); AD(psyy,y); AD(pvxy,y); AD(pvyy,y);
+#undef AD
+    return 0;
+}
+
+int denise_cuda_psv_adjoint_get_stats(
+        const denise_cuda_psv_forward *f,denise_cuda_psv_adjoint_stats *stats) {
+    psv_last_error[0]='\0';
+    if(!f||!f->adjoint_storage||!stats)
+        return contract_failure("adjoint get stats",__FILE__,__LINE__,
+                                "context is unprepared or output is null");
+    *stats=f->adjoint_stats;
+    return 0;
+}
+
 int denise_cuda_psv_forward_run(denise_cuda_psv_forward *f) {
     psv_last_error[0]='\0';
     if(!f) return contract_failure("forward run",__FILE__,__LINE__,"context is null");
@@ -1365,6 +1697,8 @@ int denise_cuda_psv_forward_destroy(denise_cuda_psv_forward **handle) {
         cudaFree(f->checkpoint_storage):cudaSuccess;
     cudaError_t segment_rc=f->segment_storage?
         cudaFree(f->segment_storage):cudaSuccess;
+    cudaError_t adjoint_rc=f->adjoint_storage?
+        cudaFree(f->adjoint_storage):cudaSuccess;
     int result=denise_cuda_psv_fd4_l1_destroy(&f->core);
     delete f;
     if(checkpoint_rc!=cudaSuccess)
@@ -1372,6 +1706,9 @@ int denise_cuda_psv_forward_destroy(denise_cuda_psv_forward **handle) {
                             __FILE__,__LINE__);
     if(segment_rc!=cudaSuccess)
         return cuda_failure("segment destroy cudaFree",segment_rc,
+                            __FILE__,__LINE__);
+    if(adjoint_rc!=cudaSuccess)
+        return cuda_failure("adjoint destroy cudaFree",adjoint_rc,
                             __FILE__,__LINE__);
     return result;
 }

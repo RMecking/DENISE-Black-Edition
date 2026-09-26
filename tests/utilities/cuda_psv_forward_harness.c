@@ -72,8 +72,8 @@ static double monotonic_ms(void) {
     return (double)now.tv_sec*1000.0+(double)now.tv_nsec/1000000.0;
 }
 
-static void configure_globals(int nx,int ny,int nt) {
-    NX=NXG=nx; NY=NYG=ny; NT=nt; FW=TEST_FW; FDORDER=4; L=1;
+static void configure_globals(int nx,int ny,int nt,int fw) {
+    NX=NXG=nx; NY=NYG=ny; NT=nt; FW=fw; FDORDER=4; L=1;
     NPROCX=NPROCY=1; NP=NPROC=NCOLORS=1; MYID=MYID_SHOT=0;
     SHOT_COMM=MPI_COMM_WORLD; DOMAIN_COMM=MPI_COMM_WORLD;
     POS[1]=POS[2]=0; INDEX[1]=INDEX[2]=INDEX[3]=INDEX[4]=0;
@@ -414,6 +414,211 @@ static void bind_forward(struct denise_cuda_psv_forward_config *c,
     h->core.psi_vyy=p->psi_vyy; h->core.psi_vxy=p->psi_vxy;
     h->source_positions=a->srcpos_loc; h->source_signals=a->signals;
     h->receiver_positions=a->recpos_loc; h->sectionvx=seis->sectionvx; h->sectionvy=seis->sectionvy;
+}
+
+struct adjoint_fixture {
+    struct denise_cuda_psv_adjoint_host host;
+    double *allocation;
+};
+
+static double adjoint_pattern(int tag,int j,int i) {
+    int integer=((tag*61+(j+11)*17+(i+13)*29+(j+7)*(i+3)*5)%257)-128;
+    double value=(double)integer/257.0+(double)tag*0.00031+
+                 (double)j*0.000017-(double)i*0.000023;
+    return fabs(value)<0.01?value+0.019:value;
+}
+
+static int adjoint_fixture_allocate(struct adjoint_fixture *a) {
+    size_t full=(size_t)(NY+6)*(size_t)(NX+6);
+    size_t x=(size_t)NY*(size_t)(2*FW),y=(size_t)(2*FW)*(size_t)NX;
+    size_t total=8*full+4*x+4*y;
+    double *p;
+    memset(a,0,sizeof(*a));
+    a->allocation=(double*)calloc(total,sizeof(double));
+    if(!a->allocation) return -1;
+    p=a->allocation;
+#define AS(member,count) a->host.member=p; p+=(count)
+    AS(avx,full); AS(avy,full); AS(asxx,full); AS(asyy,full);
+    AS(asxy,full); AS(ar,full); AS(ap,full); AS(aq,full);
+    AS(psxx,x); AS(psxyx,x); AS(pvxx,x); AS(pvyx,x);
+    AS(psxyy,y); AS(psyy,y); AS(pvxy,y); AS(pvyy,y);
+#undef AS
+    return 0;
+}
+
+static void adjoint_fixture_fill(struct adjoint_fixture *a) {
+    double *main_field[8]={a->host.avx,a->host.avy,a->host.asxx,a->host.asyy,
+        a->host.asxy,a->host.ar,a->host.ap,a->host.aq};
+    double *xf[4]={a->host.psxx,a->host.psxyx,a->host.pvxx,a->host.pvyx};
+    double *yf[4]={a->host.psxyy,a->host.psyy,a->host.pvxy,a->host.pvyy};
+    size_t pitch=(size_t)NX+6;
+    int i,j,k,h;
+    for(k=0;k<8;++k) for(j=-2;j<=NY+3;++j) for(i=-2;i<=NX+3;++i)
+        main_field[k][(size_t)(j+2)*pitch+(size_t)(i+2)]=
+            adjoint_pattern(k+1,j,i);
+    for(k=0;k<4;++k) for(j=1;j<=NY;++j) {
+        for(i=1;i<=FW;++i) {
+            h=i; xf[k][(size_t)(j-1)*(2*FW)+(size_t)(h-1)]=
+                adjoint_pattern(9+k+(k>=2?2:0),j,i);
+        }
+        for(i=NX-FW+1;i<=NX;++i) {
+            h=i-NX+2*FW; xf[k][(size_t)(j-1)*(2*FW)+(size_t)(h-1)]=
+                adjoint_pattern(9+k+(k>=2?2:0),j,i);
+        }
+    }
+    for(k=0;k<4;++k) for(j=1;j<=FW;++j) for(i=1;i<=NX;++i) {
+        h=j; yf[k][(size_t)(h-1)*NX+(size_t)(i-1)]=
+            adjoint_pattern(11+k+(k>=2?2:0),j,i);
+    }
+    for(k=0;k<4;++k) for(j=NY-FW+1;j<=NY;++j) for(i=1;i<=NX;++i) {
+        h=j-NY+2*FW; yf[k][(size_t)(h-1)*NX+(size_t)(i-1)]=
+            adjoint_pattern(11+k+(k>=2?2:0),j,i);
+    }
+}
+
+static void adjoint_oracle_material(struct matPSV *m,struct wavePSV_PML *p) {
+    /* Match the frozen reference's binary64 expression followed by one
+     * conversion to production float storage. */
+    static const double base[8]={0.19,0.23,0.31,0.57,0.27,0.013,0.017,0.009};
+    static const double step[8]={0.0021,0.0017,0.0013,0.0019,0.0011,0.00011,0.00013,0.00017};
+    int i,j,k,h,g;
+    for(j=-2;j<=NY+3;++j) for(i=-2;i<=NX+3;++i) {
+        float *field[8]={&m->prip[j][i],&m->prjp[j][i],&m->f[j][i],&m->g[j][i],
+            &m->fipjp[j][i],&m->d[j][i][1],&m->e[j][i][1],&m->dip[j][i][1]};
+        for(k=0;k<8;++k) {
+            int n=((k+1)*7+(j+3)*5+(i+5)*11+(j+2)*(i+1)*3)%23;
+            *field[k]=(float)(base[k]+step[k]*n+0.00003*(j-i));
+        }
+    }
+    m->bjm[1]=(float)0.873; m->cjm[1]=(float)0.917;
+    for(g=1;g<=4;++g) for(h=1;h<=2*FW;++h) {
+        float kval=(float)(1.035+0.0061*(g*2+h)+0.00019*((h*g)%3));
+        float aval=(float)(-0.023+0.00037*(g*2+h)+0.00019*((h*g)%3));
+        float bval=(float)(0.681+0.0093*(g*2+h)+0.00019*((h*g)%3));
+        float *K=g==1?p->K_x:g==2?p->K_x_half:g==3?p->K_y:p->K_y_half;
+        float *aa=g==1?p->a_x:g==2?p->a_x_half:g==3?p->a_y:p->a_y_half;
+        float *bb=g==1?p->b_x:g==2?p->b_x_half:g==3?p->b_y:p->b_y_half;
+        K[h]=kval; aa[h]=aval; bb[h]=bval;
+    }
+}
+
+static int adjoint_write_snapshot(FILE *out,const struct adjoint_fixture *a) {
+    double *main_field[8]={a->host.avx,a->host.avy,a->host.asxx,a->host.asyy,
+        a->host.asxy,a->host.ar,a->host.ap,a->host.aq};
+    double *xf[4]={a->host.psxx,a->host.psxyx,a->host.pvxx,a->host.pvyx};
+    double *yf[4]={a->host.psxyy,a->host.psyy,a->host.pvxy,a->host.pvyy};
+    size_t full=(size_t)(NX+6)*(size_t)(NY+6),pitch=(size_t)NX+6;
+    double *expanded=(double*)calloc(full,sizeof(double));
+    int k,i,j,h;
+    if(!expanded) return -1;
+    for(k=0;k<8;++k)
+        if(fwrite(main_field[k],sizeof(double),full,out)!=full) { free(expanded); return -1; }
+    for(k=0;k<8;++k) {
+        memset(expanded,0,full*sizeof(double));
+        if(k==0||k==1||k==4||k==5) {
+            double *src=xf[k<2?k:k-2];
+            for(j=1;j<=NY;++j) for(i=1;i<=NX;++i) {
+                h=i<=FW?i:(i>=NX-FW+1?i-NX+2*FW:0);
+                if(h) expanded[(size_t)(j+2)*pitch+(size_t)(i+2)]=
+                    src[(size_t)(j-1)*(2*FW)+(size_t)(h-1)];
+            }
+        } else {
+            double *src=yf[k<4?k-2:k-4];
+            for(j=1;j<=NY;++j) for(i=1;i<=NX;++i) {
+                h=j<=FW?j:(j>=NY-FW+1?j-NY+2*FW:0);
+                if(h) expanded[(size_t)(j+2)*pitch+(size_t)(i+2)]=
+                    src[(size_t)(h-1)*NX+(size_t)(i-1)];
+            }
+        }
+        if(fwrite(expanded,sizeof(double),full,out)!=full) { free(expanded); return -1; }
+    }
+    free(expanded); return 0;
+}
+
+static int adjoint_oracle_gate(struct wavePSV *w,struct wavePSV_PML *p,
+        struct matPSV *m,struct seisPSV *seis,struct acq *a,float *hc,int ntr,
+        const char *sequence,const char *output_path) {
+    const float modeled_vx[3]={(float)0.173,(float)-0.118,(float)0.084};
+    const float observed_vx[3]={(float)-0.091,(float)0.057,(float)-0.141};
+    const float modeled_vy[3]={(float)-0.227,(float)0.209,(float)-0.102};
+    const float observed_vy[3]={(float)0.064,(float)-0.033,(float)0.046};
+    struct denise_cuda_psv_forward_config config,budget_config;
+    struct denise_cuda_psv_forward_host forward_host;
+    struct denise_cuda_psv_forward_stats forward_plan;
+    struct denise_cuda_psv_adjoint_stats plan,stats;
+    struct denise_cuda_psv_forward *context=NULL,*budget=NULL,*duplicate=NULL;
+    struct adjoint_fixture state={0};
+    FILE *out=NULL;
+    int steps[2]={0},step_count=0,k,status=1,saved_i,saved_j;
+    if(ntr!=3||!sequence||!output_path) return fail("invalid adjoint oracle request");
+    if(!strcmp(sequence,"1")) { steps[0]=1; step_count=1; }
+    else if(!strcmp(sequence,"2")) { steps[0]=2; step_count=1; }
+    else if(!strcmp(sequence,"2,1")) { steps[0]=2; steps[1]=1; step_count=2; }
+    else return fail("unsupported adjoint sequence");
+    DT=(float)0.0125; DH=(float)0.5;
+    hc[1]=(float)1.125; hc[2]=(float)(-1.0/24.0);
+    adjoint_oracle_material(m,p);
+    a->recpos_loc[1][1]=3; a->recpos_loc[2][1]=2;
+    a->recpos_loc[1][2]=FW+2; a->recpos_loc[2][2]=FW+3;
+    a->recpos_loc[1][3]=NX-2; a->recpos_loc[2][3]=NY-1;
+    if(adjoint_fixture_allocate(&state)!=0) goto cleanup;
+    adjoint_fixture_fill(&state);
+    bind_forward(&config,&forward_host,w,p,m,seis,a,hc,ntr);
+    if(denise_cuda_psv_forward_required_bytes(&config,&forward_plan)!=0||
+       denise_cuda_psv_adjoint_required_bytes(&config,&plan)!=0) goto cleanup;
+    budget_config=config;
+    budget_config.core.user_cap_bytes=config.core.safety_reserve_bytes+
+        forward_plan.total_mandatory_bytes+plan.total_bytes-1;
+    if(denise_cuda_psv_forward_create(&budget_config,&forward_host,&budget)!=0||
+       denise_cuda_psv_adjoint_prepare(budget,&state.host)==0) goto cleanup;
+    printf("ADJOINT_BUDGET_REJECT bytes=%zu available=%zu steps=0\n",
+           plan.total_bytes,plan.total_bytes-1);
+    denise_cuda_psv_forward_destroy(&budget);
+    saved_i=a->recpos_loc[1][2]; saved_j=a->recpos_loc[2][2];
+    a->recpos_loc[1][2]=a->recpos_loc[1][1];
+    a->recpos_loc[2][2]=a->recpos_loc[2][1];
+    bind_forward(&config,&forward_host,w,p,m,seis,a,hc,ntr);
+    if(denise_cuda_psv_forward_create(&config,&forward_host,&duplicate)!=0||
+       denise_cuda_psv_adjoint_prepare(duplicate,&state.host)==0) goto cleanup;
+    denise_cuda_psv_forward_destroy(&duplicate);
+    a->recpos_loc[1][2]=saved_i; a->recpos_loc[2][2]=saved_j;
+    bind_forward(&config,&forward_host,w,p,m,seis,a,hc,ntr);
+    if(denise_cuda_psv_forward_create(&config,&forward_host,&context)!=0||
+       denise_cuda_psv_adjoint_prepare(context,&state.host)!=0||
+       denise_cuda_psv_adjoint_step(context,0,NULL,NULL,NULL,NULL)==0||
+       denise_cuda_psv_adjoint_get_stats(context,&stats)!=0||stats.steps)
+        goto cleanup;
+    out=fopen(output_path,"wb");
+    if(!out) goto cleanup;
+    for(k=0;k<step_count;++k) {
+        int t=steps[k];
+        if(denise_cuda_psv_adjoint_step(context,t,
+                t>1?modeled_vx:NULL,t>1?observed_vx:NULL,
+                t>1?modeled_vy:NULL,t>1?observed_vy:NULL)!=0||
+           denise_cuda_psv_adjoint_download(context,&state.host)!=0||
+           adjoint_write_snapshot(out,&state)!=0) goto cleanup;
+    }
+    if(denise_cuda_psv_adjoint_get_stats(context,&stats)!=0||
+       stats.steps!=(unsigned long long)step_count||
+       stats.step_allocation_calls||stats.step_full_state_h2d_calls||
+       stats.step_full_state_d2h_calls||stats.step_blocking_sync_calls)
+        goto cleanup;
+    printf("ADJOINT_PLAN main=%zu cpml=%zu workspace=%zu residual=%zu total=%zu remaining=%zu\n",
+           stats.main_state_bytes,stats.cpml_state_bytes,stats.workspace_bytes,
+           stats.residual_bytes,stats.total_bytes,stats.remaining_budget_bytes);
+    printf("ADJOINT_GATE_PASS nx=%d ny=%d fw=%d sequence=%s steps=%llu kernels=%zu residual_h2d_sync_calls=%zu residual_h2d_bytes=%zu allocation_per_step=0 full_state_h2d_per_step=0 full_state_d2h_per_step=0 explicit_device_sync_per_step=0 duplicate_rejected=1 invalid_timestep_rejected=1\n",
+           NX,NY,FW,sequence,stats.steps,stats.kernel_launches,
+           stats.residual_h2d_calls,stats.residual_h2d_bytes);
+    if(denise_cuda_psv_forward_destroy(&context)!=0||context) goto cleanup;
+    printf("ADJOINT_DESTROY_PASS context_null=1\n");
+    status=0;
+cleanup:
+    if(out) fclose(out);
+    if(context) denise_cuda_psv_forward_destroy(&context);
+    if(budget) denise_cuda_psv_forward_destroy(&budget);
+    if(duplicate) denise_cuda_psv_forward_destroy(&duplicate);
+    free(state.allocation);
+    return status;
 }
 
 static int failure_lifecycle(struct wavePSV *w,struct wavePSV_PML *p,
@@ -863,13 +1068,15 @@ int main(int argc,char **argv) {
     struct denise_cuda_psv_forward_stats stats,profile_stats;
     MPI_Request request[4]={MPI_REQUEST_NULL,MPI_REQUEST_NULL,MPI_REQUEST_NULL,MPI_REQUEST_NULL};
     float *hc=NULL; int *dtinv=NULL; int nx=DEFAULT_NX,ny=DEFAULT_NY,nt=DEFAULT_NT,ntr=DEFAULT_NTR;
-    int status=1,k; double cpu_start,cpu_ms,gpu_start,gpu_ms,profile_start,profile_ms=0.0;
-    const char *probe=NULL; int run_mutation_oracle=0,run_no_device_oracle=0;
+    int status=1,k,fw=TEST_FW; double cpu_start,cpu_ms,gpu_start,gpu_ms,profile_start,profile_ms=0.0;
+    const char *probe=NULL,*adjoint_output=NULL,*adjoint_sequence=NULL;
+    int run_mutation_oracle=0,run_no_device_oracle=0;
     int benchmark=0,profile_compare=0,checkpoint_test=0,segment_test=0,warmups=1,repetitions=7;
     MPI_Init(&argc,&argv); MPI_Comm_rank(MPI_COMM_WORLD,&MYID);
     for(k=1;k<argc;++k) {
         if(!strcmp(argv[k],"--nx")&&k+1<argc) nx=atoi(argv[++k]);
         else if(!strcmp(argv[k],"--ny")&&k+1<argc) ny=atoi(argv[++k]);
+        else if(!strcmp(argv[k],"--fw")&&k+1<argc) fw=atoi(argv[++k]);
         else if(!strcmp(argv[k],"--nt")&&k+1<argc) nt=atoi(argv[++k]);
         else if(!strcmp(argv[k],"--ntr")&&k+1<argc) ntr=atoi(argv[++k]);
         else if(!strcmp(argv[k],"--probe-backend")&&k+1<argc) probe=argv[++k];
@@ -879,14 +1086,16 @@ int main(int argc,char **argv) {
         else if(!strcmp(argv[k],"--profile-compare")) profile_compare=1;
         else if(!strcmp(argv[k],"--checkpoint-gate")) checkpoint_test=1;
         else if(!strcmp(argv[k],"--segment-gate")) segment_test=1;
+        else if(!strcmp(argv[k],"--adjoint-output")&&k+1<argc) adjoint_output=argv[++k];
+        else if(!strcmp(argv[k],"--adjoint-sequence")&&k+1<argc) adjoint_sequence=argv[++k];
         else if(!strcmp(argv[k],"--warmup")&&k+1<argc) warmups=atoi(argv[++k]);
         else if(!strcmp(argv[k],"--repetitions")&&k+1<argc) repetitions=atoi(argv[++k]);
         else { fail("unknown command-line option"); goto cleanup; }
     }
-    if(nx<2*TEST_FW+5||ny<2*TEST_FW+5||nt<2||ntr<1||warmups<1||repetitions<1) {
+    if(fw<1||nx<2*fw+5||ny<2*fw+5||nt<2||ntr<1||warmups<1||repetitions<1) {
         fail("invalid benchmark dimensions or repetition counts"); goto cleanup;
     }
-    configure_globals(nx,ny,nt);
+    configure_globals(nx,ny,nt,fw);
     alloc_PSV(&wave,&pml); alloc_matPSV(&material); alloc_mpiPSV(&mpi);
     initialize_cpml(&pml); initialize_material(&material);
     initialize_acquisition(&acquisition,&seis,ntr);
@@ -899,6 +1108,15 @@ int main(int argc,char **argv) {
     if(benchmark) {
         status=benchmark_solver(&wave,&pml,&material,&mpi,&seis,&seisfwi,&fwi,
             &acquisition,hc,dtinv,request,ntr,warmups,repetitions);
+        goto cleanup;
+    }
+    if(adjoint_output) {
+        if(!adjoint_sequence||fw!=4||nt<2||ntr!=3) {
+            fail("adjoint gate requires FW=4, NT>=2, NTR=3, and a sequence");
+            goto cleanup;
+        }
+        status=adjoint_oracle_gate(&wave,&pml,&material,&seis,&acquisition,hc,
+                                   ntr,adjoint_sequence,adjoint_output);
         goto cleanup;
     }
     if(checkpoint_test) {
