@@ -111,6 +111,30 @@ struct denise_cuda_psv_adjoint_stats {
     size_t kernel_launches;
 };
 
+/* M8e-2C2 persistent segmented reverse-sweep accounting. Observed traces use
+ * the forward trace layout: receiver-major [receiver][timestep-1]. */
+struct denise_cuda_psv_adjoint_sweep_stats {
+    size_t observed_trace_bytes;
+    size_t total_incremental_bytes;
+    size_t remaining_budget_bytes;
+    size_t observed_h2d_calls;
+    size_t observed_h2d_bytes;
+    size_t reverse_segments;
+    unsigned long long reverse_timesteps;
+    size_t replay_synchronization_calls;
+    size_t reverse_segment_synchronization_calls;
+    size_t per_step_residual_h2d_calls;
+    size_t per_step_full_state_h2d_calls;
+    size_t per_step_full_state_d2h_calls;
+    size_t per_step_allocation_calls;
+    size_t per_step_free_calls;
+    size_t per_step_blocking_sync_calls;
+    int next_reverse_segment;
+    int prepared;
+    int complete;
+    int invalid;
+};
+
 const char *denise_cuda_psv_forward_last_error(void);
 
 int denise_cuda_psv_forward_required_bytes(
@@ -189,6 +213,28 @@ int denise_cuda_psv_adjoint_download(
 int denise_cuda_psv_adjoint_get_stats(
         const struct denise_cuda_psv_forward *context,
         struct denise_cuda_psv_adjoint_stats *stats);
+
+/* Plan and run the M8e-2C2 state-only segmented reverse sweep. The prepare
+ * call requires a completed original segmented forward trajectory, a complete
+ * checkpoint bank, and a prepared adjoint state. observed_vx/observed_vy each
+ * contain NTR*NT floats in receiver-major [receiver][timestep-1] order and are
+ * uploaded exactly once. Reverse segment calls must follow S-1,...,0. Replay
+ * leaves the six bounded operands resident as
+ * [field][timestep-begin(segment)][y][x]; 2C2 does not consume them yet. */
+int denise_cuda_psv_adjoint_sweep_required_bytes(
+        const struct denise_cuda_psv_forward_config *config,
+        struct denise_cuda_psv_adjoint_sweep_stats *plan);
+int denise_cuda_psv_adjoint_sweep_prepare(
+        struct denise_cuda_psv_forward *context,
+        const float *observed_vx,const float *observed_vy,
+        size_t float_count_per_component);
+int denise_cuda_psv_adjoint_reverse_segment(
+        struct denise_cuda_psv_forward *context,int segment);
+int denise_cuda_psv_adjoint_reverse_sweep(
+        struct denise_cuda_psv_forward *context);
+int denise_cuda_psv_adjoint_sweep_get_stats(
+        const struct denise_cuda_psv_forward *context,
+        struct denise_cuda_psv_adjoint_sweep_stats *stats);
 
 int denise_cuda_psv_forward_download_traces(
         struct denise_cuda_psv_forward *context,

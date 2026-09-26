@@ -400,6 +400,19 @@ __global__ void adjoint_inject_receivers(
     a.avy[p]+=(double)residual[2*ntr+r]-(double)residual[3*ntr+r];
 }
 
+__global__ void adjoint_inject_resident_traces(
+        adjoint_fields a,size_t pitch,const int *receiver_i,
+        const int *receiver_j,const float *modeled_vx,const float *modeled_vy,
+        const float *observed_vx,const float *observed_vy,
+        int ntr,int nt,int timestep) {
+    int r=(int)(blockIdx.x*blockDim.x+threadIdx.x);
+    if(r>=ntr||timestep<=1) return;
+    size_t p=fi(receiver_i[r],receiver_j[r],pitch);
+    size_t sample=(size_t)r*(size_t)nt+(size_t)(timestep-1);
+    a.avx[p]+=(double)modeled_vx[sample]-(double)observed_vx[sample];
+    a.avy[p]+=(double)modeled_vy[sample]-(double)observed_vy[sample];
+}
+
 __global__ void adjoint_stress_local(
         device_fields d,adjoint_fields a,int nx,int ny,int fw,size_t pitch,
         float dt,float bjm1,float cjm1) {
@@ -524,10 +537,89 @@ struct denise_cuda_psv_forward {
     float *adjoint_residual;
     adjoint_fields adjoint;
     denise_cuda_psv_adjoint_stats adjoint_stats;
+    float *adjoint_observed_storage;
+    float *adjoint_observed_vx;
+    float *adjoint_observed_vy;
+    denise_cuda_psv_adjoint_sweep_stats adjoint_sweep_stats;
+    int adjoint_sweep_state;
     bool receivers_unique;
     bool profiling_enabled;
     denise_cuda_psv_forward_stats stats;
 };
+
+namespace {
+
+enum {
+    ADJOINT_SWEEP_UNPREPARED=0,
+    ADJOINT_SWEEP_READY=1,
+    ADJOINT_SWEEP_COMPLETE=2,
+    ADJOINT_SWEEP_INVALID=3
+};
+
+int calculate_adjoint_sweep_plan(
+        const denise_cuda_psv_forward_config *config,
+        denise_cuda_psv_adjoint_sweep_stats *plan) {
+    if(!config||!plan)
+        return contract_failure("adjoint sweep required bytes",__FILE__,__LINE__,
+                                "configuration or output is null");
+    if(validate_config(&config->core,"adjoint sweep required bytes")!=0)
+        return -1;
+    if(config->nt<1||config->ntr<1)
+        return contract_failure("adjoint sweep required bytes",__FILE__,__LINE__,
+                                "NT and NTR must be positive");
+    size_t samples,component_bytes,total;
+    if(!checked_mul((size_t)config->ntr,(size_t)config->nt,&samples)||
+       !checked_mul(samples,sizeof(float),&component_bytes)||
+       !checked_mul(component_bytes,2,&total))
+        return contract_failure("adjoint sweep required bytes",__FILE__,__LINE__,
+                                "observed trace size overflows size_t");
+    std::memset(plan,0,sizeof(*plan));
+    plan->observed_trace_bytes=total;
+    plan->total_incremental_bytes=total;
+    plan->next_reverse_segment=-1;
+    return 0;
+}
+
+int launch_adjoint_operator(denise_cuda_psv_forward *f,int timestep,
+                            bool resident_traces) {
+    denise_cuda_psv_fd4_l1_impl &c=f->core->impl;
+    cudaError_t rc=cudaSuccess;
+    dim3 block(32,4),grid((c.config.nx+31)/32,(c.config.ny+3)/4);
+    size_t full=c.full_elements;
+    int linear_block=256;
+    int linear_grid=(int)((full+(size_t)linear_block-1)/(size_t)linear_block);
+    int receiver_grid=(f->config.ntr+127)/128;
+    if(resident_traces)
+        adjoint_inject_resident_traces<<<receiver_grid,128>>>(
+            f->adjoint,c.full_nx,f->receiver_i,f->receiver_j,
+            f->trace_vx,f->trace_vy,f->adjoint_observed_vx,
+            f->adjoint_observed_vy,f->config.ntr,f->config.nt,timestep);
+    else
+        adjoint_inject_receivers<<<receiver_grid,128>>>(f->adjoint,c.full_nx,
+            f->receiver_i,f->receiver_j,f->adjoint_residual,
+            f->config.ntr,timestep);
+    rc=cudaGetLastError(); if(rc!=cudaSuccess) goto fail;
+    adjoint_stress_local<<<grid,block>>>(c.fields,f->adjoint,c.config.nx,
+        c.config.ny,c.config.fw,c.full_nx,c.config.dt,c.config.bjm1,
+        c.config.cjm1);
+    rc=cudaGetLastError(); if(rc!=cudaSuccess) goto fail;
+    adjoint_stress_gather<<<linear_grid,linear_block>>>(f->adjoint,c.config.nx,
+        c.config.ny,c.full_nx,c.config.dh,c.config.hc1,c.config.hc2);
+    rc=cudaGetLastError(); if(rc!=cudaSuccess) goto fail;
+    adjoint_velocity_local<<<grid,block>>>(c.fields,f->adjoint,c.config.nx,
+        c.config.ny,c.config.fw,c.full_nx,c.config.dt,c.config.dh);
+    rc=cudaGetLastError(); if(rc!=cudaSuccess) goto fail;
+    adjoint_velocity_gather<<<linear_grid,linear_block>>>(f->adjoint,c.config.nx,
+        c.config.ny,c.full_nx,c.config.hc1,c.config.hc2);
+    rc=cudaGetLastError(); if(rc!=cudaSuccess) goto fail;
+    ++f->adjoint_stats.steps;
+    f->adjoint_stats.kernel_launches+=5;
+    return 0;
+fail:
+    return cuda_failure("adjoint kernel launch",rc,__FILE__,__LINE__);
+}
+
+}  // namespace
 
 extern "C" {
 const char *denise_cuda_psv_fd4_l1_last_error(void) { return psv_last_error; }
@@ -926,6 +1018,7 @@ void release_forward_partial(denise_cuda_psv_forward *f) {
     if(f->checkpoint_storage) cudaFree(f->checkpoint_storage);
     if(f->segment_storage) cudaFree(f->segment_storage);
     if(f->adjoint_storage) cudaFree(f->adjoint_storage);
+    if(f->adjoint_observed_storage) cudaFree(f->adjoint_observed_storage);
     if(f->core) {
         if(f->core->impl.storage) cudaFree(f->core->impl.storage);
         delete f->core;
@@ -1464,7 +1557,9 @@ int denise_cuda_psv_adjoint_step(
     if(!f||!f->adjoint_storage||timestep<1||timestep>f->config.nt)
         return contract_failure("adjoint step",__FILE__,__LINE__,
                                 "context is unprepared or timestep is invalid");
-    denise_cuda_psv_fd4_l1_impl &c=f->core->impl;
+    if(f->adjoint_sweep_state!=ADJOINT_SWEEP_UNPREPARED)
+        return contract_failure("adjoint step",__FILE__,__LINE__,
+                                "standalone stepping cannot alter a prepared sweep");
     cudaError_t rc=cudaSuccess;
     size_t bytes=(size_t)f->config.ntr*sizeof(float);
     if(timestep>1) {
@@ -1483,32 +1578,7 @@ int denise_cuda_psv_adjoint_step(
             f->adjoint_stats.residual_h2d_bytes+=bytes;
         }
     }
-    dim3 block(32,4),grid((c.config.nx+31)/32,(c.config.ny+3)/4);
-    size_t full=c.full_elements;
-    int linear_block=256;
-    int linear_grid=(int)((full+(size_t)linear_block-1)/(size_t)linear_block);
-    int receiver_grid=(f->config.ntr+127)/128;
-    adjoint_inject_receivers<<<receiver_grid,128>>>(f->adjoint,c.full_nx,
-        f->receiver_i,f->receiver_j,f->adjoint_residual,f->config.ntr,timestep);
-    rc=cudaGetLastError(); if(rc!=cudaSuccess) goto launch_fail;
-    adjoint_stress_local<<<grid,block>>>(c.fields,f->adjoint,c.config.nx,
-        c.config.ny,c.config.fw,c.full_nx,c.config.dt,c.config.bjm1,
-        c.config.cjm1);
-    rc=cudaGetLastError(); if(rc!=cudaSuccess) goto launch_fail;
-    adjoint_stress_gather<<<linear_grid,linear_block>>>(f->adjoint,c.config.nx,
-        c.config.ny,c.full_nx,c.config.dh,c.config.hc1,c.config.hc2);
-    rc=cudaGetLastError(); if(rc!=cudaSuccess) goto launch_fail;
-    adjoint_velocity_local<<<grid,block>>>(c.fields,f->adjoint,c.config.nx,
-        c.config.ny,c.config.fw,c.full_nx,c.config.dt,c.config.dh);
-    rc=cudaGetLastError(); if(rc!=cudaSuccess) goto launch_fail;
-    adjoint_velocity_gather<<<linear_grid,linear_block>>>(f->adjoint,c.config.nx,
-        c.config.ny,c.full_nx,c.config.hc1,c.config.hc2);
-    rc=cudaGetLastError(); if(rc!=cudaSuccess) goto launch_fail;
-    ++f->adjoint_stats.steps;
-    f->adjoint_stats.kernel_launches+=5;
-    return 0;
-launch_fail:
-    return cuda_failure("adjoint kernel launch",rc,__FILE__,__LINE__);
+    return launch_adjoint_operator(f,timestep,false);
 }
 
 int denise_cuda_psv_adjoint_download(
@@ -1540,6 +1610,166 @@ int denise_cuda_psv_adjoint_get_stats(
         return contract_failure("adjoint get stats",__FILE__,__LINE__,
                                 "context is unprepared or output is null");
     *stats=f->adjoint_stats;
+    return 0;
+}
+
+int denise_cuda_psv_adjoint_sweep_required_bytes(
+        const denise_cuda_psv_forward_config *config,
+        denise_cuda_psv_adjoint_sweep_stats *plan) {
+    psv_last_error[0]='\0';
+    return calculate_adjoint_sweep_plan(config,plan);
+}
+
+int denise_cuda_psv_adjoint_sweep_prepare(
+        denise_cuda_psv_forward *f,const float *observed_vx,
+        const float *observed_vy,size_t float_count_per_component) {
+    psv_last_error[0]='\0';
+    if(!f||!observed_vx||!observed_vy)
+        return contract_failure("adjoint sweep prepare",__FILE__,__LINE__,
+                                "context or observed traces are null");
+    if(f->adjoint_sweep_state!=ADJOINT_SWEEP_UNPREPARED||
+       f->adjoint_observed_storage)
+        return contract_failure("adjoint sweep prepare",__FILE__,__LINE__,
+                                "sweep is already prepared or invalid");
+    size_t expected=0;
+    if(!checked_mul((size_t)f->config.ntr,(size_t)f->config.nt,&expected))
+        return contract_failure("adjoint sweep prepare",__FILE__,__LINE__,
+                                "observed trace count overflows size_t");
+    if(float_count_per_component!=expected)
+        return contract_failure("adjoint sweep prepare",__FILE__,__LINE__,
+            "each observed component must contain exactly NTR*NT=%zu floats",
+            expected);
+    if(!f->segment_storage)
+        return contract_failure("adjoint sweep prepare",__FILE__,__LINE__,
+                                "segment bank is not prepared");
+    if(f->segment_captured!=f->segment_count-1)
+        return contract_failure("adjoint sweep prepare",__FILE__,__LINE__,
+                                "segment checkpoint bank is incomplete");
+    if(f->next_timestep!=f->config.nt+1||f->segment_record_armed)
+        return contract_failure("adjoint sweep prepare",__FILE__,__LINE__,
+                                "original forward trajectory is incomplete");
+    if(!checkpoint_compatible(f->config,f->segment_config))
+        return contract_failure("adjoint sweep prepare",__FILE__,__LINE__,
+                                "segment configuration changed");
+    if(!f->adjoint_storage)
+        return contract_failure("adjoint sweep prepare",__FILE__,__LINE__,
+                                "adjoint state is not prepared");
+    denise_cuda_psv_adjoint_sweep_stats plan;
+    if(calculate_adjoint_sweep_plan(&f->config,&plan)!=0) return -1;
+    if(plan.total_incremental_bytes>f->stats.remaining_budget_bytes)
+        return contract_failure("adjoint sweep prepare budget",__FILE__,__LINE__,
+            "observed traces %zu exceed remaining usable budget %zu",
+            plan.total_incremental_bytes,f->stats.remaining_budget_bytes);
+    float *storage=nullptr;
+    cudaError_t rc=cudaMalloc((void**)&storage,plan.total_incremental_bytes);
+    if(rc!=cudaSuccess)
+        return cuda_failure("adjoint sweep observed cudaMalloc",rc,
+                            __FILE__,__LINE__);
+    const size_t component_bytes=plan.observed_trace_bytes/2;
+    rc=cudaMemcpy(storage,observed_vx,component_bytes,cudaMemcpyHostToDevice);
+    if(rc!=cudaSuccess) goto fail;
+    ++plan.observed_h2d_calls; plan.observed_h2d_bytes+=component_bytes;
+    rc=cudaMemcpy(storage+expected,observed_vy,component_bytes,
+                  cudaMemcpyHostToDevice);
+    if(rc!=cudaSuccess) goto fail;
+    ++plan.observed_h2d_calls; plan.observed_h2d_bytes+=component_bytes;
+    f->adjoint_observed_storage=storage;
+    f->adjoint_observed_vx=storage;
+    f->adjoint_observed_vy=storage+expected;
+    f->stats.remaining_budget_bytes-=plan.total_incremental_bytes;
+    f->core->impl.stats.remaining_budget_bytes=f->stats.remaining_budget_bytes;
+    plan.remaining_budget_bytes=f->stats.remaining_budget_bytes;
+    plan.next_reverse_segment=f->segment_count-1;
+    plan.prepared=1;
+    f->adjoint_sweep_stats=plan;
+    f->adjoint_sweep_state=ADJOINT_SWEEP_READY;
+    f->segment_original_complete=true;
+    return 0;
+fail:
+    cudaFree(storage);
+    return cuda_failure("adjoint sweep observed H2D",rc,__FILE__,__LINE__);
+}
+
+int denise_cuda_psv_adjoint_reverse_segment(
+        denise_cuda_psv_forward *f,int segment) {
+    psv_last_error[0]='\0';
+    if(!f||f->adjoint_sweep_state!=ADJOINT_SWEEP_READY)
+        return contract_failure("adjoint reverse segment",__FILE__,__LINE__,
+                                "sweep is unprepared, complete, or invalid");
+    if(segment!=f->adjoint_sweep_stats.next_reverse_segment)
+        return contract_failure("adjoint reverse segment",__FILE__,__LINE__,
+            "expected segment %d, got %d",
+            f->adjoint_sweep_stats.next_reverse_segment,segment);
+    int begin,end;
+    if(denise_cuda_psv_forward_segment_bounds(f,segment,&begin,&end)!=0)
+        return -1;
+    size_t syncs_before=f->stats.forward_synchronization_calls;
+    if(denise_cuda_psv_forward_segment_replay(f,segment)!=0) {
+        f->adjoint_sweep_state=ADJOINT_SWEEP_INVALID;
+        f->adjoint_sweep_stats.invalid=1;
+        f->adjoint_sweep_stats.prepared=0;
+        return -1;
+    }
+    if(f->segment_record_ready!=segment+1) {
+        f->adjoint_sweep_state=ADJOINT_SWEEP_INVALID;
+        f->adjoint_sweep_stats.invalid=1;
+        f->adjoint_sweep_stats.prepared=0;
+        return contract_failure("adjoint reverse segment",__FILE__,__LINE__,
+                                "replayed operand buffer is not ready");
+    }
+    f->adjoint_sweep_stats.replay_synchronization_calls+=
+        f->stats.forward_synchronization_calls-syncs_before;
+    for(int timestep=end;timestep>=begin;--timestep) {
+        if(launch_adjoint_operator(f,timestep,true)!=0) {
+            f->adjoint_sweep_state=ADJOINT_SWEEP_INVALID;
+            f->adjoint_sweep_stats.invalid=1;
+            f->adjoint_sweep_stats.prepared=0;
+            return -1;
+        }
+    }
+    /* One segment-boundary synchronization makes the checkpointable API's
+     * success result authoritative and catches asynchronous execution errors.
+     * It is deliberately outside the timestep operator. */
+    cudaError_t rc=cudaDeviceSynchronize();
+    if(rc!=cudaSuccess) {
+        f->adjoint_sweep_state=ADJOINT_SWEEP_INVALID;
+        f->adjoint_sweep_stats.invalid=1;
+        f->adjoint_sweep_stats.prepared=0;
+        return cuda_failure("adjoint reverse segment synchronization",rc,
+                            __FILE__,__LINE__);
+    }
+    ++f->adjoint_sweep_stats.reverse_segment_synchronization_calls;
+    ++f->adjoint_sweep_stats.reverse_segments;
+    f->adjoint_sweep_stats.reverse_timesteps+=(unsigned long long)(end-begin+1);
+    f->adjoint_sweep_stats.next_reverse_segment=segment-1;
+    if(segment==0) {
+        f->adjoint_sweep_state=ADJOINT_SWEEP_COMPLETE;
+        f->adjoint_sweep_stats.prepared=0;
+        f->adjoint_sweep_stats.complete=1;
+    }
+    return 0;
+}
+
+int denise_cuda_psv_adjoint_reverse_sweep(denise_cuda_psv_forward *f) {
+    psv_last_error[0]='\0';
+    if(!f||f->adjoint_sweep_state!=ADJOINT_SWEEP_READY)
+        return contract_failure("adjoint reverse sweep",__FILE__,__LINE__,
+                                "sweep is unprepared, complete, or invalid");
+    while(f->adjoint_sweep_state==ADJOINT_SWEEP_READY) {
+        int segment=f->adjoint_sweep_stats.next_reverse_segment;
+        if(denise_cuda_psv_adjoint_reverse_segment(f,segment)!=0) return -1;
+    }
+    return f->adjoint_sweep_state==ADJOINT_SWEEP_COMPLETE?0:-1;
+}
+
+int denise_cuda_psv_adjoint_sweep_get_stats(
+        const denise_cuda_psv_forward *f,
+        denise_cuda_psv_adjoint_sweep_stats *stats) {
+    psv_last_error[0]='\0';
+    if(!f||!stats||f->adjoint_sweep_state==ADJOINT_SWEEP_UNPREPARED)
+        return contract_failure("adjoint sweep get stats",__FILE__,__LINE__,
+                                "sweep is unprepared or output is null");
+    *stats=f->adjoint_sweep_stats;
     return 0;
 }
 
@@ -1699,6 +1929,8 @@ int denise_cuda_psv_forward_destroy(denise_cuda_psv_forward **handle) {
         cudaFree(f->segment_storage):cudaSuccess;
     cudaError_t adjoint_rc=f->adjoint_storage?
         cudaFree(f->adjoint_storage):cudaSuccess;
+    cudaError_t observed_rc=f->adjoint_observed_storage?
+        cudaFree(f->adjoint_observed_storage):cudaSuccess;
     int result=denise_cuda_psv_fd4_l1_destroy(&f->core);
     delete f;
     if(checkpoint_rc!=cudaSuccess)
@@ -1709,6 +1941,9 @@ int denise_cuda_psv_forward_destroy(denise_cuda_psv_forward **handle) {
                             __FILE__,__LINE__);
     if(adjoint_rc!=cudaSuccess)
         return cuda_failure("adjoint destroy cudaFree",adjoint_rc,
+                            __FILE__,__LINE__);
+    if(observed_rc!=cudaSuccess)
+        return cuda_failure("adjoint observed destroy cudaFree",observed_rc,
                             __FILE__,__LINE__);
     return result;
 }
