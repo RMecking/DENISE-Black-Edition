@@ -47,6 +47,7 @@ CUDA_PSV_CPU_OBJ = $(CUDA_BUILD_DIR)/update_v_PML_PSV.o \
 	$(CUDA_BUILD_DIR)/prepare_update_s_visc_PSV.o
 CUDA_PSV_BIN = $(EXEC)/denise_cuda_psv_fd4_l1
 CUDA_PSV_DISPATCH_OBJ = $(CUDA_BUILD_DIR)/psv_cuda_dispatch.o
+CUDA_PSV_EXACT_FWI_OBJ = $(CUDA_BUILD_DIR)/psv_cuda_exact_fwi.o
 CUDA_PSV_SOLVER_OBJ = $(CUDA_BUILD_DIR)/psv_cuda_solver.o
 CUDA_FORWARD_HARNESS_OBJ = $(CUDA_BUILD_DIR)/cuda_psv_forward_harness.o
 CUDA_DENISE_BIN ?= $(EXEC)/denise_cuda
@@ -318,10 +319,10 @@ DENISE += alloc_fwiSH.c \
 SNAPMERGE_OBJ = $(SNAPMERGE_SCR:.c=.o)
 DENISE_OBJ = $(DENISE:.c=.o)      
 CUDA_DENISE_OBJ = $(filter-out psv.o,$(DENISE_OBJ)) \
-	$(CUDA_PSV_SOLVER_OBJ) $(CUDA_PSV_DISPATCH_OBJ) \
+	$(CUDA_PSV_SOLVER_OBJ) $(CUDA_PSV_DISPATCH_OBJ) $(CUDA_PSV_EXACT_FWI_OBJ) \
 	$(CUDA_BACKEND_OBJ) $(CUDA_PSV_OBJ)
 CUDA_FORWARD_LINK_OBJ = $(filter-out denise.o psv.o,$(DENISE_OBJ)) \
-	$(CUDA_PSV_SOLVER_OBJ) $(CUDA_PSV_DISPATCH_OBJ) \
+	$(CUDA_PSV_SOLVER_OBJ) $(CUDA_PSV_DISPATCH_OBJ) $(CUDA_PSV_EXACT_FWI_OBJ) \
 	$(CUDA_BACKEND_OBJ) $(CUDA_PSV_OBJ) $(CUDA_FORWARD_HARNESS_OBJ)
 
 snapmerge:	$(SNAPMERGE_OBJ)
@@ -363,6 +364,9 @@ $(CUDA_PSV_HARNESS_OBJ): ../tests/utilities/cuda_psv_fd4_l1_harness.c ../include
 	$(CC) $(CFLAGS) -std=c99 $(IFLAGS) -c $< -o $@
 
 $(CUDA_PSV_DISPATCH_OBJ): PSV/psv_cuda_dispatch.c ../include/denise_cuda_psv_dispatch.h ../include/denise_cuda_psv_forward.h | $(CUDA_BUILD_DIR)
+	$(CC) $(CFLAGS) -std=c99 $(IFLAGS) -c $< -o $@
+
+$(CUDA_PSV_EXACT_FWI_OBJ): PSV/psv_cuda_exact_fwi.c ../include/denise_cuda_psv_exact_fwi.h ../include/denise_cuda_psv_forward.h | $(CUDA_BUILD_DIR)
 	$(CC) $(CFLAGS) -std=c99 $(IFLAGS) -c $< -o $@
 
 $(CUDA_PSV_SOLVER_OBJ): PSV/psv.c ../include/denise_cuda_psv_dispatch.h | $(CUDA_BUILD_DIR)

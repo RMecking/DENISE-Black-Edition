@@ -426,6 +426,18 @@ __global__ void adjoint_inject_resident_traces(
     a.avy[p]+=(double)modeled_vy[sample]-(double)observed_vy[sample];
 }
 
+__global__ void adjoint_inject_resident_production_residual(
+        adjoint_fields a,size_t pitch,const int *receiver_i,
+        const int *receiver_j,const float *residual_vx,
+        const float *residual_vy,int ntr,int nt,int timestep) {
+    int r=(int)(blockIdx.x*blockDim.x+threadIdx.x);
+    if(r>=ntr||timestep<=1) return;
+    size_t p=fi(receiver_i[r],receiver_j[r],pitch);
+    size_t sample=(size_t)r*(size_t)nt+(size_t)(timestep-1);
+    a.avx[p]+=(double)residual_vx[sample];
+    a.avy[p]+=(double)residual_vy[sample];
+}
+
 /* Phase B: receiver residuals are already injected, while stress and memory
  * cotangents are still the incoming state for this reverse timestep. */
 __global__ void native_gradient_stress_correlation(
@@ -599,6 +611,7 @@ struct denise_cuda_psv_forward {
     float *adjoint_observed_storage;
     float *adjoint_observed_vx;
     float *adjoint_observed_vy;
+    int adjoint_resident_source_kind;
     denise_cuda_psv_adjoint_sweep_stats adjoint_sweep_stats;
     int adjoint_sweep_state;
     double *native_gradient_storage;
@@ -625,6 +638,12 @@ enum {
     ADJOINT_SWEEP_READY=1,
     ADJOINT_SWEEP_COMPLETE=2,
     ADJOINT_SWEEP_INVALID=3
+};
+
+enum {
+    ADJOINT_RESIDENT_SOURCE_NONE=0,
+    ADJOINT_RESIDENT_SOURCE_OBSERVED=1,
+    ADJOINT_RESIDENT_SOURCE_PRODUCTION_RESIDUAL=2
 };
 
 int calculate_adjoint_sweep_plan(
@@ -839,11 +858,19 @@ int launch_adjoint_operator(denise_cuda_psv_forward *f,int timestep,
     int linear_block=256;
     int linear_grid=(int)((full+(size_t)linear_block-1)/(size_t)linear_block);
     int receiver_grid=(f->config.ntr+127)/128;
-    if(resident_traces)
+    if(resident_traces&&
+       f->adjoint_resident_source_kind==ADJOINT_RESIDENT_SOURCE_OBSERVED)
         adjoint_inject_resident_traces<<<receiver_grid,128>>>(
             f->adjoint,c.full_nx,f->receiver_i,f->receiver_j,
             f->trace_vx,f->trace_vy,f->adjoint_observed_vx,
             f->adjoint_observed_vy,f->config.ntr,f->config.nt,timestep);
+    else if(resident_traces&&
+            f->adjoint_resident_source_kind==
+                ADJOINT_RESIDENT_SOURCE_PRODUCTION_RESIDUAL)
+        adjoint_inject_resident_production_residual<<<receiver_grid,128>>>(
+            f->adjoint,c.full_nx,f->receiver_i,f->receiver_j,
+            f->adjoint_observed_vx,f->adjoint_observed_vy,
+            f->config.ntr,f->config.nt,timestep);
     else
         adjoint_inject_receivers<<<receiver_grid,128>>>(f->adjoint,c.full_nx,
             f->receiver_i,f->receiver_j,f->adjoint_residual,
@@ -1775,11 +1802,12 @@ int denise_cuda_psv_adjoint_required_bytes(
     return calculate_adjoint_plan(config,plan);
 }
 
-int denise_cuda_psv_adjoint_prepare(
+static int adjoint_prepare_impl(
         denise_cuda_psv_forward *f,
-        const denise_cuda_psv_adjoint_host *initial) {
+        const denise_cuda_psv_adjoint_host *initial,
+        bool zero_initial) {
     psv_last_error[0]='\0';
-    if(!f||!valid_adjoint_host(initial)||f->adjoint_storage)
+    if(!f||(!zero_initial&&!valid_adjoint_host(initial))||f->adjoint_storage)
         return contract_failure("adjoint prepare",__FILE__,__LINE__,
             "context/initial state is invalid or adjoint is already prepared");
     if(!f->receivers_unique)
@@ -1801,6 +1829,11 @@ int denise_cuda_psv_adjoint_prepare(
         f->stats.remaining_budget_bytes-plan.total_bytes;
     assign_adjoint_slices(f);
     denise_cuda_psv_fd4_l1_impl &c=f->core->impl;
+    if(zero_initial) {
+        rc=cudaMemset(storage,0,plan.total_bytes);
+        if(rc!=cudaSuccess) goto fail;
+        ++f->adjoint_stats.initial_zero_calls;
+    } else {
     size_t n=c.full_elements,x=c.x_cpml_elements,y=c.y_cpml_elements;
 #define AU(member,count) do { rc=cudaMemcpy(f->adjoint.member,initial->member, \
     (count)*sizeof(double),cudaMemcpyHostToDevice);                           \
@@ -1812,6 +1845,7 @@ int denise_cuda_psv_adjoint_prepare(
 #undef AU
     rc=cudaMemset(f->adjoint.wxx,0,plan.workspace_bytes);
     if(rc!=cudaSuccess) goto fail;
+    }
     f->stats.remaining_budget_bytes-=plan.total_bytes;
     c.stats.remaining_budget_bytes=f->stats.remaining_budget_bytes;
     return 0;
@@ -1821,6 +1855,17 @@ fail:
     std::memset(&f->adjoint,0,sizeof(f->adjoint));
     std::memset(&f->adjoint_stats,0,sizeof(f->adjoint_stats));
     return cuda_failure("adjoint initial upload",rc,__FILE__,__LINE__);
+}
+
+int denise_cuda_psv_adjoint_prepare(
+        denise_cuda_psv_forward *f,
+        const denise_cuda_psv_adjoint_host *initial) {
+    return adjoint_prepare_impl(f,initial,false);
+}
+
+int denise_cuda_psv_adjoint_prepare_zero(
+        denise_cuda_psv_forward *f) {
+    return adjoint_prepare_impl(f,nullptr,true);
 }
 
 int denise_cuda_psv_adjoint_step(
@@ -1894,13 +1939,15 @@ int denise_cuda_psv_adjoint_sweep_required_bytes(
     return calculate_adjoint_sweep_plan(config,plan);
 }
 
-int denise_cuda_psv_adjoint_sweep_prepare(
-        denise_cuda_psv_forward *f,const float *observed_vx,
-        const float *observed_vy,size_t float_count_per_component) {
+static int adjoint_sweep_prepare_impl(
+        denise_cuda_psv_forward *f,const float *source_vx,
+        const float *source_vy,size_t float_count_per_component,
+        bool production_residual) {
     psv_last_error[0]='\0';
-    if(!f||!observed_vx||!observed_vy)
+    const char *kind=production_residual?"production residual":"observed traces";
+    if(!f||!source_vx||!source_vy)
         return contract_failure("adjoint sweep prepare",__FILE__,__LINE__,
-                                "context or observed traces are null");
+                                "context or %s are null",kind);
     if(f->adjoint_sweep_state!=ADJOINT_SWEEP_UNPREPARED||
        f->adjoint_observed_storage)
         return contract_failure("adjoint sweep prepare",__FILE__,__LINE__,
@@ -1908,11 +1955,11 @@ int denise_cuda_psv_adjoint_sweep_prepare(
     size_t expected=0;
     if(!checked_mul((size_t)f->config.ntr,(size_t)f->config.nt,&expected))
         return contract_failure("adjoint sweep prepare",__FILE__,__LINE__,
-                                "observed trace count overflows size_t");
+                                "%s count overflows size_t",kind);
     if(float_count_per_component!=expected)
         return contract_failure("adjoint sweep prepare",__FILE__,__LINE__,
-            "each observed component must contain exactly NTR*NT=%zu floats",
-            expected);
+            "each %s component must contain exactly NTR*NT=%zu floats",
+            kind,expected);
     if(!f->segment_storage)
         return contract_failure("adjoint sweep prepare",__FILE__,__LINE__,
                                 "segment bank is not prepared");
@@ -1932,24 +1979,44 @@ int denise_cuda_psv_adjoint_sweep_prepare(
     if(calculate_adjoint_sweep_plan(&f->config,&plan)!=0) return -1;
     if(plan.total_incremental_bytes>f->stats.remaining_budget_bytes)
         return contract_failure("adjoint sweep prepare budget",__FILE__,__LINE__,
-            "observed traces %zu exceed remaining usable budget %zu",
+            "%s %zu exceed remaining usable budget %zu",kind,
             plan.total_incremental_bytes,f->stats.remaining_budget_bytes);
     float *storage=nullptr;
     cudaError_t rc=cudaMalloc((void**)&storage,plan.total_incremental_bytes);
     if(rc!=cudaSuccess)
-        return cuda_failure("adjoint sweep observed cudaMalloc",rc,
+        return cuda_failure("adjoint sweep source cudaMalloc",rc,
                             __FILE__,__LINE__);
     const size_t component_bytes=plan.observed_trace_bytes/2;
-    rc=cudaMemcpy(storage,observed_vx,component_bytes,cudaMemcpyHostToDevice);
+    rc=cudaMemcpy(storage,source_vx,component_bytes,cudaMemcpyHostToDevice);
     if(rc!=cudaSuccess) goto fail;
-    ++plan.observed_h2d_calls; plan.observed_h2d_bytes+=component_bytes;
-    rc=cudaMemcpy(storage+expected,observed_vy,component_bytes,
+    if(production_residual) {
+        ++plan.production_residual_h2d_calls;
+        plan.production_residual_h2d_bytes+=component_bytes;
+        const char *fail=getenv(
+            "DENISE_CUDA_PSV_TEST_FAIL_PRODUCTION_RESIDUAL_AFTER_FIRST_COPY");
+        if(fail&&fail[0]=='1'&&fail[1]=='\0') {
+            cudaFree(storage);
+            return contract_failure("adjoint sweep prepare",__FILE__,__LINE__,
+                "injected production residual upload failure after first copy");
+        }
+    } else {
+        ++plan.observed_h2d_calls; plan.observed_h2d_bytes+=component_bytes;
+    }
+    rc=cudaMemcpy(storage+expected,source_vy,component_bytes,
                   cudaMemcpyHostToDevice);
     if(rc!=cudaSuccess) goto fail;
-    ++plan.observed_h2d_calls; plan.observed_h2d_bytes+=component_bytes;
+    if(production_residual) {
+        ++plan.production_residual_h2d_calls;
+        plan.production_residual_h2d_bytes+=component_bytes;
+    } else {
+        ++plan.observed_h2d_calls; plan.observed_h2d_bytes+=component_bytes;
+    }
     f->adjoint_observed_storage=storage;
     f->adjoint_observed_vx=storage;
     f->adjoint_observed_vy=storage+expected;
+    f->adjoint_resident_source_kind=production_residual?
+        ADJOINT_RESIDENT_SOURCE_PRODUCTION_RESIDUAL:
+        ADJOINT_RESIDENT_SOURCE_OBSERVED;
     f->stats.remaining_budget_bytes-=plan.total_incremental_bytes;
     f->core->impl.stats.remaining_budget_bytes=f->stats.remaining_budget_bytes;
     plan.remaining_budget_bytes=f->stats.remaining_budget_bytes;
@@ -1961,7 +2028,22 @@ int denise_cuda_psv_adjoint_sweep_prepare(
     return 0;
 fail:
     cudaFree(storage);
-    return cuda_failure("adjoint sweep observed H2D",rc,__FILE__,__LINE__);
+    return cuda_failure("adjoint sweep source H2D",rc,__FILE__,__LINE__);
+}
+
+int denise_cuda_psv_adjoint_sweep_prepare(
+        denise_cuda_psv_forward *f,const float *observed_vx,
+        const float *observed_vy,size_t float_count_per_component) {
+    return adjoint_sweep_prepare_impl(f,observed_vx,observed_vy,
+                                      float_count_per_component,false);
+}
+
+int denise_cuda_psv_adjoint_production_residual_prepare(
+        denise_cuda_psv_forward *f,const float *production_residual_vx,
+        const float *production_residual_vy,
+        size_t float_count_per_component) {
+    return adjoint_sweep_prepare_impl(f,production_residual_vx,
+        production_residual_vy,float_count_per_component,true);
 }
 
 int denise_cuda_psv_adjoint_reverse_segment(

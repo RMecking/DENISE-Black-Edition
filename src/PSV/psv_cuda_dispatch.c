@@ -1,5 +1,6 @@
 #include "fd.h"
 #include "denise_cuda_psv_dispatch.h"
+#include "denise_cuda_psv_exact_fwi.h"
 #include "denise_cuda_backend.h"
 
 #include <stdarg.h>
@@ -19,14 +20,21 @@ static int dispatch_failure(const char *format, ...) {
 
 static int validate_cuda_envelope(int nsrc_local,int ntr,int mode) {
     extern int FDORDER,L,NPROCX,NPROCY,BOUNDARY,FREE_SURF;
-    extern int MODE,QUELLTYP,SEISMO,NDT,SNAP,INV_STF;
-    if(mode!=0||MODE!=0||L!=1||FDORDER!=4||NPROCX!=1||NPROCY!=1||
-       BOUNDARY!=0||FREE_SURF!=0||nsrc_local!=1||QUELLTYP!=1||
-       SEISMO!=1||NDT!=1||SNAP!=0||INV_STF!=0||ntr<1)
+    extern int MODE,QUELLTYP,SEISMO,NDT,SNAP,INV_STF,INVMAT1;
+    extern int GRAD_FORM,DTINV,LNORM,READMOD,FW,Q_PARAMETERIZATION_MODE,NSRC;
+    int common=L==1&&FDORDER==4&&NPROCX==1&&NPROCY==1&&
+        BOUNDARY==0&&FREE_SURF==0&&nsrc_local==1&&QUELLTYP==1&&
+        SEISMO==1&&NDT==1&&SNAP==0&&INV_STF==0&&ntr>0;
+    int forward_only=MODE==0&&mode==0;
+    int exact_fwi=MODE==1&&(mode==0||mode==2)&&NSRC==1&&INVMAT1==1&&
+        GRAD_FORM==2&&DTINV==1&&LNORM==2&&READMOD==1&&FW>0&&
+        (Q_PARAMETERIZATION_MODE==0||Q_PARAMETERIZATION_MODE==1);
+    if(!common||(!forward_only&&!exact_fwi))
         return dispatch_failure(
-            "requested CUDA backend violates frozen envelope: mode=%d MODE=%d L=%d FDORDER=%d topology=%dx%d BOUNDARY=%d FREE_SURF=%d sources=%d QUELLTYP=%d SEISMO=%d NDT=%d SNAP=%d INV_STF=%d ntr=%d",
+            "requested CUDA backend violates frozen envelope: mode=%d MODE=%d L=%d FDORDER=%d topology=%dx%d BOUNDARY=%d FREE_SURF=%d local_sources=%d NSRC=%d QUELLTYP=%d SEISMO=%d NDT=%d SNAP=%d INV_STF=%d INVMAT1=%d GRAD_FORM=%d DTINV=%d LNORM=%d READMOD=%d FW=%d Q_MODE=%d ntr=%d",
             mode,MODE,L,FDORDER,NPROCX,NPROCY,BOUNDARY,FREE_SURF,nsrc_local,
-            QUELLTYP,SEISMO,NDT,SNAP,INV_STF,ntr);
+            NSRC,QUELLTYP,SEISMO,NDT,SNAP,INV_STF,INVMAT1,GRAD_FORM,DTINV,
+            LNORM,READMOD,FW,Q_PARAMETERIZATION_MODE,ntr);
     return 0;
 }
 
@@ -47,6 +55,13 @@ int denise_cuda_psv_backend_preflight(
                                 denise_cuda_last_error());
     if(visible_devices<1)
         return dispatch_failure("explicit CUDA request has no visible CUDA device");
+    {
+        extern int MODE;
+        if(MODE==1&&visible_devices!=1)
+            return dispatch_failure(
+                "exact-visco CUDA FWI requires exactly one visible CUDA device (found %d)",
+                visible_devices);
+    }
     *backend=DENISE_PSV_BACKEND_CUDA;
     return 0;
 }
@@ -164,7 +179,7 @@ int denise_cuda_psv_dispatch(
     struct denise_cuda_psv_forward_host host;
     struct denise_cuda_psv_forward *context=NULL;
     double start;
-    int result=-1;
+    int result=-1,trial_failure=0;
 
     dispatch_error[0]='\0'; dispatch_stats_valid=0;
     memset(&dispatch_stats,0,sizeof(dispatch_stats));
@@ -178,13 +193,15 @@ int denise_cuda_psv_dispatch(
     config.core.fdorder=FDORDER; config.core.mechanisms=L;
     config.core.mpi_ranks_x=NPROCX; config.core.mpi_ranks_y=NPROCY;
     config.core.boundary=BOUNDARY; config.core.free_surface=FREE_SURF;
-    config.core.mode=mode; config.core.logical_device=0;
+    /* MODE=1 trial calls carry outer mode=2 semantics, but their numerical
+     * operator is the same verified forward-only CUDA core. */
+    config.core.mode=0; config.core.logical_device=0;
     config.core.dt=DT; config.core.dh=DH;
     config.core.hc1=hc[1]; config.core.hc2=hc[2];
     config.core.bip1=material->bip[1]; config.core.bjm1=material->bjm[1];
     config.core.cip1=material->cip[1]; config.core.cjm1=material->cjm[1];
     config.core.safety_reserve_bytes=(size_t)64*1024*1024;
-    config.nt=NT; config.ntr=ntr; config.global_mode=MODE;
+    config.nt=NT; config.ntr=ntr; config.global_mode=0;
     config.source_count=nsrc_local; config.source_type=QUELLTYP;
     config.seismo=SEISMO; config.ndt=NDT; config.snapshots=SNAP;
     config.inv_stf=INV_STF;
@@ -195,26 +212,51 @@ int denise_cuda_psv_dispatch(
     host.sectionvx=seismogram->sectionvx;
     host.sectionvy=seismogram->sectionvy;
 
+    if(MODE==1&&mode==0) {
+        result=denise_cuda_psv_exact_fwi_original_forward(
+            &config,&host,seismogram->sectionvx,seismogram->sectionvy);
+        if(result<0)
+            snprintf(dispatch_error,sizeof(dispatch_error),"%s",
+                     denise_cuda_psv_exact_fwi_last_error());
+        return result;
+    }
+
     start=MPI_Wtime();
     if(denise_cuda_psv_forward_create(&config,&host,&context)!=0) goto fail;
+    if(MODE==1&&mode==2) {
+        const char *inject=getenv("DENISE_CUDA_PSV_TEST_FAIL_TRIAL_AFTER_CREATE");
+        if(inject&&inject[0]=='1'&&inject[1]=='\0') {
+            snprintf(dispatch_error,sizeof(dispatch_error),
+                     "injected CUDA trial-forward failure after context creation");
+            trial_failure=1;
+            goto cleanup;
+        }
+    }
     if(denise_cuda_psv_forward_run(context)!=0) goto fail;
     if(denise_cuda_psv_forward_download_traces(
             context,seismogram->sectionvx,seismogram->sectionvy)!=0) goto fail;
-    if(denise_cuda_psv_forward_download_mutable(context,&host.core)!=0) goto fail;
+    if(MODE==0&&denise_cuda_psv_forward_download_mutable(context,&host.core)!=0)
+        goto fail;
     if(denise_cuda_psv_forward_get_stats(context,&dispatch_stats)!=0) goto fail;
     dispatch_stats.total_forward_ms=(float)((MPI_Wtime()-start)*1000.0);
     dispatch_stats_valid=1;
     write_dispatch_report(&dispatch_stats);
+    if(MODE==1&&mode==2)
+        denise_cuda_psv_exact_fwi_trial_complete(&dispatch_stats);
     result=1;
     goto cleanup;
 fail:
     snprintf(dispatch_error,sizeof(dispatch_error),"%s",
              denise_cuda_psv_forward_last_error());
+    if(MODE==1&&mode==2)
+        trial_failure=1;
 cleanup:
     if(denise_cuda_psv_forward_destroy(&context)!=0&&result>0) {
         snprintf(dispatch_error,sizeof(dispatch_error),"%s",
                  denise_cuda_psv_forward_last_error());
         result=-1;
     }
+    if(trial_failure)
+        denise_cuda_psv_exact_fwi_trial_failed(dispatch_error);
     return result;
 }

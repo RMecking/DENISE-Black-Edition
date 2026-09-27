@@ -14,17 +14,18 @@ enum denise_psv_backend {
     DENISE_PSV_BACKEND_CUDA = 1
 };
 
-/* Classifies the provisional selector and validates every deterministic B2A
- * CUDA precondition available at psv() entry.  This call does not mutate
- * solver state or allocate device memory. */
+/* Classifies the selector and validates every deterministic supported CUDA
+ * forward or exact-visco FWI precondition available at psv() entry.  This
+ * call does not mutate solver state or allocate device memory. */
 int denise_cuda_psv_backend_preflight(
         int nsrc_local,
         int ntr,
         int mode,
         enum denise_psv_backend *backend);
 
-/* Returns 0 for the existing CPU path, 1 after a completed CUDA forward run,
- * and -1 for a preflighted CUDA request that failed during execution. */
+/* Returns 0 for the existing CPU path, 1 after a completed CUDA forward phase,
+ * and -1 for a preflighted CUDA request that failed during execution.  The
+ * exact-visco original forward transfers context ownership to the FWI adapter. */
 int denise_cuda_psv_dispatch(
         struct wavePSV *wave,
         struct wavePSV_PML *pml,
