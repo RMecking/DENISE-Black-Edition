@@ -135,6 +135,31 @@ struct denise_cuda_psv_adjoint_sweep_stats {
     int invalid;
 };
 
+/* M8e-2C3 native exact-visco gradients. Each host pointer addresses exactly
+ * NX*NY doubles. The frozen field order is GF,GG,GFC,GD,GE,GDC,GRX,GRY and
+ * compact interior element (i,j), with one-based solver indices, is stored at
+ * (j-1)*NX+(i-1). */
+struct denise_cuda_psv_native_gradient_host {
+    double *gf, *gg, *gfc, *gd, *ge, *gdc, *grx, *gry;
+};
+
+struct denise_cuda_psv_native_gradient_stats {
+    size_t native_gradient_bytes;
+    size_t remaining_budget_bytes;
+    size_t allocation_calls;
+    size_t zero_calls;
+    size_t diagnostic_d2h_calls;
+    size_t diagnostic_d2h_bytes;
+    size_t per_step_h2d_calls;
+    size_t per_step_d2h_calls;
+    size_t per_step_allocation_calls;
+    size_t per_step_free_calls;
+    size_t per_step_blocking_sync_calls;
+    unsigned long long accumulated_timesteps;
+    size_t correlation_kernel_launches;
+    int prepared;
+};
+
 const char *denise_cuda_psv_forward_last_error(void);
 
 int denise_cuda_psv_forward_required_bytes(
@@ -235,6 +260,22 @@ int denise_cuda_psv_adjoint_reverse_sweep(
 int denise_cuda_psv_adjoint_sweep_get_stats(
         const struct denise_cuda_psv_forward *context,
         struct denise_cuda_psv_adjoint_sweep_stats *stats);
+
+/* Explicitly allocate, zero, and arm the eight compact FP64 native fields.
+ * Preparation is legal exactly once after sweep preparation and before the
+ * first reverse segment. Download is diagnostic and never occurs implicitly. */
+int denise_cuda_psv_native_gradient_required_bytes(
+        const struct denise_cuda_psv_forward_config *config,
+        struct denise_cuda_psv_native_gradient_stats *plan);
+int denise_cuda_psv_native_gradient_prepare(
+        struct denise_cuda_psv_forward *context);
+int denise_cuda_psv_native_gradient_download(
+        struct denise_cuda_psv_forward *context,
+        struct denise_cuda_psv_native_gradient_host *host,
+        size_t elements_per_field);
+int denise_cuda_psv_native_gradient_get_stats(
+        const struct denise_cuda_psv_forward *context,
+        struct denise_cuda_psv_native_gradient_stats *stats);
 
 int denise_cuda_psv_forward_download_traces(
         struct denise_cuda_psv_forward *context,
