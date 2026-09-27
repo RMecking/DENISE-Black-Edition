@@ -31,6 +31,10 @@ struct adjoint_fields {
     double *wxx, *wyx, *wxy, *wyy;
 };
 
+struct native_gradient_fields {
+    double *gf, *gg, *gfc, *gd, *ge, *gdc, *grx, *gry;
+};
+
 struct denise_cuda_psv_fd4_l1_impl {
     denise_cuda_psv_fd4_l1_config config;
     device_fields fields;
@@ -413,6 +417,52 @@ __global__ void adjoint_inject_resident_traces(
     a.avy[p]+=(double)modeled_vy[sample]-(double)observed_vy[sample];
 }
 
+/* Phase B: receiver residuals are already injected, while stress and memory
+ * cotangents are still the incoming state for this reverse timestep. */
+__global__ void native_gradient_stress_correlation(
+        adjoint_fields a,native_gradient_fields g,const float *operands,
+        size_t operand_stride,size_t slot,int nx,int ny,size_t pitch,
+        float dt,float bjm1) {
+    int i=1+(int)(blockIdx.x*blockDim.x+threadIdx.x);
+    int j=1+(int)(blockIdx.y*blockDim.y+threadIdx.y);
+    if(i>nx||j>ny) return;
+    size_t q=(size_t)(j-1)*(size_t)nx+(size_t)(i-1);
+    size_t p=fi(i,j,pitch);
+    size_t o=slot*(size_t)nx*(size_t)ny+q;
+    double xx=(double)operands[2*operand_stride+o];
+    double yx=(double)operands[3*operand_stride+o];
+    double xy=(double)operands[4*operand_stride+o];
+    double yy=(double)operands[5*operand_stride+o];
+    double div=xx+yy,shear=xy+yx;
+    double dt2=(double)dt*0.5,b=(double)bjm1;
+    double lambda_r=a.ar[p]+dt2*a.asxy[p];
+    double lambda_p=a.ap[p]+dt2*a.asxx[p];
+    double lambda_q=a.aq[p]+dt2*a.asyy[p];
+    g.gfc[q]+=a.asxy[p]*shear;
+    g.gf[q]+=-2.0*(a.asxx[p]*yy+a.asyy[p]*xx);
+    g.gg[q]+=(a.asxx[p]+a.asyy[p])*div;
+    g.gdc[q]+=-b*lambda_r*shear;
+    g.gd[q]+=2.0*b*(lambda_p*yy+lambda_q*xx);
+    g.ge[q]+=-b*(lambda_p+lambda_q)*div;
+}
+
+/* Phase D: stress transpose and gather have updated avx/avy; the velocity
+ * transpose has not yet mutated the reverse state. */
+__global__ void native_gradient_velocity_correlation(
+        adjoint_fields a,native_gradient_fields g,const float *operands,
+        size_t operand_stride,size_t slot,int nx,int ny,size_t pitch,
+        float dt,float dh) {
+    int i=1+(int)(blockIdx.x*blockDim.x+threadIdx.x);
+    int j=1+(int)(blockIdx.y*blockDim.y+threadIdx.y);
+    if(i>nx||j>ny) return;
+    size_t q=(size_t)(j-1)*(size_t)nx+(size_t)(i-1);
+    size_t p=fi(i,j,pitch);
+    size_t o=slot*(size_t)nx*(size_t)ny+q;
+    g.grx[q]+=a.avx[p]*(double)dt*(double)operands[o]/(double)dh;
+    g.gry[q]+=a.avy[p]*(double)dt*
+              (double)operands[operand_stride+o]/(double)dh;
+}
+
 __global__ void adjoint_stress_local(
         device_fields d,adjoint_fields a,int nx,int ny,int fw,size_t pitch,
         float dt,float bjm1,float cjm1) {
@@ -542,6 +592,9 @@ struct denise_cuda_psv_forward {
     float *adjoint_observed_vy;
     denise_cuda_psv_adjoint_sweep_stats adjoint_sweep_stats;
     int adjoint_sweep_state;
+    double *native_gradient_storage;
+    native_gradient_fields native_gradient;
+    denise_cuda_psv_native_gradient_stats native_gradient_stats;
     bool receivers_unique;
     bool profiling_enabled;
     denise_cuda_psv_forward_stats stats;
@@ -580,8 +633,39 @@ int calculate_adjoint_sweep_plan(
     return 0;
 }
 
+int calculate_native_gradient_plan(
+        const denise_cuda_psv_forward_config *config,
+        denise_cuda_psv_native_gradient_stats *plan) {
+    if(!config||!plan)
+        return contract_failure("native gradient required bytes",__FILE__,__LINE__,
+                                "configuration or output is null");
+    if(validate_config(&config->core,"native gradient required bytes")!=0)
+        return -1;
+    size_t cells,fields;
+    if(!checked_mul((size_t)config->core.nx,(size_t)config->core.ny,&cells)||
+       !checked_mul(cells,8,&fields)||
+       !checked_mul(fields,sizeof(double),&fields))
+        return contract_failure("native gradient required bytes",__FILE__,__LINE__,
+                                "native gradient size overflows size_t");
+    std::memset(plan,0,sizeof(*plan));
+    plan->native_gradient_bytes=fields;
+    return 0;
+}
+
+void assign_native_gradient_slices(denise_cuda_psv_forward *f) {
+    size_t cells=(size_t)f->config.core.nx*(size_t)f->config.core.ny;
+    double *p=f->native_gradient_storage;
+#define G(member) f->native_gradient.member=p; p+=cells
+    G(gf); G(gg); G(gfc); G(gd); G(ge); G(gdc); G(grx); G(gry);
+#undef G
+}
+
+bool valid_native_gradient_host(const denise_cuda_psv_native_gradient_host *h) {
+    return h&&h->gf&&h->gg&&h->gfc&&h->gd&&h->ge&&h->gdc&&h->grx&&h->gry;
+}
+
 int launch_adjoint_operator(denise_cuda_psv_forward *f,int timestep,
-                            bool resident_traces) {
+                            bool resident_traces,int segment_begin) {
     denise_cuda_psv_fd4_l1_impl &c=f->core->impl;
     cudaError_t rc=cudaSuccess;
     dim3 block(32,4),grid((c.config.nx+31)/32,(c.config.ny+3)/4);
@@ -599,6 +683,15 @@ int launch_adjoint_operator(denise_cuda_psv_forward *f,int timestep,
             f->receiver_i,f->receiver_j,f->adjoint_residual,
             f->config.ntr,timestep);
     rc=cudaGetLastError(); if(rc!=cudaSuccess) goto fail;
+    if(f->native_gradient_storage) {
+        size_t stride=(size_t)f->stats.max_segment_length*
+                      (size_t)c.config.nx*(size_t)c.config.ny;
+        size_t slot=(size_t)(timestep-segment_begin);
+        native_gradient_stress_correlation<<<grid,block>>>(
+            f->adjoint,f->native_gradient,f->segment_operands,stride,slot,
+            c.config.nx,c.config.ny,c.full_nx,c.config.dt,c.config.bjm1);
+        rc=cudaGetLastError(); if(rc!=cudaSuccess) goto fail;
+    }
     adjoint_stress_local<<<grid,block>>>(c.fields,f->adjoint,c.config.nx,
         c.config.ny,c.config.fw,c.full_nx,c.config.dt,c.config.bjm1,
         c.config.cjm1);
@@ -606,6 +699,15 @@ int launch_adjoint_operator(denise_cuda_psv_forward *f,int timestep,
     adjoint_stress_gather<<<linear_grid,linear_block>>>(f->adjoint,c.config.nx,
         c.config.ny,c.full_nx,c.config.dh,c.config.hc1,c.config.hc2);
     rc=cudaGetLastError(); if(rc!=cudaSuccess) goto fail;
+    if(f->native_gradient_storage) {
+        size_t stride=(size_t)f->stats.max_segment_length*
+                      (size_t)c.config.nx*(size_t)c.config.ny;
+        size_t slot=(size_t)(timestep-segment_begin);
+        native_gradient_velocity_correlation<<<grid,block>>>(
+            f->adjoint,f->native_gradient,f->segment_operands,stride,slot,
+            c.config.nx,c.config.ny,c.full_nx,c.config.dt,c.config.dh);
+        rc=cudaGetLastError(); if(rc!=cudaSuccess) goto fail;
+    }
     adjoint_velocity_local<<<grid,block>>>(c.fields,f->adjoint,c.config.nx,
         c.config.ny,c.config.fw,c.full_nx,c.config.dt,c.config.dh);
     rc=cudaGetLastError(); if(rc!=cudaSuccess) goto fail;
@@ -613,7 +715,11 @@ int launch_adjoint_operator(denise_cuda_psv_forward *f,int timestep,
         c.config.ny,c.full_nx,c.config.hc1,c.config.hc2);
     rc=cudaGetLastError(); if(rc!=cudaSuccess) goto fail;
     ++f->adjoint_stats.steps;
-    f->adjoint_stats.kernel_launches+=5;
+    f->adjoint_stats.kernel_launches+=f->native_gradient_storage?7:5;
+    if(f->native_gradient_storage) {
+        ++f->native_gradient_stats.accumulated_timesteps;
+        f->native_gradient_stats.correlation_kernel_launches+=2;
+    }
     return 0;
 fail:
     return cuda_failure("adjoint kernel launch",rc,__FILE__,__LINE__);
@@ -1019,6 +1125,7 @@ void release_forward_partial(denise_cuda_psv_forward *f) {
     if(f->segment_storage) cudaFree(f->segment_storage);
     if(f->adjoint_storage) cudaFree(f->adjoint_storage);
     if(f->adjoint_observed_storage) cudaFree(f->adjoint_observed_storage);
+    if(f->native_gradient_storage) cudaFree(f->native_gradient_storage);
     if(f->core) {
         if(f->core->impl.storage) cudaFree(f->core->impl.storage);
         delete f->core;
@@ -1578,7 +1685,7 @@ int denise_cuda_psv_adjoint_step(
             f->adjoint_stats.residual_h2d_bytes+=bytes;
         }
     }
-    return launch_adjoint_operator(f,timestep,false);
+    return launch_adjoint_operator(f,timestep,false,0);
 }
 
 int denise_cuda_psv_adjoint_download(
@@ -1720,7 +1827,7 @@ int denise_cuda_psv_adjoint_reverse_segment(
     f->adjoint_sweep_stats.replay_synchronization_calls+=
         f->stats.forward_synchronization_calls-syncs_before;
     for(int timestep=end;timestep>=begin;--timestep) {
-        if(launch_adjoint_operator(f,timestep,true)!=0) {
+        if(launch_adjoint_operator(f,timestep,true,begin)!=0) {
             f->adjoint_sweep_state=ADJOINT_SWEEP_INVALID;
             f->adjoint_sweep_stats.invalid=1;
             f->adjoint_sweep_stats.prepared=0;
@@ -1770,6 +1877,97 @@ int denise_cuda_psv_adjoint_sweep_get_stats(
         return contract_failure("adjoint sweep get stats",__FILE__,__LINE__,
                                 "sweep is unprepared or output is null");
     *stats=f->adjoint_sweep_stats;
+    return 0;
+}
+
+int denise_cuda_psv_native_gradient_required_bytes(
+        const denise_cuda_psv_forward_config *config,
+        denise_cuda_psv_native_gradient_stats *plan) {
+    psv_last_error[0]='\0';
+    return calculate_native_gradient_plan(config,plan);
+}
+
+int denise_cuda_psv_native_gradient_prepare(denise_cuda_psv_forward *f) {
+    psv_last_error[0]='\0';
+    if(!f)
+        return contract_failure("native gradient prepare",__FILE__,__LINE__,
+                                "context is null");
+    if(f->native_gradient_storage||f->native_gradient_stats.prepared)
+        return contract_failure("native gradient prepare",__FILE__,__LINE__,
+                                "native gradient is already prepared");
+    if(f->adjoint_sweep_state!=ADJOINT_SWEEP_READY||
+       f->adjoint_sweep_stats.reverse_segments!=0||
+       f->adjoint_sweep_stats.next_reverse_segment!=f->segment_count-1)
+        return contract_failure("native gradient prepare",__FILE__,__LINE__,
+            "a valid unstarted segmented reverse sweep is required");
+    denise_cuda_psv_native_gradient_stats plan;
+    if(calculate_native_gradient_plan(&f->config,&plan)!=0) return -1;
+    if(plan.native_gradient_bytes>f->stats.remaining_budget_bytes)
+        return contract_failure("native gradient prepare budget",__FILE__,__LINE__,
+            "native gradients %zu exceed remaining usable budget %zu",
+            plan.native_gradient_bytes,f->stats.remaining_budget_bytes);
+    double *storage=nullptr;
+    cudaError_t rc=cudaMalloc((void**)&storage,plan.native_gradient_bytes);
+    if(rc!=cudaSuccess)
+        return cuda_failure("native gradient cudaMalloc",rc,__FILE__,__LINE__);
+    ++plan.allocation_calls;
+    rc=cudaMemset(storage,0,plan.native_gradient_bytes);
+    if(rc!=cudaSuccess) {
+        cudaError_t free_rc=cudaFree(storage);
+        if(free_rc!=cudaSuccess)
+            return cuda_failure("native gradient failed-prepare cudaFree",free_rc,
+                                __FILE__,__LINE__);
+        return cuda_failure("native gradient zero",rc,__FILE__,__LINE__);
+    }
+    ++plan.zero_calls;
+    f->native_gradient_storage=storage;
+    assign_native_gradient_slices(f);
+    f->stats.remaining_budget_bytes-=plan.native_gradient_bytes;
+    f->core->impl.stats.remaining_budget_bytes=f->stats.remaining_budget_bytes;
+    plan.remaining_budget_bytes=f->stats.remaining_budget_bytes;
+    plan.prepared=1;
+    f->native_gradient_stats=plan;
+    return 0;
+}
+
+int denise_cuda_psv_native_gradient_download(
+        denise_cuda_psv_forward *f,denise_cuda_psv_native_gradient_host *host,
+        size_t elements_per_field) {
+    psv_last_error[0]='\0';
+    size_t cells;
+    if(!f||!f->native_gradient_storage||!valid_native_gradient_host(host))
+        return contract_failure("native gradient download",__FILE__,__LINE__,
+                                "context is unprepared or output is invalid");
+    if(!checked_mul((size_t)f->config.core.nx,(size_t)f->config.core.ny,&cells)||
+       elements_per_field!=cells)
+        return contract_failure("native gradient download",__FILE__,__LINE__,
+            "each field must contain exactly NX*NY=%zu doubles",cells);
+    const double *device[8]={f->native_gradient.gf,f->native_gradient.gg,
+        f->native_gradient.gfc,f->native_gradient.gd,f->native_gradient.ge,
+        f->native_gradient.gdc,f->native_gradient.grx,f->native_gradient.gry};
+    double *output[8]={host->gf,host->gg,host->gfc,host->gd,host->ge,
+        host->gdc,host->grx,host->gry};
+    size_t bytes=cells*sizeof(double);
+    for(int field=0;field<8;++field) {
+        cudaError_t rc=cudaMemcpy(output[field],device[field],bytes,
+                                  cudaMemcpyDeviceToHost);
+        if(rc!=cudaSuccess)
+            return cuda_failure("native gradient diagnostic D2H",rc,
+                                __FILE__,__LINE__);
+        ++f->native_gradient_stats.diagnostic_d2h_calls;
+        f->native_gradient_stats.diagnostic_d2h_bytes+=bytes;
+    }
+    return 0;
+}
+
+int denise_cuda_psv_native_gradient_get_stats(
+        const denise_cuda_psv_forward *f,
+        denise_cuda_psv_native_gradient_stats *stats) {
+    psv_last_error[0]='\0';
+    if(!f||!f->native_gradient_storage||!stats)
+        return contract_failure("native gradient get stats",__FILE__,__LINE__,
+                                "context is unprepared or output is null");
+    *stats=f->native_gradient_stats;
     return 0;
 }
 
@@ -1931,6 +2129,8 @@ int denise_cuda_psv_forward_destroy(denise_cuda_psv_forward **handle) {
         cudaFree(f->adjoint_storage):cudaSuccess;
     cudaError_t observed_rc=f->adjoint_observed_storage?
         cudaFree(f->adjoint_observed_storage):cudaSuccess;
+    cudaError_t gradient_rc=f->native_gradient_storage?
+        cudaFree(f->native_gradient_storage):cudaSuccess;
     int result=denise_cuda_psv_fd4_l1_destroy(&f->core);
     delete f;
     if(checkpoint_rc!=cudaSuccess)
@@ -1944,6 +2144,9 @@ int denise_cuda_psv_forward_destroy(denise_cuda_psv_forward **handle) {
                             __FILE__,__LINE__);
     if(observed_rc!=cudaSuccess)
         return cuda_failure("adjoint observed destroy cudaFree",observed_rc,
+                            __FILE__,__LINE__);
+    if(gradient_rc!=cudaSuccess)
+        return cuda_failure("native gradient destroy cudaFree",gradient_rc,
                             __FILE__,__LINE__);
     return result;
 }

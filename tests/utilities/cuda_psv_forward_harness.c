@@ -421,6 +421,30 @@ struct adjoint_fixture {
     double *allocation;
 };
 
+struct native_gradient_fixture {
+    struct denise_cuda_psv_native_gradient_host host;
+    double *allocation;
+};
+
+static size_t adjoint_fixture_elements(void) {
+    size_t full=(size_t)(NY+6)*(size_t)(NX+6);
+    size_t x=(size_t)NY*(size_t)(2*FW),y=(size_t)(2*FW)*(size_t)NX;
+    return 8*full+4*x+4*y;
+}
+
+static int native_gradient_fixture_allocate(struct native_gradient_fixture *g) {
+    size_t cells=(size_t)NX*(size_t)NY;
+    double *p;
+    memset(g,0,sizeof(*g));
+    g->allocation=(double*)calloc(8*cells,sizeof(double));
+    if(!g->allocation) return -1;
+    p=g->allocation;
+#define GS(member) g->host.member=p; p+=cells
+    GS(gf); GS(gg); GS(gfc); GS(gd); GS(ge); GS(gdc); GS(grx); GS(gry);
+#undef GS
+    return 0;
+}
+
 static double adjoint_pattern(int tag,int j,int i) {
     int integer=((tag*61+(j+11)*17+(i+13)*29+(j+7)*(i+3)*5)%257)-128;
     double value=(double)integer/257.0+(double)tag*0.00031+
@@ -431,7 +455,7 @@ static double adjoint_pattern(int tag,int j,int i) {
 static int adjoint_fixture_allocate(struct adjoint_fixture *a) {
     size_t full=(size_t)(NY+6)*(size_t)(NX+6);
     size_t x=(size_t)NY*(size_t)(2*FW),y=(size_t)(2*FW)*(size_t)NX;
-    size_t total=8*full+4*x+4*y;
+    size_t total=adjoint_fixture_elements();
     double *p;
     memset(a,0,sizeof(*a));
     a->allocation=(double*)calloc(total,sizeof(double));
@@ -499,6 +523,17 @@ static void adjoint_oracle_material(struct matPSV *m,struct wavePSV_PML *p) {
         float *aa=g==1?p->a_x:g==2?p->a_x_half:g==3?p->a_y:p->a_y_half;
         float *bb=g==1?p->b_x:g==2?p->b_x_half:g==3?p->b_y:p->b_y_half;
         K[h]=kval; aa[h]=aval; bb[h]=bval;
+    }
+}
+
+static void native_gradient_forward_initial(struct wavePSV *w) {
+    int i,j,k;
+    float **field[8]={w->pvx,w->pvy,w->psxx,w->psyy,w->psxy,
+                      w->pr,w->pp,w->pq};
+    for(k=0;k<8;++k) for(j=-2;j<=NY+3;++j) for(i=-2;i<=NX+3;++i) {
+        int n=((k+3)*19+(j+5)*13+(i+7)*17+(j+3)*(i+2)*5)%97;
+        field[k][j][i]=(float)(((double)n-48.0)/173.0+
+                               0.0007*(k+1)+0.000011*(j-i));
     }
 }
 
@@ -878,6 +913,239 @@ cleanup:
     free(reference_operands); free(operand_counts); free(replayed);
     free(modeled_vx); free(modeled_vy); free(observed_vx); free(observed_vy);
     free(state.allocation);
+    return status;
+}
+
+static int native_gradient_setup_context(
+        struct denise_cuda_psv_forward **context,
+        const struct denise_cuda_psv_forward_config *config,
+        const struct denise_cuda_psv_forward_host *host,
+        const struct denise_cuda_psv_adjoint_host *initial,
+        const float *observed_vx,const float *observed_vy,size_t samples,
+        int segments) {
+    return denise_cuda_psv_forward_create(config,host,context)!=0||
+        denise_cuda_psv_forward_segments_prepare(*context,segments)!=0||
+        sweep_run_original(*context,segments,NULL,NULL)!=0||
+        denise_cuda_psv_adjoint_prepare(*context,initial)!=0||
+        denise_cuda_psv_adjoint_sweep_prepare(*context,observed_vx,observed_vy,
+                                               samples)!=0?-1:0;
+}
+
+static int native_gradient_write_operands(FILE *out,float **segments_data,
+                                           int segments) {
+    size_t cells=(size_t)NX*(size_t)NY;
+    float *absolute=(float*)calloc(6*(size_t)NT*cells,sizeof(float));
+    int segment,field,begin,end,t;
+    if(!absolute) return -1;
+    for(segment=0;segment<segments;++segment) {
+        begin=segment*NT/segments+1;
+        end=(segment+1)*NT/segments;
+        for(field=0;field<6;++field) for(t=begin;t<=end;++t)
+            memcpy(absolute+((size_t)field*(size_t)NT+(size_t)(t-1))*cells,
+                   segments_data[segment]+((size_t)field*(size_t)(end-begin+1)+
+                   (size_t)(t-begin))*cells,cells*sizeof(float));
+    }
+    field=fwrite(absolute,sizeof(float),6*(size_t)NT*cells,out)==
+          6*(size_t)NT*cells?0:-1;
+    free(absolute);
+    return field;
+}
+
+static int native_gradient_gate(struct wavePSV *w,struct wavePSV_PML *p,
+        struct matPSV *m,struct seisPSV *seis,struct acq *a,float *hc,
+        int ntr,int segments,const char *output_path) {
+    struct denise_cuda_psv_forward_config config,budget_config;
+    struct denise_cuda_psv_forward_host host;
+    struct denise_cuda_psv_forward_stats forward_plan,forward_stats;
+    struct denise_cuda_psv_adjoint_stats adjoint_plan;
+    struct denise_cuda_psv_adjoint_sweep_stats sweep_plan,sweep_stats;
+    struct denise_cuda_psv_native_gradient_stats gradient_plan,gradient_stats;
+    struct denise_cuda_psv_forward *path=NULL,*off=NULL,*budget=NULL,*late=NULL;
+    struct denise_cuda_psv_forward *prepared_only=NULL;
+    struct adjoint_fixture initial={0},state_on={0},state_off={0};
+    struct native_gradient_fixture gradient={0},before={0};
+    float **reference_operands=NULL,*replayed=NULL;
+    size_t *operand_counts=NULL;
+    float *modeled_vx=NULL,*modeled_vy=NULL,*observed_vx=NULL,*observed_vy=NULL;
+    size_t samples=(size_t)ntr*(size_t)NT,cells=(size_t)NX*(size_t)NY;
+    size_t bank_bytes,operand_bytes,working_without_gradient,working_set;
+    int max_length,k,r,t,status=1;
+    int download_before=0,prepare_before=0,double_prepare=0,late_prepare=0;
+    int budget_rejected=0,invalid_sweep=0,operands_exact=1,state_equal=0;
+    FILE *out=NULL;
+    if(!output_path||ntr!=3||segments<1||segments>NT)
+        return fail("invalid native gradient request");
+    DT=(float)0.0125; DH=(float)0.5;
+    hc[1]=(float)1.125; hc[2]=(float)(-1.0/24.0);
+    adjoint_oracle_material(m,p);
+    native_gradient_forward_initial(w);
+    a->recpos_loc[1][1]=3; a->recpos_loc[2][1]=2;
+    a->recpos_loc[1][2]=FW+2; a->recpos_loc[2][2]=FW+3;
+    a->recpos_loc[1][3]=NX-2; a->recpos_loc[2][3]=NY-1;
+    if(adjoint_fixture_allocate(&initial)!=0||
+       adjoint_fixture_allocate(&state_on)!=0||
+       adjoint_fixture_allocate(&state_off)!=0||
+       native_gradient_fixture_allocate(&gradient)!=0||
+       native_gradient_fixture_allocate(&before)!=0) goto cleanup;
+    adjoint_fixture_fill(&initial);
+    bind_forward(&config,&host,w,p,m,seis,a,hc,ntr);
+    if(denise_cuda_psv_forward_required_bytes(&config,&forward_plan)!=0||
+       denise_cuda_psv_adjoint_required_bytes(&config,&adjoint_plan)!=0||
+       denise_cuda_psv_adjoint_sweep_required_bytes(&config,&sweep_plan)!=0||
+       denise_cuda_psv_native_gradient_required_bytes(&config,&gradient_plan)!=0)
+        goto cleanup;
+    max_length=(NT+segments-1)/segments;
+    bank_bytes=(size_t)segments*forward_plan.checkpoint_bytes;
+    operand_bytes=6*(size_t)max_length*cells*sizeof(float);
+    working_without_gradient=forward_plan.total_mandatory_bytes+bank_bytes+
+        operand_bytes+adjoint_plan.total_bytes+sweep_plan.total_incremental_bytes;
+    working_set=working_without_gradient+gradient_plan.native_gradient_bytes;
+    reference_operands=(float**)calloc((size_t)segments,sizeof(float*));
+    operand_counts=(size_t*)calloc((size_t)segments,sizeof(size_t));
+    replayed=(float*)malloc(6*(size_t)max_length*cells*sizeof(float));
+    modeled_vx=(float*)malloc(samples*sizeof(float));
+    modeled_vy=(float*)malloc(samples*sizeof(float));
+    observed_vx=(float*)malloc(samples*sizeof(float));
+    observed_vy=(float*)malloc(samples*sizeof(float));
+    if(!reference_operands||!operand_counts||!replayed||!modeled_vx||
+       !modeled_vy||!observed_vx||!observed_vy) goto cleanup;
+
+    if(denise_cuda_psv_forward_create(&config,&host,&path)!=0||
+       denise_cuda_psv_forward_segments_prepare(path,segments)!=0||
+       sweep_run_original(path,segments,reference_operands,operand_counts)!=0||
+       denise_cuda_psv_forward_download_traces(path,seis->sectionvx,
+                                                seis->sectionvy)!=0)
+        goto cleanup;
+    memcpy(modeled_vx,&seis->sectionvx[1][1],samples*sizeof(float));
+    memcpy(modeled_vy,&seis->sectionvy[1][1],samples*sizeof(float));
+    for(r=0;r<ntr;++r) for(t=0;t<NT;++t) {
+        size_t q=(size_t)r*(size_t)NT+(size_t)t;
+        float rx=(float)(0.0031*(r+1)+0.00073*(t+1)+0.00019*((r+2)*(t+3)%5));
+        float ry=(float)(-0.0027*(r+1)+0.00091*(t+1)-0.00017*((r+1)*(t+4)%7));
+        observed_vx[q]=modeled_vx[q]-rx;
+        observed_vy[q]=modeled_vy[q]-ry;
+    }
+    if(denise_cuda_psv_native_gradient_download(path,&gradient.host,cells)==0)
+        goto cleanup;
+    download_before=1;
+    if(denise_cuda_psv_native_gradient_prepare(path)==0) goto cleanup;
+    prepare_before=1;
+    if(denise_cuda_psv_adjoint_prepare(path,&initial.host)!=0||
+       denise_cuda_psv_adjoint_sweep_prepare(path,observed_vx,observed_vy,
+                                              samples)!=0||
+       denise_cuda_psv_native_gradient_prepare(path)!=0||
+       denise_cuda_psv_native_gradient_prepare(path)==0)
+        goto cleanup;
+    double_prepare=1;
+    if(segments>1) {
+        if(denise_cuda_psv_adjoint_reverse_segment(path,segments-2)==0||
+           denise_cuda_psv_native_gradient_download(path,&gradient.host,cells)!=0)
+            goto cleanup;
+        for(k=0;k<8*(int)cells;++k) if(gradient.allocation[k]!=0.0) goto cleanup;
+    }
+    out=fopen(output_path,"wb");
+    if(!out||sweep_write_traces(out,modeled_vx,observed_vx,modeled_vy,
+                                observed_vy,samples)!=0||
+       native_gradient_write_operands(out,reference_operands,segments)!=0)
+        goto cleanup;
+    for(k=segments-1;k>=0;--k) {
+        if(denise_cuda_psv_adjoint_reverse_segment(path,k)!=0||
+           denise_cuda_psv_forward_segment_download_operands(
+               path,k,replayed,operand_counts[k])!=0||
+           memcmp(replayed,reference_operands[k],
+                  operand_counts[k]*sizeof(float))!=0||
+           denise_cuda_psv_native_gradient_download(path,&gradient.host,cells)!=0||
+           fwrite(gradient.allocation,sizeof(double),8*cells,out)!=8*cells)
+            goto cleanup;
+    }
+    fclose(out); out=NULL;
+    if(denise_cuda_psv_adjoint_download(path,&state_on.host)!=0||
+       denise_cuda_psv_native_gradient_get_stats(path,&gradient_stats)!=0||
+       denise_cuda_psv_adjoint_sweep_get_stats(path,&sweep_stats)!=0||
+       denise_cuda_psv_forward_get_stats(path,&forward_stats)!=0)
+        goto cleanup;
+    memcpy(before.allocation,gradient.allocation,8*cells*sizeof(double));
+    if(denise_cuda_psv_adjoint_reverse_segment(path,0)==0||
+       denise_cuda_psv_native_gradient_download(path,&gradient.host,cells)!=0||
+       memcmp(before.allocation,gradient.allocation,8*cells*sizeof(double))!=0||
+       denise_cuda_psv_adjoint_download(path,&state_on.host)!=0)
+        goto cleanup;
+    invalid_sweep=1;
+
+    if(native_gradient_setup_context(&off,&config,&host,&initial.host,
+            observed_vx,observed_vy,samples,segments)!=0||
+       denise_cuda_psv_adjoint_reverse_sweep(off)!=0||
+       denise_cuda_psv_adjoint_download(off,&state_off.host)!=0)
+        goto cleanup;
+    state_equal=memcmp(state_on.allocation,state_off.allocation,
+                       adjoint_fixture_elements()*sizeof(double))==0;
+    if(!state_equal) goto cleanup;
+
+    budget_config=config;
+    budget_config.core.user_cap_bytes=config.core.safety_reserve_bytes+
+        working_set-1;
+    if(native_gradient_setup_context(&budget,&budget_config,&host,&initial.host,
+            observed_vx,observed_vy,samples,segments)!=0||
+       denise_cuda_psv_native_gradient_prepare(budget)==0||
+       denise_cuda_psv_adjoint_reverse_sweep(budget)!=0)
+        goto cleanup;
+    budget_rejected=1;
+
+    if(native_gradient_setup_context(&late,&config,&host,&initial.host,
+            observed_vx,observed_vy,samples,segments)!=0||
+       denise_cuda_psv_adjoint_reverse_segment(late,segments-1)!=0||
+       denise_cuda_psv_native_gradient_prepare(late)==0||
+       (segments>1&&denise_cuda_psv_adjoint_reverse_sweep(late)!=0))
+        goto cleanup;
+    late_prepare=1;
+    if(native_gradient_setup_context(&prepared_only,&config,&host,&initial.host,
+            observed_vx,observed_vy,samples,segments)!=0||
+       denise_cuda_psv_native_gradient_prepare(prepared_only)!=0||
+       denise_cuda_psv_forward_destroy(&prepared_only)!=0||prepared_only)
+        goto cleanup;
+
+    for(k=0;k<segments;++k) {
+        int begin=k*NT/segments+1,end=(k+1)*NT/segments;
+        size_t count=6*(size_t)(end-begin+1)*cells;
+        if(operand_counts[k]!=count) operands_exact=0;
+    }
+    printf("NATIVE_GRADIENT_PLAN bytes=%zu working_set=%zu remaining=%zu allocation=%zu zero=%zu d2h_calls=%zu d2h_bytes=%zu\n",
+           gradient_plan.native_gradient_bytes,working_set,
+           gradient_stats.remaining_budget_bytes,gradient_stats.allocation_calls,
+           gradient_stats.zero_calls,gradient_stats.diagnostic_d2h_calls,
+           gradient_stats.diagnostic_d2h_bytes);
+    printf("NATIVE_GRADIENT_RESIDENCY per_step_h2d=%zu per_step_d2h=%zu per_step_alloc=%zu per_step_free=%zu per_step_sync=%zu correlation_kernels=%zu steps=%llu\n",
+           gradient_stats.per_step_h2d_calls,gradient_stats.per_step_d2h_calls,
+           gradient_stats.per_step_allocation_calls,
+           gradient_stats.per_step_free_calls,
+           gradient_stats.per_step_blocking_sync_calls,
+           gradient_stats.correlation_kernel_launches,
+           gradient_stats.accumulated_timesteps);
+    printf("NATIVE_GRADIENT_FAILURES download_before=%d prepare_before_sweep=%d double_prepare=%d late_prepare=%d budget_one_byte=%d invalid_sweep=%d\n",
+           download_before,prepare_before,double_prepare,late_prepare,
+           budget_rejected,invalid_sweep);
+    printf("NATIVE_GRADIENT_PASS nx=%d ny=%d nt=%d ntr=%d segments=%d fields=8 operands_exact=%d state_bit_identical=%d reverse_segments=%zu\n",
+           NX,NY,NT,ntr,segments,operands_exact,state_equal,
+           sweep_stats.reverse_segments);
+    if(denise_cuda_psv_forward_destroy(&path)!=0||path||
+       denise_cuda_psv_forward_destroy(&off)!=0||off||
+       denise_cuda_psv_forward_destroy(&budget)!=0||budget||
+       denise_cuda_psv_forward_destroy(&late)!=0||late)
+        goto cleanup;
+    printf("NATIVE_GRADIENT_LIFECYCLE without_gradient=1 prepared_only=1 complete=1 failed_prepare=1 contexts_null=1\n");
+    status=0;
+cleanup:
+    if(out) fclose(out);
+    if(path) denise_cuda_psv_forward_destroy(&path);
+    if(off) denise_cuda_psv_forward_destroy(&off);
+    if(budget) denise_cuda_psv_forward_destroy(&budget);
+    if(late) denise_cuda_psv_forward_destroy(&late);
+    if(prepared_only) denise_cuda_psv_forward_destroy(&prepared_only);
+    if(reference_operands) for(k=0;k<segments;++k) free(reference_operands[k]);
+    free(reference_operands); free(operand_counts); free(replayed);
+    free(modeled_vx); free(modeled_vy); free(observed_vx); free(observed_vy);
+    free(initial.allocation); free(state_on.allocation); free(state_off.allocation);
+    free(gradient.allocation); free(before.allocation);
     return status;
 }
 
@@ -1331,9 +1599,11 @@ int main(int argc,char **argv) {
     int status=1,k,fw=TEST_FW; double cpu_start,cpu_ms,gpu_start,gpu_ms,profile_start,profile_ms=0.0;
     const char *probe=NULL,*adjoint_output=NULL,*adjoint_sequence=NULL;
     const char *adjoint_sweep_output=NULL;
+    const char *native_gradient_output=NULL;
     int run_mutation_oracle=0,run_no_device_oracle=0;
     int benchmark=0,profile_compare=0,checkpoint_test=0,segment_test=0;
     int adjoint_sweep_segments=4,warmups=1,repetitions=7;
+    int native_gradient_segments=4;
     MPI_Init(&argc,&argv); MPI_Comm_rank(MPI_COMM_WORLD,&MYID);
     for(k=1;k<argc;++k) {
         if(!strcmp(argv[k],"--nx")&&k+1<argc) nx=atoi(argv[++k]);
@@ -1352,6 +1622,8 @@ int main(int argc,char **argv) {
         else if(!strcmp(argv[k],"--adjoint-sequence")&&k+1<argc) adjoint_sequence=argv[++k];
         else if(!strcmp(argv[k],"--adjoint-sweep-output")&&k+1<argc) adjoint_sweep_output=argv[++k];
         else if(!strcmp(argv[k],"--adjoint-sweep-segments")&&k+1<argc) adjoint_sweep_segments=atoi(argv[++k]);
+        else if(!strcmp(argv[k],"--native-gradient-output")&&k+1<argc) native_gradient_output=argv[++k];
+        else if(!strcmp(argv[k],"--native-gradient-segments")&&k+1<argc) native_gradient_segments=atoi(argv[++k]);
         else if(!strcmp(argv[k],"--warmup")&&k+1<argc) warmups=atoi(argv[++k]);
         else if(!strcmp(argv[k],"--repetitions")&&k+1<argc) repetitions=atoi(argv[++k]);
         else { fail("unknown command-line option"); goto cleanup; }
@@ -1391,6 +1663,16 @@ int main(int argc,char **argv) {
         }
         status=segmented_adjoint_sweep_gate(&wave,&pml,&material,&seis,
             &acquisition,hc,ntr,adjoint_sweep_segments,adjoint_sweep_output);
+        goto cleanup;
+    }
+    if(native_gradient_output) {
+        if(fw!=4||nt<2||ntr!=3||native_gradient_segments<1||
+           native_gradient_segments>nt) {
+            fail("native gradient gate requires FW=4, NT>=2, NTR=3, and 1<=S<=NT");
+            goto cleanup;
+        }
+        status=native_gradient_gate(&wave,&pml,&material,&seis,&acquisition,hc,
+            ntr,native_gradient_segments,native_gradient_output);
         goto cleanup;
     }
     if(checkpoint_test) {

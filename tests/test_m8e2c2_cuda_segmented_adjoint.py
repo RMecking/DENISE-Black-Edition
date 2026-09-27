@@ -174,13 +174,16 @@ def test_one_timestep_segments_extreme(
     _compare(f"one-step-{sweep_binary.name}-full", actual[-1], expected[-1], nx)
 
 
-def test_sweep_has_no_gradient_accumulation(repository_root: Path) -> None:
+def test_state_only_sweep_does_not_arm_native_gradient(repository_root: Path) -> None:
     source = (repository_root / "src/CUDA/psv_fd4_l1.cu").read_text()
     begin = source.index("int denise_cuda_psv_adjoint_sweep_prepare(")
-    end = source.index("int denise_cuda_psv_forward_run(", begin)
-    sweep = source[begin:end]
-    for gradient in ("GF", "GG", "GFC", "GD", "GE", "GDC", "GRX", "GRY"):
-        assert gradient not in sweep
+    end = source.index("int denise_cuda_psv_adjoint_reverse_segment(", begin)
+    prepare = source[begin:end]
+    assert "denise_cuda_psv_native_gradient_prepare" not in prepare
+    launcher_begin = source.index("int launch_adjoint_operator(")
+    launcher_end = source.index("}  // namespace", launcher_begin)
+    launcher = source[launcher_begin:launcher_end]
+    assert launcher.count("if(f->native_gradient_storage)") == 3
 
 
 def test_public_destructor_owns_observed_storage(repository_root: Path) -> None:
