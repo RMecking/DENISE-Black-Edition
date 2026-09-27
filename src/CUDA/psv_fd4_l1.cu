@@ -4,6 +4,7 @@
 #include <cuda_runtime.h>
 #include <chrono>
 #include <climits>
+#include <cmath>
 #include <cstdarg>
 #include <cstdint>
 #include <cstdlib>
@@ -33,6 +34,14 @@ struct adjoint_fields {
 
 struct native_gradient_fields {
     double *gf, *gg, *gfc, *gd, *ge, *gdc, *grx, *gry;
+};
+
+struct physical_material_fields {
+    float *prho, *ppi, *pu, *ptaus, *ptaup, *puipjp, *ptausipjp;
+};
+
+struct physical_gradient_fields {
+    double *vp, *vs, *rho, *qp, *qs;
 };
 
 struct denise_cuda_psv_fd4_l1_impl {
@@ -595,6 +604,15 @@ struct denise_cuda_psv_forward {
     double *native_gradient_storage;
     native_gradient_fields native_gradient;
     denise_cuda_psv_native_gradient_stats native_gradient_stats;
+    unsigned char *physical_gradient_storage;
+    physical_material_fields physical_material;
+    physical_gradient_fields physical_gradient;
+    int *physical_invalid_device;
+    float physical_eta;
+    int physical_q_mode;
+    double physical_q_per;
+    double physical_q_offset;
+    denise_cuda_psv_physical_gradient_stats physical_gradient_stats;
     bool receivers_unique;
     bool profiling_enabled;
     denise_cuda_psv_forward_stats stats;
@@ -652,6 +670,38 @@ int calculate_native_gradient_plan(
     return 0;
 }
 
+int calculate_physical_gradient_plan(
+        const denise_cuda_psv_forward_config *config,
+        denise_cuda_psv_physical_gradient_stats *plan) {
+    if(!config||!plan)
+        return contract_failure("physical gradient required bytes",__FILE__,__LINE__,
+                                "configuration or output is null");
+    if(validate_config(&config->core,"physical gradient required bytes")!=0)
+        return -1;
+    size_t cells,material_elements,gradient_elements;
+    size_t material_bytes,gradient_bytes,total;
+    if(!checked_mul((size_t)config->core.nx,(size_t)config->core.ny,&cells)||
+       !checked_mul(cells,7,&material_elements)||
+       !checked_mul(material_elements,sizeof(float),&material_bytes)||
+       !checked_mul(cells,5,&gradient_elements)||
+       !checked_mul(gradient_elements,sizeof(double),&gradient_bytes))
+        return contract_failure("physical gradient required bytes",__FILE__,__LINE__,
+                                "physical mapping size overflows size_t");
+    size_t alignment=(sizeof(double)-material_bytes%sizeof(double))%sizeof(double);
+    if(!checked_add(material_bytes,alignment,&total)||
+       !checked_add(total,gradient_bytes,&total)||
+       !checked_add(total,sizeof(int),&total))
+        return contract_failure("physical gradient required bytes",__FILE__,__LINE__,
+                                "physical mapping total overflows size_t");
+    std::memset(plan,0,sizeof(*plan));
+    plan->material_bytes=material_bytes;
+    plan->physical_gradient_bytes=gradient_bytes;
+    plan->alignment_bytes=alignment;
+    plan->validation_bytes=sizeof(int);
+    plan->total_bytes=total;
+    return 0;
+}
+
 void assign_native_gradient_slices(denise_cuda_psv_forward *f) {
     size_t cells=(size_t)f->config.core.nx*(size_t)f->config.core.ny;
     double *p=f->native_gradient_storage;
@@ -662,6 +712,122 @@ void assign_native_gradient_slices(denise_cuda_psv_forward *f) {
 
 bool valid_native_gradient_host(const denise_cuda_psv_native_gradient_host *h) {
     return h&&h->gf&&h->gg&&h->gfc&&h->gd&&h->ge&&h->gdc&&h->grx&&h->gry;
+}
+
+void assign_physical_gradient_slices(
+        denise_cuda_psv_forward *f,
+        const denise_cuda_psv_physical_gradient_stats &plan) {
+    size_t cells=(size_t)f->config.core.nx*(size_t)f->config.core.ny;
+    float *m=(float*)f->physical_gradient_storage;
+#define M(member) f->physical_material.member=m; m+=cells
+    M(prho); M(ppi); M(pu); M(ptaus); M(ptaup); M(puipjp); M(ptausipjp);
+#undef M
+    unsigned char *gradient_begin=f->physical_gradient_storage+
+        plan.material_bytes+plan.alignment_bytes;
+    double *g=(double*)gradient_begin;
+#define P(member) f->physical_gradient.member=g; g+=cells
+    P(vp); P(vs); P(rho); P(qp); P(qs);
+#undef P
+    f->physical_invalid_device=(int*)g;
+}
+
+bool valid_physical_material_host(
+        const denise_cuda_psv_physical_material_host *h) {
+    return h&&h->prho&&h->ppi&&h->pu&&h->ptaus&&h->ptaup&&
+        h->puipjp&&h->ptausipjp&&h->prho[1]&&h->ppi[1]&&h->pu[1]&&
+        h->ptaus[1]&&h->ptaup[1]&&h->puipjp[1]&&h->ptausipjp[1];
+}
+
+bool valid_physical_gradient_host(
+        const denise_cuda_psv_physical_gradient_host *h) {
+    return h&&h->vp&&h->vs&&h->rho&&h->qp&&h->qs;
+}
+
+__device__ double physical_q_derivative(double tau,int mode,
+        double inverse_tau_per_q,double inverse_tau_offset,int *invalid) {
+    double q=mode==0?2.0/tau:
+        (1.0/tau-inverse_tau_offset)/inverse_tau_per_q;
+    float qf=(float)q; /* Match q_to_tau_derivative(float, mapping). */
+    if(!(qf>0.0f)||!isfinite(qf)) {
+        atomicExch(invalid,1);
+        return 0.0;
+    }
+    if(mode==0) return -2.0/((double)qf*(double)qf);
+    double inverse_tau=inverse_tau_per_q*(double)qf+inverse_tau_offset;
+    if(!(inverse_tau>0.0)||!isfinite(inverse_tau)) {
+        atomicExch(invalid,1);
+        return 0.0;
+    }
+    double reconstructed_tau=1.0/inverse_tau;
+    return -inverse_tau_per_q*reconstructed_tau*reconstructed_tau;
+}
+
+/* One thread owns one output cell. Gathering incoming corner and face terms
+ * removes atomics while preserving the CPU operator's global-boundary clips. */
+__global__ void physical_gradient_map_kernel(
+        native_gradient_fields n,physical_material_fields m,
+        physical_gradient_fields out,device_fields resident,
+        int nx,int ny,size_t pitch,float dt,float eta,int q_mode,
+        double inverse_tau_per_q,double inverse_tau_offset,int *invalid) {
+    int i=1+(int)(blockIdx.x*blockDim.x+threadIdx.x);
+    int j=1+(int)(blockIdx.y*blockDim.y+threadIdx.y);
+    if(i>nx||j>ny) return;
+    size_t q=(size_t)(j-1)*(size_t)nx+(size_t)(i-1);
+    double rho=(double)m.prho[q],vp=(double)m.ppi[q],vs=(double)m.pu[q];
+    double ts=(double)m.ptaus[q],tp=(double)m.ptaup[q];
+    double modulus_s=rho*vs*vs,modulus_p=rho*vp*vp;
+    double den_s=1.0+0.5*ts,den_p=1.0+0.5*tp;
+    double gM=n.gf[q]*(double)dt*(1.0+ts)/den_s+
+        n.gd[q]*(double)eta*ts/den_s;
+    double gP=n.gg[q]*(double)dt*(1.0+tp)/den_p+
+        n.ge[q]*(double)eta*tp/den_p;
+    double gts=n.gf[q]*(double)dt*modulus_s*0.5/(den_s*den_s)+
+        n.gd[q]*(double)eta*modulus_s/(den_s*den_s);
+    double gtp=n.gg[q]*(double)dt*modulus_p*0.5/(den_p*den_p)+
+        n.ge[q]*(double)eta*modulus_p/(den_p*den_p);
+    double vp_gradient=gP*2.0*rho*vp;
+    double vs_gradient=gM*2.0*rho*vs;
+    double rho_gradient=gP*vp*vp+gM*vs*vs;
+    double qp_tau_gradient=gtp,qs_tau_gradient=gts;
+
+    for(int sj=j-1;sj<=j;++sj) for(int si=i-1;si<=i;++si) {
+        if(si<1||sj<1) continue;
+        size_t source=(size_t)(sj-1)*(size_t)nx+(size_t)(si-1);
+        double H=(double)m.puipjp[source],T=(double)m.ptausipjp[source];
+        double den_c=1.0+0.5*T;
+        double gH=n.gfc[source]*(double)dt*(1.0+T)/den_c+
+            n.gdc[source]*(double)eta*T/den_c;
+        double gT=n.gfc[source]*(double)dt*H*0.5/(den_c*den_c)+
+            n.gdc[source]*(double)eta*H/(den_c*den_c);
+        double weight=gH*H*H/(4.0*modulus_s*modulus_s);
+        vs_gradient+=weight*2.0*rho*vs;
+        rho_gradient+=weight*vs*vs;
+        qs_tau_gradient+=0.25*gT;
+    }
+
+    size_t face=fi(i,j,pitch);
+    double rx=(double)resident.rip[face];
+    double ry=(double)resident.rjp[face];
+    rho_gradient+=-0.5*rx*rx*n.grx[q];
+    rho_gradient+=-0.5*ry*ry*n.gry[q];
+    if(i>1) {
+        size_t left=q-1;
+        double value=(double)resident.rip[fi(i-1,j,pitch)];
+        rho_gradient+=-0.5*value*value*n.grx[left];
+    }
+    if(j>1) {
+        size_t above=q-(size_t)nx;
+        double value=(double)resident.rjp[fi(i,j-1,pitch)];
+        rho_gradient+=-0.5*value*value*n.gry[above];
+    }
+
+    out.vp[q]=vp_gradient;
+    out.vs[q]=vs_gradient;
+    out.rho[q]=rho_gradient;
+    out.qp[q]=qp_tau_gradient*physical_q_derivative(
+        tp,q_mode,inverse_tau_per_q,inverse_tau_offset,invalid);
+    out.qs[q]=qs_tau_gradient*physical_q_derivative(
+        ts,q_mode,inverse_tau_per_q,inverse_tau_offset,invalid);
 }
 
 int launch_adjoint_operator(denise_cuda_psv_forward *f,int timestep,
@@ -1126,6 +1292,7 @@ void release_forward_partial(denise_cuda_psv_forward *f) {
     if(f->adjoint_storage) cudaFree(f->adjoint_storage);
     if(f->adjoint_observed_storage) cudaFree(f->adjoint_observed_storage);
     if(f->native_gradient_storage) cudaFree(f->native_gradient_storage);
+    if(f->physical_gradient_storage) cudaFree(f->physical_gradient_storage);
     if(f->core) {
         if(f->core->impl.storage) cudaFree(f->core->impl.storage);
         delete f->core;
@@ -1971,6 +2138,190 @@ int denise_cuda_psv_native_gradient_get_stats(
     return 0;
 }
 
+int denise_cuda_psv_physical_gradient_required_bytes(
+        const denise_cuda_psv_forward_config *config,
+        denise_cuda_psv_physical_gradient_stats *plan) {
+    psv_last_error[0]='\0';
+    return calculate_physical_gradient_plan(config,plan);
+}
+
+int denise_cuda_psv_physical_gradient_prepare(
+        denise_cuda_psv_forward *f,
+        const denise_cuda_psv_physical_material_host *material) {
+    psv_last_error[0]='\0';
+    if(!f||!valid_physical_material_host(material))
+        return contract_failure("physical gradient prepare",__FILE__,__LINE__,
+                                "context or material adapter is invalid");
+    if(f->physical_gradient_storage||f->physical_gradient_stats.prepared)
+        return contract_failure("physical gradient prepare",__FILE__,__LINE__,
+                                "physical gradient is already prepared");
+    if(!f->native_gradient_storage||!f->native_gradient_stats.prepared)
+        return contract_failure("physical gradient prepare",__FILE__,__LINE__,
+                                "native gradient must be prepared first");
+    if(f->adjoint_sweep_state!=ADJOINT_SWEEP_READY||
+       f->adjoint_sweep_stats.reverse_segments!=0||
+       f->adjoint_sweep_stats.next_reverse_segment!=f->segment_count-1)
+        return contract_failure("physical gradient prepare",__FILE__,__LINE__,
+            "a valid unstarted segmented reverse sweep is required");
+    if(!std::isfinite((double)material->eta)||
+       (material->q_parameterization_mode!=0&&
+        material->q_parameterization_mode!=1))
+        return contract_failure("physical gradient prepare",__FILE__,__LINE__,
+                                "eta or Q parameterization mode is invalid");
+    if(material->q_parameterization_mode==1&&
+       (!std::isfinite(material->inverse_tau_per_q)||
+        !std::isfinite(material->inverse_tau_offset)||
+        material->inverse_tau_per_q<=0.0))
+        return contract_failure("physical gradient prepare",__FILE__,__LINE__,
+                                "physical-Q mapping coefficients are invalid");
+    denise_cuda_psv_physical_gradient_stats plan;
+    if(calculate_physical_gradient_plan(&f->config,&plan)!=0) return -1;
+    if(plan.total_bytes>f->stats.remaining_budget_bytes)
+        return contract_failure("physical gradient prepare budget",__FILE__,__LINE__,
+            "material and physical gradients %zu exceed remaining usable budget %zu",
+            plan.total_bytes,f->stats.remaining_budget_bytes);
+
+    unsigned char *storage=nullptr;
+    cudaError_t rc=cudaMalloc((void**)&storage,plan.total_bytes);
+    if(rc!=cudaSuccess)
+        return cuda_failure("physical gradient aggregate cudaMalloc",rc,
+                            __FILE__,__LINE__);
+    ++plan.allocation_calls;
+    size_t cells=(size_t)f->config.core.nx*(size_t)f->config.core.ny;
+    size_t field_bytes=cells*sizeof(float);
+    size_t row_bytes=(size_t)f->config.core.nx*sizeof(float);
+    size_t host_pitch=(size_t)(f->config.core.nx+6)*sizeof(float);
+    const float *source[7]={&material->prho[1][1],&material->ppi[1][1],
+        &material->pu[1][1],&material->ptaus[1][1],&material->ptaup[1][1],
+        &material->puipjp[1][1],&material->ptausipjp[1][1]};
+    float *destination=(float*)storage;
+    for(int field=0;field<7;++field) {
+        rc=cudaMemcpy2D(destination,row_bytes,source[field],host_pitch,
+                        row_bytes,(size_t)f->config.core.ny,
+                        cudaMemcpyHostToDevice);
+        if(rc!=cudaSuccess) goto fail;
+        ++plan.material_h2d_calls;
+        plan.material_h2d_bytes+=field_bytes;
+        destination+=cells;
+    }
+    rc=cudaMemset(storage+plan.material_bytes+plan.alignment_bytes,0,
+                  plan.physical_gradient_bytes+plan.validation_bytes);
+    if(rc!=cudaSuccess) goto fail;
+    ++plan.zero_calls;
+
+    f->physical_gradient_storage=storage;
+    assign_physical_gradient_slices(f,plan);
+    f->physical_eta=material->eta;
+    f->physical_q_mode=material->q_parameterization_mode;
+    f->physical_q_per=material->inverse_tau_per_q;
+    f->physical_q_offset=material->inverse_tau_offset;
+    f->stats.remaining_budget_bytes-=plan.total_bytes;
+    f->core->impl.stats.remaining_budget_bytes=f->stats.remaining_budget_bytes;
+    plan.remaining_budget_bytes=f->stats.remaining_budget_bytes;
+    plan.prepared=1;
+    f->physical_gradient_stats=plan;
+    return 0;
+fail:
+    {
+        cudaError_t free_rc=cudaFree(storage);
+        if(free_rc!=cudaSuccess)
+            return cuda_failure("physical gradient failed-prepare cudaFree",free_rc,
+                                __FILE__,__LINE__);
+    }
+    return cuda_failure("physical gradient material upload/zero",rc,
+                        __FILE__,__LINE__);
+}
+
+int denise_cuda_psv_physical_gradient_map(denise_cuda_psv_forward *f) {
+    psv_last_error[0]='\0';
+    if(!f||!f->physical_gradient_storage||
+       !f->physical_gradient_stats.prepared)
+        return contract_failure("physical gradient map",__FILE__,__LINE__,
+                                "physical gradient is unprepared");
+    if(f->physical_gradient_stats.mapped||f->physical_gradient_stats.invalid)
+        return contract_failure("physical gradient map",__FILE__,__LINE__,
+                                "physical gradient is already mapped or invalid");
+    if(f->adjoint_sweep_state!=ADJOINT_SWEEP_COMPLETE||
+       !f->adjoint_sweep_stats.complete)
+        return contract_failure("physical gradient map",__FILE__,__LINE__,
+                                "a complete reverse sweep is required");
+    denise_cuda_psv_fd4_l1_impl &c=f->core->impl;
+    dim3 block(32,4),grid((c.config.nx+31)/32,(c.config.ny+3)/4);
+    physical_gradient_map_kernel<<<grid,block>>>(
+        f->native_gradient,f->physical_material,f->physical_gradient,c.fields,
+        c.config.nx,c.config.ny,c.full_nx,c.config.dt,f->physical_eta,
+        f->physical_q_mode,f->physical_q_per,f->physical_q_offset,
+        f->physical_invalid_device);
+    cudaError_t rc=cudaGetLastError();
+    if(rc!=cudaSuccess) goto fail;
+    ++f->physical_gradient_stats.map_kernel_launches;
+    rc=cudaDeviceSynchronize();
+    ++f->physical_gradient_stats.map_synchronization_calls;
+    if(rc!=cudaSuccess) goto fail;
+    {
+        int invalid=0;
+        rc=cudaMemcpy(&invalid,f->physical_invalid_device,sizeof(invalid),
+                      cudaMemcpyDeviceToHost);
+        if(rc!=cudaSuccess) goto fail;
+        ++f->physical_gradient_stats.validation_d2h_calls;
+        f->physical_gradient_stats.validation_d2h_bytes+=sizeof(invalid);
+        if(invalid) {
+            f->physical_gradient_stats.invalid=1;
+            return contract_failure("physical gradient Q validation",
+                __FILE__,__LINE__,
+                "reconstructed Qp/Qs is non-positive or non-finite");
+        }
+    }
+    f->physical_gradient_stats.mapped=1;
+    return 0;
+fail:
+    f->physical_gradient_stats.invalid=1;
+    return cuda_failure("physical gradient map",rc,__FILE__,__LINE__);
+}
+
+int denise_cuda_psv_physical_gradient_download(
+        denise_cuda_psv_forward *f,
+        denise_cuda_psv_physical_gradient_host *host,
+        size_t elements_per_field) {
+    psv_last_error[0]='\0';
+    size_t cells;
+    if(!f||!f->physical_gradient_storage||
+       !f->physical_gradient_stats.mapped||
+       f->physical_gradient_stats.invalid||
+       !valid_physical_gradient_host(host))
+        return contract_failure("physical gradient download",__FILE__,__LINE__,
+                                "mapping is incomplete/invalid or output is invalid");
+    if(!checked_mul((size_t)f->config.core.nx,(size_t)f->config.core.ny,&cells)||
+       elements_per_field!=cells)
+        return contract_failure("physical gradient download",__FILE__,__LINE__,
+            "each field must contain exactly NX*NY=%zu doubles",cells);
+    const double *device[5]={f->physical_gradient.vp,f->physical_gradient.vs,
+        f->physical_gradient.rho,f->physical_gradient.qp,f->physical_gradient.qs};
+    double *output[5]={host->vp,host->vs,host->rho,host->qp,host->qs};
+    size_t bytes=cells*sizeof(double);
+    for(int field=0;field<5;++field) {
+        cudaError_t rc=cudaMemcpy(output[field],device[field],bytes,
+                                  cudaMemcpyDeviceToHost);
+        if(rc!=cudaSuccess)
+            return cuda_failure("physical gradient diagnostic D2H",rc,
+                                __FILE__,__LINE__);
+        ++f->physical_gradient_stats.diagnostic_d2h_calls;
+        f->physical_gradient_stats.diagnostic_d2h_bytes+=bytes;
+    }
+    return 0;
+}
+
+int denise_cuda_psv_physical_gradient_get_stats(
+        const denise_cuda_psv_forward *f,
+        denise_cuda_psv_physical_gradient_stats *stats) {
+    psv_last_error[0]='\0';
+    if(!f||!f->physical_gradient_storage||!stats)
+        return contract_failure("physical gradient get stats",__FILE__,__LINE__,
+                                "context is unprepared or output is null");
+    *stats=f->physical_gradient_stats;
+    return 0;
+}
+
 int denise_cuda_psv_forward_run(denise_cuda_psv_forward *f) {
     psv_last_error[0]='\0';
     if(!f) return contract_failure("forward run",__FILE__,__LINE__,"context is null");
@@ -2131,6 +2482,8 @@ int denise_cuda_psv_forward_destroy(denise_cuda_psv_forward **handle) {
         cudaFree(f->adjoint_observed_storage):cudaSuccess;
     cudaError_t gradient_rc=f->native_gradient_storage?
         cudaFree(f->native_gradient_storage):cudaSuccess;
+    cudaError_t physical_rc=f->physical_gradient_storage?
+        cudaFree(f->physical_gradient_storage):cudaSuccess;
     int result=denise_cuda_psv_fd4_l1_destroy(&f->core);
     delete f;
     if(checkpoint_rc!=cudaSuccess)
@@ -2147,6 +2500,9 @@ int denise_cuda_psv_forward_destroy(denise_cuda_psv_forward **handle) {
                             __FILE__,__LINE__);
     if(gradient_rc!=cudaSuccess)
         return cuda_failure("native gradient destroy cudaFree",gradient_rc,
+                            __FILE__,__LINE__);
+    if(physical_rc!=cudaSuccess)
+        return cuda_failure("physical gradient destroy cudaFree",physical_rc,
                             __FILE__,__LINE__);
     return result;
 }
