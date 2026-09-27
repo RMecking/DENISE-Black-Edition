@@ -98,6 +98,7 @@ struct denise_cuda_psv_adjoint_stats {
     size_t total_bytes;
     size_t remaining_budget_bytes;
     size_t initial_h2d_calls;
+    size_t initial_zero_calls;
     size_t diagnostic_d2h_calls;
     /* Synchronous small-vector H2D copies performed before kernel launch. */
     size_t residual_h2d_calls;
@@ -119,6 +120,8 @@ struct denise_cuda_psv_adjoint_sweep_stats {
     size_t remaining_budget_bytes;
     size_t observed_h2d_calls;
     size_t observed_h2d_bytes;
+    size_t production_residual_h2d_calls;
+    size_t production_residual_h2d_bytes;
     size_t reverse_segments;
     unsigned long long reverse_timesteps;
     size_t replay_synchronization_calls;
@@ -271,6 +274,11 @@ int denise_cuda_psv_adjoint_required_bytes(
 int denise_cuda_psv_adjoint_prepare(
         struct denise_cuda_psv_forward *context,
         const struct denise_cuda_psv_adjoint_host *initial);
+/* Production reverse sweeps start from the mathematical zero state.  This
+ * variant initializes the complete resident state without staging full-size
+ * zero buffers through host memory. */
+int denise_cuda_psv_adjoint_prepare_zero(
+        struct denise_cuda_psv_forward *context);
 /* timestep is the absolute production sample. Sample 1 injects no residual.
  * Later samples synchronously copy four NREC float vectors before launching
  * the exact resident reverse state operator, so caller ownership may end when
@@ -299,6 +307,16 @@ int denise_cuda_psv_adjoint_sweep_required_bytes(
 int denise_cuda_psv_adjoint_sweep_prepare(
         struct denise_cuda_psv_forward *context,
         const float *observed_vx,const float *observed_vy,
+        size_t float_count_per_component);
+/* Production FWI entry point. production_residual_vx/vy are the authoritative
+ * calc_res_PSV() adjoint sources, reordered into receiver-major chronological
+ * [receiver][physical-timestep-1] layout. They are uploaded exactly once and
+ * injected directly; no modeled-minus-observed reconstruction is performed.
+ * The standalone observed-trace API above retains its original semantics. */
+int denise_cuda_psv_adjoint_production_residual_prepare(
+        struct denise_cuda_psv_forward *context,
+        const float *production_residual_vx,
+        const float *production_residual_vy,
         size_t float_count_per_component);
 int denise_cuda_psv_adjoint_reverse_segment(
         struct denise_cuda_psv_forward *context,int segment);

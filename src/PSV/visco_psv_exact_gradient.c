@@ -12,6 +12,14 @@ extern float DT, DH, *FL, Q_APPROX_FMIN, Q_APPROX_FMAX, Q_APPROX_DF;
 extern char JACOBIAN[STRING_SIZE];
 extern MPI_Comm SHOT_COMM;
 
+#if defined(__GNUC__)
+extern int denise_cuda_psv_exact_fwi_selected(void) __attribute__((weak));
+extern int denise_cuda_psv_exact_fwi_finish(
+        const struct visco_psv_exact_fwi_request *request) __attribute__((weak));
+extern const char *denise_cuda_psv_exact_fwi_last_error(void)
+        __attribute__((weak));
+#endif
+
 enum {VXX, VYX, VXY, VYY, FX, FY, NRECORD};
 enum {GF, GG, GFC, GD, GE, GDC, GRX, GRY, NNATIVE};
 enum {PSXX, PSXYX, PSXYY, PSYY, PVXX, PVYX, PVXY, PVYY, NPSI};
@@ -42,6 +50,15 @@ static int cell(int j, int i) { return (j + 2) * exact.pitch + i + 2; }
 static int enabled_flag(const char *name) {
     const char *value = getenv(name);
     return value && value[0] == '1' && value[1] == '\0';
+}
+
+static int cuda_exact_fwi_selected(void) {
+#if defined(__GNUC__)
+    return denise_cuda_psv_exact_fwi_selected &&
+           denise_cuda_psv_exact_fwi_selected();
+#else
+    return 0;
+#endif
 }
 
 static int requested_segment_count(void) {
@@ -85,6 +102,9 @@ void visco_psv_exact_begin(void) {
     if (!visco_psv_exact_enabled()) return;
     if (!visco_psv_exact_supported())
         err(" Exact visco PSV raw gradient supports one-source READMOD=1 L=1 FD4, INVMAT1=1, GRAD_FORM=2, NDT=DTINV=1, LNORM=2, CPML interior only, with local domains large enough for FD and CPML halos. ");
+    /* The CUDA executable owns checkpoint/replay state in one persistent
+     * device context.  Avoid allocating or arming the CPU implementation. */
+    if (cuda_exact_fwi_selected()) return;
     /* Forward matrices span -2..NX+3/-2..NY+3 for FD4.  The one-rank
      * reverse stencil only touched through +2, but the distributed transpose
      * must hold the complete component-specific +3 halo. */
@@ -815,7 +835,6 @@ void visco_psv_exact_finish(
     struct wavePSV_PML *pml = request->pml;
     struct matPSV *mat = request->material;
     struct fwiPSV *fwi = request->fwi;
-    struct seisPSV *seis = request->seis;
     struct seisPSVfwi *data = request->data;
     struct acq *acq = request->acquisition;
     float *hc = request->hc;
@@ -826,8 +845,23 @@ void visco_psv_exact_finish(
     int t, i, j, k, p, cx, cy, gi, gj, segment, t_begin, t_end;
     double phase_started;
     double eta, b, c, dt2, div, shear, ax, ay, xx, yy, xy, yx;
-    double tr, tp, tq, lambda_r, lambda_p, lambda_q;
+    double lambda_r, lambda_p, lambda_q;
     size_t r;
+    if (cuda_exact_fwi_selected()) {
+#if defined(__GNUC__)
+        int result;
+        if (!denise_cuda_psv_exact_fwi_finish)
+            err(" CUDA exact-visco FWI adapter is not linked. ");
+        result = denise_cuda_psv_exact_fwi_finish(request);
+        if (result != 1) {
+            const char *message = denise_cuda_psv_exact_fwi_last_error
+                                  ? denise_cuda_psv_exact_fwi_last_error()
+                                  : "CUDA exact-visco FWI adapter failed";
+            err((char *)message);
+        }
+        return;
+#endif
+    }
     if (!exact.active) return;
     if (exact.replay_compare)
         err(" Exact visco PSV operand replay was not finalized. ");
@@ -888,12 +922,13 @@ void visco_psv_exact_finish(
         }
         phase_started = MPI_Wtime();
         for (t=t_end;t>=t_begin;t--) {
-        /* Receiver samples are recorded after stress update; velocity is
-         * unchanged there. Production sample one is excluded from L2. */
+        /* calc_res_PSV() is authoritative. It stores chronological physical
+         * sample t at reverse index NT-t+1. Production sample one is excluded
+         * from L2 and is not injected into the exact transpose. */
         if (t>1) for (k=1;k<=ntr;k++) {
             i=acq->recpos_loc[1][k]; j=acq->recpos_loc[2][k]; p=cell(j,i);
-            avx[p] += (double)seis->sectionvx[k][t]-data->sectionvxdata[k][t];
-            avy[p] += (double)seis->sectionvy[k][t]-data->sectionvydata[k][t];
+            avx[p] += (double)data->sectionvxdiff[k][NT-t+1];
+            avy[p] += (double)data->sectionvydiff[k][NT-t+1];
         }
         exchange_s_adjoint_PSV(asxx, asyy, asxy, exact.pitch);
         /* Transpose stress and all three relaxation-memory recurrences. */

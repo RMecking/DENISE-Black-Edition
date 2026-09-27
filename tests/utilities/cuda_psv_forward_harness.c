@@ -764,16 +764,20 @@ static int segmented_adjoint_sweep_gate(struct wavePSV *w,
     struct denise_cuda_psv_forward *path=NULL,*full=NULL,*no_bank=NULL;
     struct denise_cuda_psv_forward *incomplete_bank=NULL,*incomplete_forward=NULL;
     struct denise_cuda_psv_forward *budget=NULL;
+    struct denise_cuda_psv_forward *production=NULL,*production_failure=NULL;
     struct adjoint_fixture state={0};
     float **reference_operands=NULL,*replayed=NULL;
     size_t *operand_counts=NULL;
     float *modeled_vx=NULL,*modeled_vy=NULL,*observed_vx=NULL,*observed_vy=NULL;
+    float *production_vx=NULL,*production_vy=NULL;
     size_t samples=(size_t)ntr*(size_t)NT,cells=(size_t)NX*(size_t)NY;
     size_t bank_bytes,operand_bytes,segment_bytes,working_set;
     int k,r,t,begin,end,max_length,status=1;
     int incomplete_bank_rejected=0,incomplete_forward_rejected=0;
     int no_bank_rejected=0,missing_observed_rejected=0,budget_rejected=0;
     int out_of_order_rejected=0,repeated_rejected=0,skipped_rejected=0;
+    int production_missing=0,production_count=0,production_duplicate=0;
+    int production_partial=0,production_stale=0;
     FILE *out=NULL;
     if(!output_path||ntr!=3||segments<1||segments>NT)
         return fail("invalid segmented adjoint sweep request");
@@ -803,8 +807,11 @@ static int segmented_adjoint_sweep_gate(struct wavePSV *w,
     modeled_vy=(float*)malloc(samples*sizeof(float));
     observed_vx=(float*)malloc(samples*sizeof(float));
     observed_vy=(float*)malloc(samples*sizeof(float));
+    production_vx=(float*)malloc(samples*sizeof(float));
+    production_vy=(float*)malloc(samples*sizeof(float));
     if(!reference_operands||!operand_counts||!replayed||!modeled_vx||
-       !modeled_vy||!observed_vx||!observed_vy) goto cleanup;
+       !modeled_vy||!observed_vx||!observed_vy||!production_vx||
+       !production_vy) goto cleanup;
 
     /* Missing bank, incomplete bank, and complete bank/incomplete final
      * segment are distinct preconditions and must reject before adjoint work. */
@@ -872,7 +879,52 @@ static int segmented_adjoint_sweep_gate(struct wavePSV *w,
         float ry=(float)(-0.0027*(r+1)+0.00091*(t+1)-0.00017*((r+1)*(t+4)%7));
         observed_vx[q]=modeled_vx[q]-rx;
         observed_vy[q]=modeled_vy[q]-ry;
+        production_vx[q]=modeled_vx[q]-observed_vx[q];
+        production_vy[q]=modeled_vy[q]-observed_vy[q];
     }
+
+    /* The production-residual API is explicit and one-shot. A new context
+     * cannot reverse with stale source state, failed partial preparation is
+     * destructible, and count/null/duplicate misuse fails closed. */
+    adjoint_fixture_fill(&state);
+    if(denise_cuda_psv_forward_create(&config,&host,&production)!=0||
+       denise_cuda_psv_forward_segments_prepare(production,segments)!=0||
+       sweep_run_original(production,segments,NULL,NULL)!=0||
+       denise_cuda_psv_adjoint_prepare(production,&state.host)!=0)
+        goto cleanup;
+    if(denise_cuda_psv_adjoint_production_residual_prepare(
+           production,NULL,production_vy,samples)==0) goto cleanup;
+    production_missing=1;
+    if(denise_cuda_psv_adjoint_production_residual_prepare(
+           production,production_vx,production_vy,samples-1)==0) goto cleanup;
+    production_count=1;
+    if(denise_cuda_psv_adjoint_production_residual_prepare(
+           production,production_vx,production_vy,samples)!=0||
+       denise_cuda_psv_adjoint_sweep_get_stats(production,&sweep_stats)!=0||
+       sweep_stats.production_residual_h2d_calls!=2||
+       sweep_stats.production_residual_h2d_bytes!=samples*2*sizeof(float)||
+       sweep_stats.observed_h2d_calls!=0) goto cleanup;
+    if(denise_cuda_psv_adjoint_production_residual_prepare(
+           production,production_vx,production_vy,samples)==0) goto cleanup;
+    production_duplicate=1;
+
+    adjoint_fixture_fill(&state);
+    if(denise_cuda_psv_forward_create(&config,&host,&production_failure)!=0||
+       denise_cuda_psv_forward_segments_prepare(production_failure,segments)!=0||
+       sweep_run_original(production_failure,segments,NULL,NULL)!=0||
+       denise_cuda_psv_adjoint_prepare(production_failure,&state.host)!=0)
+        goto cleanup;
+    if(denise_cuda_psv_adjoint_reverse_sweep(production_failure)==0)
+        goto cleanup;
+    production_stale=1;
+    setenv("DENISE_CUDA_PSV_TEST_FAIL_PRODUCTION_RESIDUAL_AFTER_FIRST_COPY","1",1);
+    if(denise_cuda_psv_adjoint_production_residual_prepare(
+           production_failure,production_vx,production_vy,samples)==0) {
+        unsetenv("DENISE_CUDA_PSV_TEST_FAIL_PRODUCTION_RESIDUAL_AFTER_FIRST_COPY");
+        goto cleanup;
+    }
+    unsetenv("DENISE_CUDA_PSV_TEST_FAIL_PRODUCTION_RESIDUAL_AFTER_FIRST_COPY");
+    production_partial=1;
     if(denise_cuda_psv_adjoint_prepare(path,&state.host)!=0||
        denise_cuda_psv_adjoint_sweep_prepare(path,NULL,observed_vy,samples)==0)
         goto cleanup;
@@ -953,11 +1005,17 @@ static int segmented_adjoint_sweep_gate(struct wavePSV *w,
            no_bank_rejected,incomplete_bank_rejected,incomplete_forward_rejected,
            missing_observed_rejected,budget_rejected,out_of_order_rejected,
            repeated_rejected,skipped_rejected);
+    printf("PRODUCTION_RESIDUAL_FAILURES unavailable=%d wrong_count=%d duplicate=%d partial_upload=%d stale_reuse=%d h2d_calls=2 observed_h2d_calls=0\n",
+           production_missing,production_count,production_duplicate,
+           production_partial,production_stale);
     printf("ADJOINT_SWEEP_PASS nx=%d ny=%d nt=%d ntr=%d segments=%d reverse_segments=%zu reverse_steps=%llu kernels=%zu operands_exact=1 complete=1\n",
            NX,NY,NT,ntr,segments,sweep_stats.reverse_segments,
            sweep_stats.reverse_timesteps,adjoint_after.kernel_launches);
     if(denise_cuda_psv_forward_destroy(&path)!=0||path||
-       denise_cuda_psv_forward_destroy(&full)!=0||full)
+       denise_cuda_psv_forward_destroy(&full)!=0||full||
+       denise_cuda_psv_forward_destroy(&production)!=0||production||
+       denise_cuda_psv_forward_destroy(&production_failure)!=0||
+       production_failure)
         goto cleanup;
     printf("ADJOINT_SWEEP_DESTROY_PASS observed_storage_prepared=1 contexts_null=1\n");
     status=0;
@@ -969,9 +1027,12 @@ cleanup:
     if(incomplete_bank) denise_cuda_psv_forward_destroy(&incomplete_bank);
     if(incomplete_forward) denise_cuda_psv_forward_destroy(&incomplete_forward);
     if(budget) denise_cuda_psv_forward_destroy(&budget);
+    if(production) denise_cuda_psv_forward_destroy(&production);
+    if(production_failure) denise_cuda_psv_forward_destroy(&production_failure);
     if(reference_operands) for(k=0;k<segments;++k) free(reference_operands[k]);
     free(reference_operands); free(operand_counts); free(replayed);
     free(modeled_vx); free(modeled_vy); free(observed_vx); free(observed_vy);
+    free(production_vx); free(production_vy);
     free(state.allocation);
     return status;
 }

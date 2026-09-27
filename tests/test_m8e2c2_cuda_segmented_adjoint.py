@@ -132,6 +132,11 @@ def _run_sweep(binary: Path, output: Path, nx: int, ny: int,
         "adjoint_usable_after_budget_reject=1"
     ) in result.stdout
     assert (
+        "PRODUCTION_RESIDUAL_FAILURES unavailable=1 wrong_count=1 "
+        "duplicate=1 partial_upload=1 stale_reuse=1 h2d_calls=2 "
+        "observed_h2d_calls=0"
+    ) in result.stdout
+    assert (
         f"ADJOINT_SWEEP_PASS nx={nx} ny={ny} nt={nt} ntr=3 "
         f"segments={segments} reverse_segments={segments} reverse_steps={nt}"
     ) in result.stdout
