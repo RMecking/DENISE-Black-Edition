@@ -160,6 +160,53 @@ struct denise_cuda_psv_native_gradient_stats {
     int prepared;
 };
 
+/* M8e-2C4 authoritative material inputs for the exact native-to-physical
+ * mapping. Each matrix keeps DENISE's one-based [j][i] convention. rip/rjp
+ * remain the already-resident authoritative face-density inputs. The Q
+ * coefficients must be copied from the CPU q_tau_mapping produced by
+ * init_q_tau_mapping(); CUDA does not duplicate the fitting procedure. */
+struct denise_cuda_psv_physical_material_host {
+    float **prho, **ppi, **pu, **ptaus, **ptaup;
+    float **puipjp, **ptausipjp;
+    float eta;
+    int q_parameterization_mode;
+    double inverse_tau_per_q;
+    double inverse_tau_offset;
+};
+
+/* Compact field order Vp,Vs,rho,Qp,Qs. Each pointer addresses exactly
+ * NX*NY doubles with (i,j) at (j-1)*NX+(i-1). */
+struct denise_cuda_psv_physical_gradient_host {
+    double *vp, *vs, *rho, *qp, *qs;
+};
+
+struct denise_cuda_psv_physical_gradient_stats {
+    size_t material_bytes;
+    size_t physical_gradient_bytes;
+    size_t alignment_bytes;
+    size_t validation_bytes;
+    size_t total_bytes;
+    size_t remaining_budget_bytes;
+    size_t allocation_calls;
+    size_t material_h2d_calls;
+    size_t material_h2d_bytes;
+    size_t zero_calls;
+    size_t map_kernel_launches;
+    size_t map_synchronization_calls;
+    size_t validation_d2h_calls;
+    size_t validation_d2h_bytes;
+    size_t diagnostic_d2h_calls;
+    size_t diagnostic_d2h_bytes;
+    size_t per_step_h2d_calls;
+    size_t per_step_d2h_calls;
+    size_t per_step_allocation_calls;
+    size_t per_step_free_calls;
+    size_t per_step_blocking_sync_calls;
+    int prepared;
+    int mapped;
+    int invalid;
+};
+
 const char *denise_cuda_psv_forward_last_error(void);
 
 int denise_cuda_psv_forward_required_bytes(
@@ -276,6 +323,26 @@ int denise_cuda_psv_native_gradient_download(
 int denise_cuda_psv_native_gradient_get_stats(
         const struct denise_cuda_psv_forward *context,
         struct denise_cuda_psv_native_gradient_stats *stats);
+
+/* Allocate/upload the persistent physical mapping state before the first
+ * reverse segment. Mapping is legal once, only after the reverse sweep has
+ * completed, and performs no host-side reconstruction. Downloads are
+ * diagnostic and never implicit. */
+int denise_cuda_psv_physical_gradient_required_bytes(
+        const struct denise_cuda_psv_forward_config *config,
+        struct denise_cuda_psv_physical_gradient_stats *plan);
+int denise_cuda_psv_physical_gradient_prepare(
+        struct denise_cuda_psv_forward *context,
+        const struct denise_cuda_psv_physical_material_host *material);
+int denise_cuda_psv_physical_gradient_map(
+        struct denise_cuda_psv_forward *context);
+int denise_cuda_psv_physical_gradient_download(
+        struct denise_cuda_psv_forward *context,
+        struct denise_cuda_psv_physical_gradient_host *host,
+        size_t elements_per_field);
+int denise_cuda_psv_physical_gradient_get_stats(
+        const struct denise_cuda_psv_forward *context,
+        struct denise_cuda_psv_physical_gradient_stats *stats);
 
 int denise_cuda_psv_forward_download_traces(
         struct denise_cuda_psv_forward *context,
