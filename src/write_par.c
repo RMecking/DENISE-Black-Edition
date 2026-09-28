@@ -20,6 +20,8 @@ void write_par(FILE *fp){
 	extern int  READMOD, READREC, BOUNDARY;
 	extern float TSNAP1, TSNAP2, TSNAPINC, REFREC[4];
 	extern char SNAP_FILE[STRING_SIZE], SOURCE_FILE[STRING_SIZE], REC_FILE[STRING_SIZE];
+	extern char MIGRATION_SOURCE_PREFIX[STRING_SIZE2], MIGRATION_DATA_PREFIX[STRING_SIZE2];
+	extern char MIGRATION_IMAGE_PREFIX[STRING_SIZE2];
 	extern char SEIS_FILE_VX[STRING_SIZE], SEIS_FILE_VY[STRING_SIZE];
 	extern char SEIS_FILE_CURL[STRING_SIZE], SEIS_FILE_DIV[STRING_SIZE];
 	extern char SIGNAL_FILE[STRING_SIZE], SEIS_FILE_P[STRING_SIZE];
@@ -66,6 +68,14 @@ void write_par(FILE *fp){
 	fprintf(fp," Number of PEs in vertical direction (NPROCY): %d\n",NPROCY);
 	fprintf(fp," Total number of PEs in use: %d\n",NP);
 	fprintf(fp,"\n");
+	if ((PHYSICS==1)&&(MODE==2)) {
+		fprintf(fp," ---------------- M9c CLEAN ELASTIC P/SV MIGRATION ----------------\n");
+		fprintf(fp," Prepared source prefix: %s\n",MIGRATION_SOURCE_PREFIX);
+		fprintf(fp," Prepared vx/vy migration-data prefix: %s\n",MIGRATION_DATA_PREFIX);
+		fprintf(fp," Raw lambda/mu image prefix: %s\n",MIGRATION_IMAGE_PREFIX);
+		fprintf(fp," Data layout: chronological [time][receiver][vx,vy]\n");
+		fprintf(fp," Image layout/type: row-major [y][x], IEEE-754 float64\n\n");
+	}
 	fprintf(fp," ----------------------- Discretization  ---------------------\n");
 	fprintf(fp," Number of gridpoints in x-direction (NX): %i\n", NX);
 	fprintf(fp," Number of gridpoints in y-direction (NY): %i\n", NY);
@@ -205,12 +215,18 @@ void write_par(FILE *fp){
 	if (READMOD){
 		fprintf(fp," ------------------------- MODEL-FILES -------------------------\n");
 		fprintf(fp," names of model-files: \n");
-		fprintf(fp,"\t shear wave velocities:\n\t %s.vs\n",MFILE);
-		fprintf(fp,"\t tau for shear waves:\n\t %s.ts\n",MFILE);
-		fprintf(fp,"\t density:\n\t %s.rho\n",MFILE);
-		fprintf(fp,"\t compressional wave velocities:\n\t %s.vp\n",MFILE);
-		fprintf(fp,"\t tau for P-waves:\n\t %s.tp\n",MFILE);
-		for (l=1;l<=L;l++) fprintf(fp,"\t %1i. relaxation frequencies: %s.f%1i\n",l,MFILE,l);
+		if ((PHYSICS==1)&&(MODE==2)&&(INVMAT1==3)) {
+			fprintf(fp,"\t Lame parameter lambda:\n\t %s.lam\n",MFILE);
+			fprintf(fp,"\t Lame parameter mu:\n\t %s.mu\n",MFILE);
+			fprintf(fp,"\t density:\n\t %s.rho\n",MFILE);
+		} else {
+			fprintf(fp,"\t shear wave velocities:\n\t %s.vs\n",MFILE);
+			fprintf(fp,"\t tau for shear waves:\n\t %s.ts\n",MFILE);
+			fprintf(fp,"\t density:\n\t %s.rho\n",MFILE);
+			fprintf(fp,"\t compressional wave velocities:\n\t %s.vp\n",MFILE);
+			fprintf(fp,"\t tau for P-waves:\n\t %s.tp\n",MFILE);
+			for (l=1;l<=L;l++) fprintf(fp,"\t %1i. relaxation frequencies: %s.f%1i\n",l,MFILE,l);
+		}
 	}
 
 	fprintf(fp,"\n");

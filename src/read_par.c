@@ -22,6 +22,8 @@ extern int BOUNDARY, LOG, TAPER, TAPERLENGTH, FW, PHYSICS, MODE;
 extern float TSNAP1, TSNAP2, TSNAPINC, REFREC[4];
 extern char  MFILE[STRING_SIZE], SIGNAL_FILE[STRING_SIZE], LOG_FILE[STRING_SIZE], TFILE[STRING_SIZE];
 extern char SNAP_FILE[STRING_SIZE], SOURCE_FILE[STRING_SIZE], REC_FILE[STRING_SIZE];
+extern char MIGRATION_SOURCE_PREFIX[STRING_SIZE2], MIGRATION_DATA_PREFIX[STRING_SIZE2];
+extern char MIGRATION_IMAGE_PREFIX[STRING_SIZE2];
 extern char SEIS_FILE_VX[STRING_SIZE], SEIS_FILE_VY[STRING_SIZE];
 extern char SEIS_FILE_CURL[STRING_SIZE], SEIS_FILE_DIV[STRING_SIZE], SEIS_FILE_P[STRING_SIZE];
 extern char JACOBIAN[STRING_SIZE],DATA_DIR[STRING_SIZE];
@@ -170,11 +172,25 @@ int  c=0, lineno=0, l;
             break;
 	 case 25 :
 	    fscanf(fp_in,"%s =%i",s,&L);
-	    FL=vector(1,L);
+	    if (L < 0)
+		err("Relaxation mechanism count L must be non-negative.");
+	    FL=NULL;
+	    if (L > 0) FL=vector(1,L);
 	    break;
 	 case 26 :
-	    fscanf(fp_in,"%s =%f",s,&FL[1]);
-	    for (l=2;l<=L;l++) fscanf(fp_in,"%f",&FL[l]);
+	    if (L > 0) {
+		if (fscanf(fp_in,"%s =%f",s,&FL[1]) != 2)
+		    err("Error while reading relaxation frequencies FL (record 26).");
+		for (l=2;l<=L;l++) {
+		    if (fscanf(fp_in,"%f",&FL[l]) != 1)
+			err("Error while reading relaxation frequencies FL (record 26).");
+		}
+	    } else {
+		float unused_frequency;
+
+		if (fscanf(fp_in,"%s =%f",s,&unused_frequency) != 2)
+		    err("Error while reading elastic FL placeholder (record 26).");
+	    }
 	    break;
 	 case 27 :
 	    fscanf(fp_in,"%s =%f",s,&TAU);
@@ -455,6 +471,15 @@ int  c=0, lineno=0, l;
 	    break;
 	 case 119 :
 	   fscanf(fp_in,"%s =%f",s,&Q_APPROX_DF);
+	    break;
+	 case 120 :
+	   fscanf(fp_in,"%s =%255s",s,MIGRATION_SOURCE_PREFIX);
+	    break;
+	 case 121 :
+	   fscanf(fp_in,"%s =%255s",s,MIGRATION_DATA_PREFIX);
+	    break;
+	 case 122 :
+	   fscanf(fp_in,"%s =%255s",s,MIGRATION_IMAGE_PREFIX);
 	    break;
 	 default:
 	    break;
