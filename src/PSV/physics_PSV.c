@@ -6,6 +6,7 @@
  */
 
 #include "fd.h"
+#include "denise_elastic_psv_migration.h"
 
 void physics_PSV(){
 
@@ -24,7 +25,9 @@ void physics_PSV(){
 
         /* 2D PSV Reverse Time Migration */
 	if(MODE==2){
-	   RTM_PSV();
+	   if(denise_elastic_psv_migration_mode2()!=0){
+	      err((char *)denise_elastic_psv_migration_mode2_last_error());
+	   }
 	}
 
 }
