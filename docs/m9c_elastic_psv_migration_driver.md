@@ -108,16 +108,30 @@ mismatches are errors. Files are never truncated or padded.
 ## Output and ownership
 
 The driver holds two global float64 images and processes only one shot context
-at a time. Per shot it creates one M9b-1 context, stores one background
-trajectory, applies `J^T`, accumulates into the global images in deterministic
-double precision, and destroys the context. The dominant declared allocation
-classes are:
+at a time. Per shot it creates one M9b-1 context, selects the M9d1 segmented
+checkpoint/replay backend when its complete logical retained-byte estimate is
+strictly smaller than full trajectory storage,
+applies `J^T`, accumulates into the global images in deterministic double
+precision, and destroys the context. Production requests `min(32, NT)`
+segments. Equal or larger estimates retain full storage. Allocator-private
+bookkeeping and common context/working state are excluded from this metric.
+The dominant declared allocation classes are:
 
 ```text
-trajectory per shot = 4 * NT * NX * NY * sizeof(float)
+historical full equivalent = 4 * NT * NX * NY * sizeof(float)
+retained replay            = checkpoint payloads + checkpoint objects
+                           + start/end schedules + largest-segment operands
 global images       = 2 * NX * NY * sizeof(double)
 prepared shot data  = NT * NREC * 2 * sizeof(float)
 ```
+
+The public `trajectory_bytes` diagnostic continues to report the historical
+full-storage equivalent. Separate fields report checkpoint payload/total payload,
+checkpoint objects, pointer table (zero for contiguous objects), schedules,
+segment operands, complete retained replay bytes, segment geometry, working-state bytes
+and initial/replayed forward-step counts. The scientific migration contract and
+file formats are unchanged. See `m9d1_elastic_psv_checkpoint_replay.md` for the
+checkpoint timing and exact storage layout.
 
 The canonical output files are native-endian IEEE-754 float64, contiguous
 row-major `[y][x]`, with no transposition or scaling:

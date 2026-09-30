@@ -28,6 +28,26 @@ static int checked_product(size_t left, size_t right, size_t *product) {
     return 0;
 }
 
+static int full_trajectory_size(size_t cells, size_t nt, size_t *bytes) {
+    size_t values;
+    if (!bytes) return -1;
+    *bytes = 0;
+    if (!cells || !nt || checked_product(cells, 4u, &values) != 0
+        || checked_product(values, nt, &values) != 0
+        || checked_product(values, sizeof(float), bytes) != 0) return -1;
+    return 0;
+}
+
+static int select_replay_backend(int estimate_status, size_t replay_bytes,
+        size_t full_bytes, int *selected) {
+    if (!selected) return migration_fail("M9c backend selection result is null");
+    *selected = 0;
+    if (estimate_status != 0 || !replay_bytes || !full_bytes)
+        return migration_fail("M9c backend selection requires valid storage estimates");
+    *selected = replay_bytes < full_bytes;
+    return 0;
+}
+
 static int finite_array(const float *values, size_t count) {
     size_t index;
     if (!values) return 0;
@@ -95,9 +115,8 @@ static int validate_request(
     if (checked_product((size_t)request->nx, (size_t)request->ny, cells) != 0
         || *cells > (size_t)INT32_MAX)
         return migration_fail("M9c NX*NY overflows the supported flat index range");
-    if (checked_product(*cells, 4u, &values) != 0
-        || checked_product(values, (size_t)request->nt, &values) != 0
-        || checked_product(values, sizeof(float), trajectory_bytes) != 0)
+    if (full_trajectory_size(*cells, (size_t)request->nt,
+                             trajectory_bytes) != 0)
         return migration_fail("M9c 4*NT*NX*NY trajectory size overflows size_t");
     if (checked_product(*cells, 2u, &values) != 0
         || checked_product(values, sizeof(double), image_bytes) != 0)
@@ -157,6 +176,7 @@ int denise_elastic_psv_migrate(
     double *lambda_sum = NULL, *mu_sum = NULL, *shot_lambda = NULL, *shot_mu = NULL;
     size_t cells = 0, trajectory_bytes = 0, image_bytes = 0, maximum_data_bytes = 0;
     int shot_index;
+    int production_segments;
     float cpml_peak = 0.0f;
     migration_error[0] = '\0';
     if (!result) return migration_fail("M9c migration result is null");
@@ -164,6 +184,7 @@ int denise_elastic_psv_migrate(
     if (validate_request(request, &cells, &trajectory_bytes, &image_bytes,
                          &maximum_data_bytes) != 0)
         return -1;
+    production_segments = request->nt < 32 ? request->nt : 32;
     lambda_sum = calloc(cells, sizeof(double));
     mu_sum = calloc(cells, sizeof(double));
     shot_lambda = malloc(cells * sizeof(double));
@@ -175,6 +196,9 @@ int denise_elastic_psv_migrate(
     for (shot_index = 0; shot_index < request->shot_count; ++shot_index) {
         const struct denise_elastic_psv_migration_shot *shot = &request->shots[shot_index];
         struct denise_elastic_psv_born_config config;
+        struct denise_elastic_psv_born_storage_diagnostics storage;
+        size_t replay_storage_estimate;
+        int estimate_status, replay_selected;
         float shot_peak;
         size_t cell;
         memset(&config, 0, sizeof(config));
@@ -201,6 +225,23 @@ int denise_elastic_psv_migrate(
                            denise_elastic_psv_born_last_error());
             goto failure;
         }
+        estimate_status = denise_elastic_psv_born_estimate_replay_storage(
+                context, production_segments, &replay_storage_estimate);
+        if (select_replay_backend(estimate_status, replay_storage_estimate,
+                                  trajectory_bytes, &replay_selected) != 0) {
+            migration_fail("M9c shot %d replay estimate failed: %s",
+                           shot->physical_shot_index,
+                           denise_elastic_psv_born_last_error());
+            goto failure;
+        }
+        if (replay_selected
+            && denise_elastic_psv_born_set_replay_segments(
+                   context, production_segments) != 0) {
+            migration_fail("M9c shot %d replay policy failed: %s",
+                           shot->physical_shot_index,
+                           denise_elastic_psv_born_last_error());
+            goto failure;
+        }
         if (denise_elastic_psv_born_prepare(context, NULL) != 0) {
             migration_fail("M9c shot %d background preparation failed: %s",
                            shot->physical_shot_index,
@@ -216,6 +257,26 @@ int denise_elastic_psv_migrate(
                            denise_elastic_psv_born_last_error());
             goto failure;
         }
+        if (denise_elastic_psv_born_storage_diagnostics(context, &storage) != 0) {
+            migration_fail("M9c shot %d storage diagnostics failed: %s",
+                           shot->physical_shot_index,
+                           denise_elastic_psv_born_last_error());
+            goto failure;
+        }
+        result->checkpoint_payload_bytes = storage.checkpoint_payload_bytes;
+        result->checkpoint_bytes = storage.checkpoint_bytes;
+        result->checkpoint_metadata_bytes = storage.checkpoint_metadata_bytes;
+        result->checkpoint_pointer_bytes = storage.checkpoint_pointer_bytes;
+        result->segment_schedule_bytes = storage.segment_schedule_bytes;
+        result->segment_operand_bytes = storage.segment_operand_bytes;
+        result->peak_replay_storage_bytes = storage.retained_replay_bytes;
+        result->forward_working_bytes = storage.forward_working_bytes;
+        result->adjoint_working_bytes = storage.adjoint_working_bytes;
+        result->initial_forward_steps = storage.initial_forward_steps;
+        result->replayed_steps = storage.replayed_forward_steps_last;
+        result->segment_count = storage.segment_count;
+        result->checkpoint_count = storage.checkpoint_count;
+        result->max_segment_length = storage.max_segment_length;
         for (cell = 0; cell < cells; ++cell) {
             lambda_sum[cell] += shot_lambda[cell];
             mu_sum[cell] += shot_mu[cell];
