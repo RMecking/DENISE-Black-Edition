@@ -56,10 +56,10 @@
 
 #include "globvar.h"      /* definition of global variables  */
 #include "cseife.h"
+#include "denise_elastic_psv_migration_mpi.h"
 
 int main(int argc, char **argv){
 char * fileinp;
-FILE *fpsrc;
 
 /* Initialize MPI environment */
 MPI_Init(&argc,&argv);
@@ -87,6 +87,15 @@ if(FP==NULL) {
 /* read input file *.inp */
 read_par(FP);
  
+/* MODE=2 invalid topology must reach the collective root-I/O cleanup before
+ * legacy shot splitting can divide by zero or form independent writers. */
+if ((PHYSICS==1)&&(MODE==2)&&
+    ((NPROCX<1)||(NPROCY<1)||((long long)NPROCX*NPROCY!=NP))) {
+    physics_PSV();
+    MPI_Finalize();
+    return 1;
+}
+
 /* Init shot parallelization*/
 COLOR = MYID / (NPROCX * NPROCY);
 MPI_Comm_split(MPI_COMM_WORLD, COLOR, MYID, &SHOT_COMM);
@@ -103,7 +112,12 @@ printf("NX: %d \t NY: %d \n", NPROCX, NPROCY);*/
 
 MPI_Barrier(MPI_COMM_WORLD);
 
-count_src();
+if ((PHYSICS==1)&&(MODE==2)) {
+    if (denise_elastic_psv_migration_mode2_count_sources()!=0)
+        err((char *)denise_elastic_psv_migration_mode2_last_error());
+} else {
+    count_src();
+}
 
 /*printf("Number of shots %d \n", NSHOTS);*/
 
