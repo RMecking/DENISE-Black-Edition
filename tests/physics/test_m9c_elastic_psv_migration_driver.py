@@ -70,6 +70,20 @@ class MigrationResult(ctypes.Structure):
         ("trajectory_bytes", ctypes.c_size_t),
         ("global_image_bytes", ctypes.c_size_t),
         ("maximum_shot_data_bytes", ctypes.c_size_t),
+        ("checkpoint_payload_bytes", ctypes.c_size_t),
+        ("checkpoint_bytes", ctypes.c_size_t),
+        ("segment_operand_bytes", ctypes.c_size_t),
+        ("peak_replay_storage_bytes", ctypes.c_size_t),
+        ("forward_working_bytes", ctypes.c_size_t),
+        ("adjoint_working_bytes", ctypes.c_size_t),
+        ("initial_forward_steps", ctypes.c_size_t),
+        ("replayed_steps", ctypes.c_size_t),
+        ("segment_count", ctypes.c_int),
+        ("checkpoint_count", ctypes.c_int),
+        ("max_segment_length", ctypes.c_int),
+        ("checkpoint_metadata_bytes", ctypes.c_size_t),
+        ("checkpoint_pointer_bytes", ctypes.c_size_t),
+        ("segment_schedule_bytes", ctypes.c_size_t),
     ]
 
 
@@ -312,6 +326,20 @@ def _run(api, owner):
         "trajectory_bytes": result.trajectory_bytes,
         "global_image_bytes": result.global_image_bytes,
         "maximum_shot_data_bytes": result.maximum_shot_data_bytes,
+        "checkpoint_payload_bytes": result.checkpoint_payload_bytes,
+        "checkpoint_bytes": result.checkpoint_bytes,
+        "segment_operand_bytes": result.segment_operand_bytes,
+        "peak_replay_storage_bytes": result.peak_replay_storage_bytes,
+        "forward_working_bytes": result.forward_working_bytes,
+        "adjoint_working_bytes": result.adjoint_working_bytes,
+        "initial_forward_steps": result.initial_forward_steps,
+        "replayed_steps": result.replayed_steps,
+        "segment_count": result.segment_count,
+        "checkpoint_count": result.checkpoint_count,
+        "max_segment_length": result.max_segment_length,
+        "checkpoint_metadata_bytes": result.checkpoint_metadata_bytes,
+        "checkpoint_pointer_bytes": result.checkpoint_pointer_bytes,
+        "segment_schedule_bytes": result.segment_schedule_bytes,
     }
     api.denise_elastic_psv_migration_result_destroy(ctypes.byref(result))
     assert not result.image_lambda_raw and not result.image_mu_raw
@@ -355,6 +383,35 @@ def test_driver_matches_manual_ordered_m9b1_stack_and_oracle(
     assert diagnostics["global_image_bytes"] == 2 * exp.nx * exp.ny * 8
     assert diagnostics["maximum_shot_data_bytes"] == (
         exp.nt * len(exp.receivers) * 2 * 4)
+    segments = min(32, exp.nt)
+    maximum = exp.nt // segments + (exp.nt % segments != 0)
+    payload = (5 * exp.nx * exp.ny
+               + ((8 * exp.fw + 2) * (exp.nx + exp.ny)
+                  if exp.cpml else 0)) * 4
+    # Query the same authoritative estimate used by production; the focused
+    # H1 tests independently audit the object/schedule allocation decomposition.
+    reference = m9b1.Operator(migration_library, exp)
+    estimate = ctypes.c_size_t()
+    try:
+        estimate_api = migration_library.denise_elastic_psv_born_estimate_replay_storage
+        estimate_api.argtypes = [ctypes.c_void_p, ctypes.c_int,
+                                ctypes.POINTER(ctypes.c_size_t)]
+        estimate_api.restype = ctypes.c_int
+        assert estimate_api(reference.context, segments, ctypes.byref(estimate)) == 0
+    finally:
+        reference.close()
+    selected = estimate.value < diagnostics["trajectory_bytes"]
+    assert diagnostics["segment_count"] == (segments if selected else 0)
+    assert diagnostics["checkpoint_count"] == (segments - 1 if selected else 0)
+    assert diagnostics["max_segment_length"] == (maximum if selected else 0)
+    assert diagnostics["peak_replay_storage_bytes"] == (
+        diagnostics["checkpoint_bytes"] + diagnostics["segment_operand_bytes"]
+        + diagnostics["checkpoint_metadata_bytes"]
+        + diagnostics["checkpoint_pointer_bytes"]
+        + diagnostics["segment_schedule_bytes"])
+    assert diagnostics["checkpoint_payload_bytes"] == (payload if selected else 0)
+    assert diagnostics["initial_forward_steps"] == exp.nt
+    assert diagnostics["replayed_steps"] == (exp.nt if selected else 0)
     assert (diagnostics["cpml_memory_peak"] > 0.0) is exp.cpml
 
 

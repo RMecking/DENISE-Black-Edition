@@ -65,11 +65,55 @@ struct denise_elastic_psv_born_config {
 
 struct denise_elastic_psv_born;
 
+struct denise_elastic_psv_born_storage_diagnostics {
+    int segmented;
+    int segment_count;
+    int checkpoint_count;
+    int max_segment_length;
+    size_t checkpoint_payload_bytes;
+    size_t checkpoint_bytes; /* Sum of payloads only; metadata below. */
+    size_t segment_operand_bytes;
+    size_t retained_replay_bytes;
+    size_t forward_working_bytes;
+    size_t adjoint_working_bytes;
+    size_t initial_forward_steps;
+    size_t replayed_forward_steps_last;
+    size_t checkpoint_metadata_bytes;
+    size_t checkpoint_pointer_bytes;
+    size_t segment_schedule_bytes;
+};
+
 const char *denise_elastic_psv_born_last_error(void);
 
 int denise_elastic_psv_born_create(
     const struct denise_elastic_psv_born_config *config,
     struct denise_elastic_psv_born **context);
+
+/* Select deterministic segmented checkpoint/replay before prepare(). */
+int denise_elastic_psv_born_set_replay_segments(
+    struct denise_elastic_psv_born *context,
+    int segment_count);
+
+/* Complete logical requested retained bytes, including objects/schedules. */
+int denise_elastic_psv_born_estimate_replay_storage(
+    const struct denise_elastic_psv_born *context,
+    int segment_count,
+    size_t *retained_bytes);
+
+int denise_elastic_psv_born_get_segment_bounds(
+    const struct denise_elastic_psv_born *context,
+    int segment,
+    int *start,
+    int *end_exclusive);
+
+int denise_elastic_psv_born_storage_diagnostics(
+    const struct denise_elastic_psv_born *context,
+    struct denise_elastic_psv_born_storage_diagnostics *diagnostics);
+
+/* Test/diagnostic proof of post-timestep checkpoint sufficiency. */
+int denise_elastic_psv_born_checkpoint_roundtrip(
+    struct denise_elastic_psv_born *context,
+    int timestep);
 
 /* Run and retain the fixed-background trajectory and four post-CPML strains. */
 int denise_elastic_psv_born_prepare(

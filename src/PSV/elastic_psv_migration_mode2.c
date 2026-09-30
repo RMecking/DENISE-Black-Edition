@@ -546,6 +546,12 @@ shot_failure:
             "  image lambda: %s; NX=%d NY=%d float64 bytes=%lu\n"
             "  image mu: %s; NX=%d NY=%d float64 bytes=%lu\n"
             "  trajectory bytes per shot: %lu\n"
+            "  trajectory backend: %s\n"
+            "  replay segments/checkpoints/max length: %d / %d / %d\n"
+            "  checkpoint payload/total payload bytes: %lu / %lu\n"
+            "  replay object/pointer/schedule bytes: %lu / %lu / %lu\n"
+            "  segment operand/retained replay bytes: %lu / %lu\n"
+            "  initial/replayed forward steps per shot: %lu / %lu\n"
             "  global image bytes: %lu\n"
             "  maximum shot data bytes: %lu\n"
             "  CPML memory peak: %.9g\n"
@@ -555,6 +561,18 @@ shot_failure:
             mu_final, NX, NY,
             (unsigned long)(result.cell_count * sizeof(double)),
             (unsigned long)result.trajectory_bytes,
+            result.segment_count > 0 ? "SEGMENTED" : "FULL",
+            result.segment_count, result.checkpoint_count,
+            result.max_segment_length,
+            (unsigned long)result.checkpoint_payload_bytes,
+            (unsigned long)result.checkpoint_bytes,
+            (unsigned long)result.checkpoint_metadata_bytes,
+            (unsigned long)result.checkpoint_pointer_bytes,
+            (unsigned long)result.segment_schedule_bytes,
+            (unsigned long)result.segment_operand_bytes,
+            (unsigned long)result.peak_replay_storage_bytes,
+            (unsigned long)result.initial_forward_steps,
+            (unsigned long)result.replayed_steps,
             (unsigned long)result.global_image_bytes,
             (unsigned long)result.maximum_shot_data_bytes,
             (double)result.cpml_memory_peak, (double)vmax);

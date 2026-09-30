@@ -71,6 +71,20 @@ struct denise_elastic_psv_migration_result {
     size_t trajectory_bytes;
     size_t global_image_bytes;
     size_t maximum_shot_data_bytes;
+    size_t checkpoint_payload_bytes;
+    size_t checkpoint_bytes;
+    size_t segment_operand_bytes;
+    size_t peak_replay_storage_bytes; /* Complete logical retained bytes. */
+    size_t forward_working_bytes;
+    size_t adjoint_working_bytes;
+    size_t initial_forward_steps;
+    size_t replayed_steps;
+    int segment_count;
+    int checkpoint_count;
+    int max_segment_length;
+    size_t checkpoint_metadata_bytes;
+    size_t checkpoint_pointer_bytes;
+    size_t segment_schedule_bytes;
 };
 
 const char *denise_elastic_psv_migration_last_error(void);
