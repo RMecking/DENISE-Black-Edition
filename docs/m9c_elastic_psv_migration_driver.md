@@ -145,3 +145,11 @@ Both complete images remain in memory until all shots succeed. The adapter
 writes temporary files and publishes the final pair only after both writes
 close successfully. A failed run removes temporary and final names so that it
 cannot leave a successful-looking partial pair.
+
+## M9d2 distributed production adapter
+
+The existing direct serial API and valid one-rank MODE=2 path remain canonical.
+M9d2 adds equal Cartesian tiles, owned model/data/images, root-only production
+I/O and collective paired publication for NCOLORS=1. See
+[the M9d2 contract](m9d2_elastic_psv_mpi.md) for topology, ownership, halo
+transposes and failure gates. No independent shot groups are supported.

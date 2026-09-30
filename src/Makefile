@@ -112,6 +112,8 @@ DENISE += alloc_fwiPSV.c \
 	  alloc_seisPSVfwi.c \
 	  assemble_gradPSV_exact.c \
 	  elastic_psv_born.c \
+	  elastic_psv_born_mpi.c \
+	  elastic_psv_migration_mpi.c \
 	  elastic_psv_migration.c \
 	  elastic_psv_migration_mode2.c \
 	  visco_psv_checkpoint.c \

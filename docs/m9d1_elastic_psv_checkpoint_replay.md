@@ -149,3 +149,11 @@ frozen M9b-0 oracle ceilings remain `1e-5` for `J` and `6e-5` for `J^T`.
 
 M9d1 does not add MPI, free-surface support, CUDA, disk checkpoints,
 compression, Revolve, wave-mode decomposition or image conditioning.
+
+## M9d2 distributed replay
+
+The serial replay API and complete H1 accounting remain unchanged. M9d2 adds
+owned-state checkpoints and local active CPML strips, regenerates ghosts on
+restore, and selects replay only when every rank wins the complete byte
+comparison. Equality or any rank loss selects FULL collectively. See
+[the M9d2 contract](m9d2_elastic_psv_mpi.md) for the distributed ledger and gates.

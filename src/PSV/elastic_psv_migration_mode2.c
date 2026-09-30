@@ -1,5 +1,6 @@
 #include "fd.h"
 #include "denise_elastic_psv_migration.h"
+#include "denise_elastic_psv_migration_mpi.h"
 
 #include <errno.h>
 #include <float.h>
@@ -390,6 +391,7 @@ int denise_elastic_psv_migration_mode2(void) {
     memset(&result, 0, sizeof(result));
     lambda_final[0] = mu_final[0] = lambda_temp[0] = mu_temp[0] = '\0';
 
+    if (NP != 1 || NPROCX != 1 || NPROCY != 1) return denise_elastic_psv_migration_mode2_mpi();
     if (MYID != 0 || NP != 1 || NPROCX != 1 || NPROCY != 1)
         return mode2_fail("M9c MODE=2 requires one MPI rank and NPROCX=NPROCY=1");
     if (make_path(lambda_final, sizeof(lambda_final), "%s.image_lambda_raw.bin",
@@ -588,4 +590,183 @@ failure:
     remove(lambda_final); remove(mu_final);
     free_inputs(sources, NSHOTS, shots, lambda, mu, rho, receiver_i, receiver_j);
     return -1;
+}
+
+/* Root file operations are separated by collective status gates. The adapter
+ * deliberately passes WORLD only after excluding independent shot groups. */
+static int mode2_collective(int bad) {
+    int any;
+    char detail[1024];
+    bad=bad!=0;
+    MPI_Allreduce(&bad,&any,1,MPI_INT,MPI_MAX,MPI_COMM_WORLD);
+    snprintf(detail,sizeof(detail),"%s",mode2_error[0]?mode2_error:"remote rank setup/I/O failure");
+    return any?mode2_fail("M9d2 collective MODE=2 failure: %s",detail):0;
+}
+/* Main's legacy count_src aborts before adapter cleanup on a missing geometry
+ * file. MODE=2 uses this collective count preflight instead, including 1x1.
+ * Successful inputs produce the same NSHOTS and no additional diagnostics. */
+int denise_elastic_psv_migration_mode2_count_sources(void) {
+    extern char SOURCE_FILE[STRING_SIZE],MIGRATION_IMAGE_PREFIX[STRING_SIZE2];
+    extern int NSHOTS;
+    FILE *stream=NULL;
+    char line[1024],*end,path[1024];
+    long declared=0;
+    int rank,bad=0,k;
+    const char *suffix[4]={"%s.image_lambda_raw.bin","%s.image_mu_raw.bin",
+                          "%s.image_lambda_raw.bin.tmp","%s.image_mu_raw.bin.tmp"};
+    mode2_error[0]='\0';MPI_Comm_rank(MPI_COMM_WORLD,&rank);
+    if(rank==0){
+        stream=fopen(SOURCE_FILE,"r");
+        if(!stream)bad=mode2_fail("M9d2 cannot open source geometry %s: %s",SOURCE_FILE,strerror(errno));
+        else {
+            if(!fgets(line,sizeof(line),stream))bad=mode2_fail("M9d2 source geometry is empty");
+            else {
+                errno=0;declared=strtol(line,&end,10);
+                while(*end==' '||*end=='\t'||*end=='\r'||*end=='\n')end++;
+                if(errno||*end||declared<1||declared>INT_MAX)bad=mode2_fail("M9d2 source geometry has invalid declared shot count");
+            }
+            if(fclose(stream)!=0&&!bad)bad=mode2_fail("M9d2 cannot close source geometry");
+        }
+        if(!bad)NSHOTS=(int)declared;
+        else for(k=0;k<4;k++)if(make_path(path,sizeof(path),suffix[k],MIGRATION_IMAGE_PREFIX,0)==0)remove(path);
+    }
+    if(mode2_collective(bad))return -1;
+    MPI_Bcast(&NSHOTS,1,MPI_INT,0,MPI_COMM_WORLD);return 0;
+}
+static int mode2_model_scatter(float *global,float *local,int gx,int nx,int ny,int px,int size,int rank) {
+    float *packed=NULL;int r,j;
+    if(rank==0)packed=malloc((size_t)gx*ny*(size_t)(size/px)*sizeof(float));
+    if(mode2_collective(rank==0&&!packed))return -1;
+    if(rank==0)for(r=0;r<size;r++)for(j=0;j<ny;j++)memcpy(packed+(size_t)r*nx*ny+(size_t)j*nx,global+(size_t)(r/px*ny+j)*gx+r%px*nx,(size_t)nx*sizeof(float));
+    MPI_Scatter(packed,nx*ny,MPI_FLOAT,local,nx*ny,MPI_FLOAT,0,MPI_COMM_WORLD);
+    free(packed);return 0;
+}
+static int mode2_trace_scatter(float *global,float *local,int nt,int nrec,const int *ri,const int *rj,int nx,int ny,int px,int size,int rank) {
+    float *buffer=NULL;int r,t,q,k,n;
+    if(rank==0)buffer=malloc((size_t)nt*nrec*2*sizeof(float));
+    if(mode2_collective(rank==0&&!buffer))return -1;
+    for(r=0;r<size;r++){
+        n=0;for(q=0;q<nrec;q++)if(ri[q]/nx+px*(rj[q]/ny)==r)n++;
+        if(rank==0){
+            int index=0;
+            for(t=0;t<nt;t++)for(q=0;q<nrec;q++)if(ri[q]/nx+px*(rj[q]/ny)==r)for(k=0;k<2;k++)buffer[index++]=global[((size_t)t*nrec+q)*2+k];
+        }
+        if(r==0){if(rank==0)memcpy(local,buffer,(size_t)nt*n*2*sizeof(float));}
+        else {if(rank==0)MPI_Send(buffer,nt*n*2,MPI_FLOAT,r,41,MPI_COMM_WORLD);if(rank==r)MPI_Recv(local,nt*n*2,MPI_FLOAT,0,41,MPI_COMM_WORLD,MPI_STATUS_IGNORE);}
+    }
+    free(buffer);return 0;
+}
+static int mode2_image_gather(const double *local,double *global,int gx,int nx,int ny,int px,int size,int rank) {
+    double *tiles=NULL;int r,j;
+    if(rank==0)tiles=malloc((size_t)nx*ny*size*sizeof(double));
+    if(mode2_collective(rank==0&&!tiles))return -1;
+    MPI_Gather(local,nx*ny,MPI_DOUBLE,tiles,nx*ny,MPI_DOUBLE,0,MPI_COMM_WORLD);
+    if(rank==0)for(r=0;r<size;r++)for(j=0;j<ny;j++)memcpy(global+(size_t)(r/px*ny+j)*gx+r%px*nx,tiles+(size_t)r*nx*ny+(size_t)j*nx,(size_t)nx*sizeof(double));
+    free(tiles);return 0;
+}
+int denise_elastic_psv_migration_mode2_mpi(void) {
+    extern int NX,NY,NT,NSHOTS,L,INVMAT1,FDORDER,NDT,DTINV,FREE_SURF,BOUNDARY,NP,NPROCX,NPROCY,NCOLORS;
+    extern int READMOD,READREC,SRCREC,RUN_MULTIPLE_SHOTS,SEISMO,INV_STF,FW,QUELLART;
+    extern float DH,TIME,DT,DAMPING,FPML,npower,k_max_PML,REFREC[4];
+    extern char MFILE[STRING_SIZE],SOURCE_FILE[STRING_SIZE],REC_FILE[STRING_SIZE];
+    extern char MIGRATION_SOURCE_PREFIX[STRING_SIZE2],MIGRATION_DATA_PREFIX[STRING_SIZE2],MIGRATION_IMAGE_PREFIX[STRING_SIZE2];
+    struct denise_elastic_psv_migration_request request;
+    struct denise_elastic_psv_migration_result result;
+    struct denise_elastic_psv_born_mpi_diagnostics diagnostics,*all_diagnostics=NULL;
+    struct mode2_source *sources=NULL;
+    struct denise_elastic_psv_migration_shot *shots=NULL;
+    float *model[3]={NULL,NULL,NULL},*global_model[3]={NULL,NULL,NULL};
+    double *image[2]={NULL,NULL};
+    int *ri=NULL,*rj=NULL,rank,size,nrec=0,local_nrec=0,s,k,bad=0,nx=0,ny=0;
+    size_t cells=0,local_cells=0;
+    float vmax=0;
+    char path[1024],final[2][1024],temp[2][1024];
+    memset(&request,0,sizeof(request));memset(&result,0,sizeof(result));memset(final,0,sizeof(final));memset(temp,0,sizeof(temp));
+    mode2_error[0]='\0';
+    MPI_Comm_rank(MPI_COMM_WORLD,&rank);MPI_Comm_size(MPI_COMM_WORLD,&size);
+    /* Establish paths and remove stale pairs on root even for invalid topology. */
+    if(rank==0){
+        bad=make_path(final[0],sizeof(final[0]),"%s.image_lambda_raw.bin",MIGRATION_IMAGE_PREFIX,0)||make_path(final[1],sizeof(final[1]),"%s.image_mu_raw.bin",MIGRATION_IMAGE_PREFIX,0)||make_path(temp[0],sizeof(temp[0]),"%s.image_lambda_raw.bin.tmp",MIGRATION_IMAGE_PREFIX,0)||make_path(temp[1],sizeof(temp[1]),"%s.image_mu_raw.bin.tmp",MIGRATION_IMAGE_PREFIX,0);
+        if(!bad)for(k=0;k<2;k++){remove(final[k]);remove(temp[k]);}
+    }
+    if(mode2_collective(bad))goto failure;
+    bad=NCOLORS!=1||NP!=size||NPROCX<1||NPROCY<1||(long long)NPROCX*NPROCY!=size;
+    bad|=NX<5||NY<5||L!=0||INVMAT1!=3||FDORDER!=4||NDT!=1||DTINV!=1||FREE_SURF!=0||BOUNDARY!=0||INV_STF!=0||!READMOD||READREC!=1||SRCREC!=1||RUN_MULTIPLE_SHOTS!=1||SEISMO!=1||QUELLART!=3||NSHOTS<1;
+    bad|=!isfinite(TIME)||!isfinite(DT)||!isfinite(DH)||!(TIME>0)||!(DT>0)||!(DH>0)||TIME/DT>(float)(INT_MAX-1);
+    if(NPROCX>0&&NPROCY>0){nx=NX/NPROCX;ny=NY/NPROCY;bad|=NX%NPROCX!=0||NY%NPROCY!=0||nx<2||ny<2;}
+    if(mode2_collective(bad)){mode2_fail("M9d2 unsupported MPI topology/configuration (NCOLORS=1, equal FD4 tiles >=2, L=0, FREE_SURF=BOUNDARY=0 required)");goto failure;}
+    NT=iround(TIME/DT);cells=(size_t)NX*NY;local_cells=(size_t)nx*ny;
+    bad=NT<1||cells>INT_MAX||FW<0||2LL*FW>=NX||2LL*FW>=NY;
+    if(mode2_collective(bad))goto failure;
+    for(k=0;k<3;k++)model[k]=malloc(local_cells*sizeof(float));
+    if(mode2_collective(!model[0]||!model[1]||!model[2]))goto failure;
+    if(rank==0){
+        bad=read_model_grid(MFILE,"lam",NX,NY,&global_model[0])||read_model_grid(MFILE,"mu",NX,NY,&global_model[1])||read_model_grid(MFILE,"rho",NX,NY,&global_model[2]);
+        if(!bad)bad=validate_cfl(global_model[0],global_model[1],global_model[2],cells,DH,DT,&vmax);
+    }
+    if(mode2_collective(bad))goto failure;
+    for(k=0;k<3;k++){
+        if(mode2_model_scatter(global_model[k],model[k],NX,nx,ny,NPROCX,size,rank))goto failure;
+        free(global_model[k]);global_model[k]=NULL;
+    }
+    MPI_Bcast(&vmax,1,MPI_FLOAT,0,MPI_COMM_WORLD);
+    if(rank==0)bad=read_sources(SOURCE_FILE,NSHOTS,NX,NY,DH,&sources)||read_receivers(REC_FILE,NX,NY,DH,REFREC,&ri,&rj,&nrec);
+    if(mode2_collective(bad))goto failure;
+    MPI_Bcast(&nrec,1,MPI_INT,0,MPI_COMM_WORLD);
+    if(rank!=0){sources=calloc((size_t)NSHOTS,sizeof(*sources));ri=malloc((size_t)nrec*sizeof(int));rj=malloc((size_t)nrec*sizeof(int));}
+    shots=calloc((size_t)NSHOTS,sizeof(*shots));
+    if(mode2_collective(!sources||!ri||!rj||!shots||(uint64_t)NT*(uint64_t)nrec*2>INT_MAX))goto failure;
+    MPI_Bcast(ri,nrec,MPI_INT,0,MPI_COMM_WORLD);MPI_Bcast(rj,nrec,MPI_INT,0,MPI_COMM_WORLD);
+    for(k=0;k<nrec;k++)if(ri[k]/nx+NPROCX*(rj[k]/ny)==rank)local_nrec++;
+    for(s=0;s<NSHOTS;s++){
+        int geometry[3];float *vx=NULL,*vy=NULL,*packed=NULL,*local=NULL;
+        if(rank==0){geometry[0]=sources[s].i;geometry[1]=sources[s].j;geometry[2]=sources[s].type;}
+        MPI_Bcast(geometry,3,MPI_INT,0,MPI_COMM_WORLD);
+        sources[s].i=geometry[0];sources[s].j=geometry[1];sources[s].type=geometry[2];
+        if(rank==0)bad=make_path(path,sizeof(path),"%s.shot_%d.bin",MIGRATION_SOURCE_PREFIX,s+1)||read_float_file(path,(size_t)NT,&sources[s].samples)||finite_float_array(sources[s].samples,(size_t)NT,"prepared source");
+        else sources[s].samples=malloc((size_t)NT*sizeof(float));
+        if(mode2_collective(bad||!sources[s].samples))goto failure;
+        MPI_Bcast(sources[s].samples,NT,MPI_FLOAT,0,MPI_COMM_WORLD);
+        local=malloc((size_t)NT*(local_nrec?local_nrec:1)*2*sizeof(float));
+        shots[s].migration_data=local;
+        if(mode2_collective(!local))goto failure;
+        if(rank==0){
+            bad=make_path(path,sizeof(path),"%s.vx.shot_%d.bin",MIGRATION_DATA_PREFIX,s+1)||read_float_file(path,(size_t)NT*nrec,&vx);
+            if(!bad)bad=make_path(path,sizeof(path),"%s.vy.shot_%d.bin",MIGRATION_DATA_PREFIX,s+1)||read_float_file(path,(size_t)NT*nrec,&vy);
+            if(!bad){packed=malloc((size_t)NT*nrec*2*sizeof(float));bad=!packed;if(!bad)bad=denise_elastic_psv_migration_pack_components(vx,vy,NT,nrec,packed)!=0;}
+        }
+        if(mode2_collective(bad)){free(vx);free(vy);free(packed);goto failure;}
+        bad=mode2_trace_scatter(packed,local,NT,nrec,ri,rj,nx,ny,NPROCX,size,rank);
+        free(vx);free(vy);free(packed);if(bad)goto failure;
+        shots[s].physical_shot_index=s+1;shots[s].source_type=1;shots[s].source_i=geometry[0];shots[s].source_j=geometry[1];shots[s].source_samples=sources[s].samples;shots[s].receiver_count=nrec;shots[s].receiver_i=ri;shots[s].receiver_j=rj;
+    }
+    request.nx=NX;request.ny=NY;request.nt=NT;request.fw=FW;request.dh=DH;request.dt=DT;request.l=L;request.invmat1=INVMAT1;request.fdorder=FDORDER;request.ndt=NDT;request.dtinv=DTINV;request.free_surface=FREE_SURF;request.boundary=BOUNDARY;request.mpi_size=size;request.receiver_components=2;request.inv_stf=INV_STF;
+    request.lambda=model[0];request.mu=model[1];request.rho=model[2];request.cpml_enabled=FW>0;request.pml_reflection=.001f;request.pml_power=npower;request.pml_kmax=k_max_PML;request.pml_fpml=FPML;request.pml_damping_speed=DAMPING;request.shot_count=NSHOTS;request.shots=shots;
+    if(denise_elastic_psv_migrate_mpi(&request,MPI_COMM_WORLD,NPROCX,NPROCY,&result,&diagnostics)){mode2_fail("M9d2 MPI migration: %s",denise_elastic_psv_born_mpi_last_error());goto failure;}
+    if(rank==0){image[0]=malloc(cells*sizeof(double));image[1]=malloc(cells*sizeof(double));all_diagnostics=malloc((size_t)size*sizeof(diagnostics));}
+    if(mode2_collective(rank==0&&(!image[0]||!image[1]||!all_diagnostics)))goto failure;
+    if(mode2_image_gather(result.image_lambda_raw,image[0],NX,nx,ny,NPROCX,size,rank)||mode2_image_gather(result.image_mu_raw,image[1],NX,nx,ny,NPROCX,size,rank))goto failure;
+    MPI_Gather(&diagnostics,(int)sizeof(diagnostics),MPI_BYTE,all_diagnostics,(int)sizeof(diagnostics),MPI_BYTE,0,MPI_COMM_WORLD);
+    /* All ranks have completed before root writes/publishes the pair. */
+    if(mode2_collective(0))goto failure;
+    if(rank==0){
+        bad=write_f64_file(temp[0],image[0],cells)||write_f64_file(temp[1],image[1],cells);
+        if(!bad&&rename(temp[0],final[0]))bad=mode2_fail("M9d2 cannot publish lambda: %s",strerror(errno));
+        if(!bad&&rename(temp[1],final[1]))bad=mode2_fail("M9d2 cannot publish mu: %s",strerror(errno));
+    }
+    if(mode2_collective(bad))goto failure;
+    if(rank==0){
+        printf("M9d2 distributed elastic P/SV MODE=2 complete: %dx%d; %d ascending shots; chronological [time][receiver][vx,vy]; float64 native row-major images\n",NPROCX,NPROCY,NSHOTS);
+        for(k=0;k<size;k++){struct denise_elastic_psv_born_mpi_diagnostics *d=&all_diagnostics[k];printf("  rank %d FULL/replay/retained bytes: %lu / %lu / %lu; backend %s; payload/object/pointer/schedule/operand: %lu / %lu / %lu / %lu / %lu; local traces bytes %lu; forward/adjoint halo bytes/step %lu / %lu\n",k,(unsigned long)d->full_bytes,(unsigned long)d->replay_estimate,(unsigned long)d->retained_backend_bytes,d->replay.segmented?"SEGMENTED":"FULL",(unsigned long)d->replay.checkpoint_bytes,(unsigned long)d->replay.checkpoint_metadata_bytes,(unsigned long)d->replay.checkpoint_pointer_bytes,(unsigned long)d->replay.segment_schedule_bytes,(unsigned long)d->replay.segment_operand_bytes,(unsigned long)d->local_data_bytes,(unsigned long)d->forward_halo_bytes_per_step,(unsigned long)d->adjoint_halo_bytes_per_step);}
+        printf("  communicator FULL min/max/sum: %llu / %llu / %llu; replay min/max/sum: %llu / %llu / %llu\n",diagnostics.full_min,diagnostics.full_max,diagnostics.full_sum,diagnostics.replay_min,diagnostics.replay_max,diagnostics.replay_sum);
+    }
+    bad=0;goto cleanup;
+failure:
+    bad=-1;if(rank==0)for(k=0;k<2;k++){if(final[k][0])remove(final[k]);if(temp[k][0])remove(temp[k]);}
+cleanup:
+    denise_elastic_psv_migration_result_destroy(&result);
+    for(k=0;k<3;k++){free(model[k]);free(global_model[k]);}
+    for(k=0;k<2;k++)free(image[k]);
+    free(all_diagnostics);
+    free_inputs(sources,NSHOTS,shots,NULL,NULL,NULL,ri,rj);return bad;
 }
