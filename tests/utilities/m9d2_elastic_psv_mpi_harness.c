@@ -68,6 +68,7 @@ int main(int argc,char **argv){
     cfg.global.nx=meta[0];cfg.global.ny=meta[1];cfg.global.nt=meta[2];cfg.global.fw=meta[3];cfg.global.source_i=meta[4];cfg.global.source_j=meta[5];cfg.global.receiver_count=nrec;
     cfg.global.dh=params[0];cfg.global.dt=params[1];cfg.global.pml_damping_speed=params[2];cfg.global.pml_reflection=params[3];cfg.global.pml_power=params[4];cfg.global.pml_kmax=params[5];cfg.global.pml_fpml=params[6];
     cfg.global.l=0;cfg.global.invmat1=3;cfg.global.fdorder=4;cfg.global.ndt=cfg.global.dtinv=1;cfg.global.mpi_size=size;cfg.global.receiver_components=2;cfg.global.cpml_enabled=meta[3]>0;
+    cfg.global.free_surface=getenv("M9D3_FREE_SURF")?atoi(getenv("M9D3_FREE_SURF")):0;
     cfg.global.lambda=local[0];cfg.global.mu=local[1];cfg.global.rho=local[2];cfg.global.source_samples=source;cfg.global.receiver_i=ri;cfg.global.receiver_j=rj;
     if(getenv("M9D2_INVALID")&&rank==1){
         const char *fault=getenv("M9D2_INVALID");
@@ -99,6 +100,8 @@ int main(int argc,char **argv){
         struct pml_profile profile={NULL,NULL,NULL,0};
         check(denise_elastic_psv_born_mpi_copy_profile(c,k,ka,a,b),"profile");
         build_profile(&profile,k<2?meta[0]:meta[1],params[0],params[1],meta[3],k%2,params[2],params[3],params[4],params[5],params[6]);
+        if(cfg.global.free_surface && k<2 && meta[3]>0){int t;for(t=0;t<meta[0];t++)if(profile.a[t]==0.0f && profile.b[t]==1.0f)profile.b[t]=(float)exp(-M_PI*params[6]*params[1]);}
+        if(cfg.global.free_surface && k>=2){int t;for(t=0;t<meta[1]-1-meta[3];t++){profile.kappa[t]=1.0f;profile.a[t]=0.0f;profile.b[t]=1.0f;}}
         if(memcmp(ka,profile.kappa+offset,(size_t)len*sizeof(float))||memcmp(a,profile.a+offset,(size_t)len*sizeof(float))||memcmp(b,profile.b+offset,(size_t)len*sizeof(float)))MPI_Abort(MPI_COMM_WORLD,8);
         free_profile(&profile);free(ka);free(a);free(b);
     }
@@ -176,6 +179,10 @@ int main(int argc,char **argv){
     }
     if(rank==0){double *sl=malloc(cells*sizeof(double)),*sm=malloc(cells*sizeof(double));denise_elastic_psv_born_apply_jt(serial,data,sl,sm);wr(argv[2],"serial_gl.bin",sl,cells,sizeof(double));wr(argv[2],"serial_gm.bin",sm,cells,sizeof(double));free(sl);free(sm);}
     check(denise_elastic_psv_born_mpi_diagnostics(c,&diag),"diagnostics");
+    /* The public summary estimates its default min(NT,32) policy. For an
+     * explicitly selected policy report the bytes actually used for selection. */
+    if(segments<0)check(denise_elastic_psv_born_mpi_estimate_replay_storage(
+        c,-segments,&diag.replay_estimate),"selection estimate");
     MPI_Gather(&diag,(int)sizeof(diag),MPI_BYTE,all_diag,(int)sizeof(diag),MPI_BYTE,0,MPI_COMM_WORLD);
     if(rank==0){char path[2048];snprintf(path,sizeof(path),"%s/diagnostics.json",argv[2]);f=fopen(path,"w");fprintf(f,"{\"elapsed\":%.9g,\"ranks\":[",elapsed);for(s=0;s<size;s++){struct denise_elastic_psv_born_mpi_diagnostics *d=&all_diag[s];fprintf(f,"%s{\"rank\":%d,\"full\":%lu,\"estimate\":%lu,\"retained\":%lu,\"segmented\":%d,\"payload\":%lu,\"metadata\":%lu,\"schedule\":%lu,\"operand\":%lu,\"replayed\":%lu,\"local_data\":%lu,\"forward_halo\":%lu,\"adjoint_halo\":%lu,\"material\":%lu}",s?",":"",s,(unsigned long)d->full_bytes,(unsigned long)d->replay_estimate,(unsigned long)d->retained_backend_bytes,d->replay.segmented,(unsigned long)d->replay.checkpoint_bytes,(unsigned long)d->replay.checkpoint_metadata_bytes,(unsigned long)d->replay.segment_schedule_bytes,(unsigned long)d->replay.segment_operand_bytes,(unsigned long)d->replay.replayed_forward_steps_last,(unsigned long)d->local_data_bytes,(unsigned long)d->forward_halo_bytes_per_step,(unsigned long)d->adjoint_halo_bytes_per_step,(unsigned long)d->material_bytes);}fprintf(f,"]}\n");fclose(f);}
     denise_elastic_psv_born_mpi_destroy(&c);if(rank==0)denise_elastic_psv_born_destroy(&serial);

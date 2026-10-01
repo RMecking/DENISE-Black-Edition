@@ -62,6 +62,7 @@ def mpi_harness(tmp_path_factory,repository_root):
     executable=directory/'operator'
     compiler=shutil.which('mpicc');assert compiler,'local MPI C compiler required'
     subprocess.run([compiler,'-std=c99','-O2','-Wall','-Wextra','-Werror','-pedantic',
+                    *(['-g','-O1','-fsanitize=address,undefined','-fno-omit-frame-pointer','-fno-pie','-no-pie'] if os.environ.get('DENISE_M9D3_MPI_SANITIZE')=='1' else []),
                     '-I',str(repository_root/'include'),str(repository_root/'tests/utilities/m9d2_elastic_psv_mpi_harness.c'),
                     str(repository_root/'src/PSV/elastic_psv_born_mpi.c'),'-Wl,--wrap=calloc','-lm','-o',str(executable)],check=True)
     return executable,directory
@@ -259,7 +260,7 @@ def test_true_mode2_collective_failures_remove_pair(tmp_path,denise_binary,fault
         blocked=tmp_path/'image/m9c.image_mu_raw.bin.tmp';blocked.mkdir();(blocked/'blocker').write_text('keep directory nonempty')
     elif fault=='divisibility':text=text.replace('NX =24','NX =23')
     elif fault=='shot-groups':text=text.replace('NPROCX =2','NPROCX =1')
-    elif fault=='free_surface':text=text.replace('FREE_SURF =0','FREE_SURF =1')
+    elif fault=='free_surface':text=text.replace('FREE_SURF =0','FREE_SURF =2')
     elif fault=='zero-processors':text=text.replace('NPROCX =2','NPROCX =0')
     (tmp_path/'denise.inp').write_text(text)
     for key in ['lambda','mu']:paths[key].write_bytes(b'stale image')

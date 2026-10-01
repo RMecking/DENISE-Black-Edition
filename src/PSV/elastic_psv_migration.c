@@ -95,8 +95,8 @@ static int validate_request(
         return migration_fail("M9c requires FDORDER=4 (got %d)", request->fdorder);
     if (request->ndt != 1 || request->dtinv != 1)
         return migration_fail("M9c requires NDT=DTINV=1");
-    if (request->free_surface != 0)
-        return migration_fail("M9c does not support FREE_SURF");
+    if (request->free_surface != 0 && request->free_surface != 1)
+        return migration_fail("M9 migration FREE_SURF must be 0 or 1");
     if (request->boundary != 0)
         return migration_fail("M9c does not support BOUNDARY");
     if (request->mpi_size != 1)
@@ -135,6 +135,8 @@ static int validate_request(
             || shot->source_j < 0 || shot->source_j >= request->ny)
             return migration_fail("M9c shot %d source is outside the grid",
                                   shot->physical_shot_index);
+        if (request->free_surface && shot->source_j == 0)
+            return migration_fail("M9 free surface rejects explosive source at j=1");
         if (shot->receiver_count < 1 || !shot->receiver_i || !shot->receiver_j)
             return migration_fail("M9c shot %d receiver geometry is invalid",
                                   shot->physical_shot_index);

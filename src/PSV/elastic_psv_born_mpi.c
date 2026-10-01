@@ -40,6 +40,7 @@ struct elastic_checkpoint {
 
 struct denise_elastic_psv_born_mpi {
     int nx, ny, nt, fw, receiver_count, source_i, source_j, cpml_enabled;
+    int free_surface;
     size_t cells, owned_cells, data_count;
     int gx, gy, ox, oy, rank, size, px, py, left, right, top, bottom;
     int source_owned, global_receivers;
@@ -689,14 +690,103 @@ static int checkpoint_restore(const struct denise_elastic_psv_born_mpi *c,
     return 0;
 }
 
+/* M9d3: ghosts are algebraic scratch, never persistent checkpoint state. */
+struct surface_material { double alpha, a, al, am, bl, bm; };
+
+static struct surface_material surface_material(float lambda, float mu) {
+    struct surface_material s;
+    double l=lambda,m=mu,d=l+2.0*m,dd=d*d;
+    s.alpha=(float)(l/d); s.a=(float)(4.0*m*(l+m)/d);
+    s.al=2.0*m/dd; s.am=-2.0*l/dd;
+    s.bl=4.0*m*m/dd; s.bm=4.0*(l*l+2.0*l*m+2.0*m*m)/dd;
+    return s;
+}
+
+static float surface_value(const struct denise_elastic_psv_born_mpi *c,
+                           const float *field,int j,int i,int kind,
+                           float **q,const float *lambda,const float *mu,
+                           const float *bg,const float *dl,const float *dm) {
+    int m,r;
+    float h=1.0f/c->coefficient;
+    static const float w[4]={35.0f/16.0f,-35.0f/16.0f,21.0f/16.0f,-5.0f/16.0f};
+    if(j>=0 || c->oy!=0)return field[cell(c,j,i)];
+    m=-j;
+    if(kind==SYY)return -field[cell(c,m,i)];
+    if(kind==SXY)return -field[cell(c,m-1,i)];
+    if(kind==VX) {
+        float slope=0.0f;
+        for(r=0;r<4;r++)slope+=w[r]*q[1][cell(c,r,i)];
+        return field[cell(c,m,i)]+(2.0f*m*h)*slope;
+    } else {
+        size_t p=cell(c,0,i);
+        struct surface_material s=surface_material(lambda[p],mu[p]);
+        float slope=(float)s.alpha*q[0][p];
+        if(bg) slope+=(float)(s.al*dl[p]+s.am*dm[p])*bg[compact(c,p)];
+        return field[cell(c,m-1,i)]+((2.0f*m-1.0f)*h)*slope;
+    }
+}
+
+static float surface_derivative_y(const struct denise_elastic_psv_born_mpi *c,
+                                 const float *field,int j,int i,int derivative,
+                                 int kind,float **q,const float *lambda,const float *mu,
+                                 const float *bg,const float *dl,const float *dm) {
+    int o=derivative==DY_FWD?1:0;
+    float f0=surface_value(c,field,j+o,i,kind,q,lambda,mu,bg,dl,dm);
+    float f1=surface_value(c,field,j+o-1,i,kind,q,lambda,mu,bg,dl,dm);
+    float f2=surface_value(c,field,j+o+1,i,kind,q,lambda,mu,bg,dl,dm);
+    float f3=surface_value(c,field,j+o-2,i,kind,q,lambda,mu,bg,dl,dm);
+    return (9.0f/8.0f)*(f0-f1)+(-1.0f/24.0f)*(f2-f3);
+}
+
+static void surface_project(const struct denise_elastic_psv_born_mpi *c,float *syy) {
+    int i;
+    if(c->oy==0)for(i=0;i<c->nx;i++)syy[cell(c,0,i)]=0.0f;
+}
+
+static void surface_strains(struct denise_elastic_psv_born_mpi *c,float **f,float **psi,
+                            float **q,const float *lambda,const float *mu,
+                            const float *bg,const float *dl,const float *dm) {
+    int i,j;
+    /* Correct x operands once, before any velocity ghost consumes them. */
+    for(j=0;j<c->ny;j++)for(i=0;i<c->nx;i++) {
+        size_t p=cell(c,j,i);
+        q[0][p]=pml_forward(c,PVXX,j,i,c->coefficient*derivative_at(c,f[VX],j,i,DX_BACK),&psi[PVXX][p]);
+        q[1][p]=pml_forward(c,PVYX,j,i,c->coefficient*derivative_at(c,f[VY],j,i,DX_FWD),&psi[PVYX][p]);
+    }
+    for(j=0;j<c->ny;j++)for(i=0;i<c->nx;i++) {
+        size_t p=cell(c,j,i);
+        q[2][p]=pml_forward(c,PVXY,j,i,c->coefficient*surface_derivative_y(c,f[VX],j,i,DY_FWD,VX,q,lambda,mu,bg,dl,dm),&psi[PVXY][p]);
+        q[3][p]=pml_forward(c,PVYY,j,i,c->coefficient*surface_derivative_y(c,f[VY],j,i,DY_BACK,VY,q,lambda,mu,bg,dl,dm),&psi[PVYY][p]);
+    }
+}
+
+static void surface_stress(const struct denise_elastic_psv_born_mpi *c,float **f,
+                           float **q,const float *lambda,const float *mu,
+                           const float *corner) {
+    int i,j;
+    for(j=0;j<c->ny;j++)for(i=0;i<c->nx;i++) {
+        size_t p=cell(c,j,i);
+        if(c->oy==0 && j==0) {
+            struct surface_material s=surface_material(lambda[p],mu[p]);
+            f[SXX][p]+=(float)s.a*q[0][p]; f[SYY][p]=0.0f;
+        } else {
+            float div=q[0][p]+q[3][p];
+            f[SXX][p]+=lambda[p]*div+2.0f*mu[p]*q[0][p];
+            f[SYY][p]+=lambda[p]*div+2.0f*mu[p]*q[3][p];
+        }
+        f[SXY][p]+=corner[p]*(q[1][p]+q[2][p]);
+    }
+}
+
+
 static void update_velocity(struct denise_elastic_psv_born_mpi *c, float **f, float **psi) {
     int i,j;
     for(j=0;j<c->ny;j++) for(i=0;i<c->nx;i++) {
         size_t p=cell(c,j,i);
         float qxx=c->coefficient*derivative_at(c,f[SXX],j,i,DX_FWD);
-        float qxyy=c->coefficient*derivative_at(c,f[SXY],j,i,DY_BACK);
+        float qxyy=c->coefficient*(c->free_surface?surface_derivative_y(c,f[SXY],j,i,DY_BACK,SXY,NULL,NULL,NULL,NULL,NULL,NULL):derivative_at(c,f[SXY],j,i,DY_BACK));
         float qxyx=c->coefficient*derivative_at(c,f[SXY],j,i,DX_BACK);
-        float qyy=c->coefficient*derivative_at(c,f[SYY],j,i,DY_FWD);
+        float qyy=c->coefficient*(c->free_surface?surface_derivative_y(c,f[SYY],j,i,DY_FWD,SYY,NULL,NULL,NULL,NULL,NULL,NULL):derivative_at(c,f[SYY],j,i,DY_FWD));
         qxx=pml_forward(c,PSXX,j,i,qxx,&psi[PSXX][p]);
         qxyy=pml_forward(c,PSXYY,j,i,qxyy,&psi[PSXYY][p]);
         qxyx=pml_forward(c,PSXYX,j,i,qxyx,&psi[PSXYX][p]);
@@ -746,6 +836,7 @@ static void forward_timestep(struct denise_elastic_psv_born_mpi *c,
                              int retain_metrics) {
     int component, receiver;
     size_t p;
+    if(c->free_surface)surface_project(c,f[SYY]);
     wave_halo(c,f,SXX,3,0);
     update_velocity(c,f,psi);
     if (data) for(receiver=0;receiver<c->receiver_count;receiver++) {
@@ -754,10 +845,12 @@ static void forward_timestep(struct denise_elastic_psv_born_mpi *c,
         data[((size_t)timestep*c->receiver_count+receiver)*2+1]=f[VY][p];
     }
     wave_halo(c,f,VX,2,0);
-    corrected_strains(c,f,psi,q);
+    if(c->free_surface)surface_strains(c,f,psi,q,lambda,mu,NULL,NULL,NULL);
+    else corrected_strains(c,f,psi,q);
     if(strain) for(component=0;component<4;component++)
         pack(c,strain+(size_t)component*c->owned_cells,q[component]);
-    update_stress(c,f,q,lambda,mu,corner);
+    if(c->free_surface)surface_stress(c,f,q,lambda,mu,corner);
+    else update_stress(c,f,q,lambda,mu,corner);
     if(c->source_owned) {
         p=cell(c,c->source_j,c->source_i);
         f[SXX][p]+=c->source_samples[timestep];
@@ -901,6 +994,7 @@ static int core_apply_j(struct denise_elastic_psv_born_mpi *c,
       }
       for(k=start;k<end;k++) {
         const float *bg=background_slot(c,segment,k);
+        if(c->free_surface)surface_project(c,f[SYY]);
         wave_halo(c,f,SXX,3,0);
     update_velocity(c,f,psi);
         for(r=0;r<c->receiver_count;r++) {
@@ -909,12 +1003,23 @@ static int core_apply_j(struct denise_elastic_psv_born_mpi *c,
             data[((size_t)k*c->receiver_count+r)*2+1]=f[VY][p];
         }
         wave_halo(c,f,VX,2,0);
-    corrected_strains(c,f,psi,q); update_stress(c,f,q,c->lambda,c->mu,c->mu_corner);
+        if(c->free_surface) {
+            surface_strains(c,f,psi,q,c->lambda,c->mu,bg,dlam,dmu);
+            surface_stress(c,f,q,c->lambda,c->mu,c->mu_corner);
+        } else {
+            corrected_strains(c,f,psi,q); update_stress(c,f,q,c->lambda,c->mu,c->mu_corner);
+        }
         for(p=0;p<c->cells;p++) if(owned(c,p)) {
             float xx=bg[compact(c,p)],yx=bg[c->owned_cells+compact(c,p)],xy=bg[2*c->owned_cells+compact(c,p)],yy=bg[3*c->owned_cells+compact(c,p)];
             float div=xx+yy;
-            f[SXX][p]+=dlam[p]*div+2.0f*dmu[p]*xx;
-            f[SYY][p]+=dlam[p]*div+2.0f*dmu[p]*yy;
+            if(c->free_surface && c->oy==0 && compact(c,p)<(size_t)c->nx) {
+                struct surface_material s=surface_material(c->lambda[p],c->mu[p]);
+                f[SXX][p]+=(float)(s.bl*dlam[p]+s.bm*dmu[p])*xx;
+                f[SYY][p]=0.0f;
+            } else {
+                f[SXX][p]+=dlam[p]*div+2.0f*dmu[p]*xx;
+                f[SYY][p]+=dlam[p]*div+2.0f*dmu[p]*yy;
+            }
             f[SXY][p]+=dcorner[p]*(yx+xy);
         }
       }
@@ -956,9 +1061,110 @@ static void reverse_pml_field(const struct denise_elastic_psv_born_mpi *c,int ki
     int i,j;for(j=0;j<c->ny;j++)for(i=0;i<c->nx;i++){size_t p=cell(c,j,i);q[p]=pml_transpose(c,kind,j,i,q[p],&psi[p]);}
 }
 
+static void surface_value_transpose(const struct denise_elastic_psv_born_mpi *c,
+                                    double *out,int row,int i,int kind,double v,
+                                    double *xx,double *yx,const float *bg,
+                                    double *gl,double *gm) {
+    static const double w[4]={35.0/16.0,-35.0/16.0,21.0/16.0,-5.0/16.0};
+    double h=(float)(1.0f/c->coefficient);
+    int r;
+    if(row>=0 || c->oy!=0)out[cell(c,row,i)]+=v;
+    else {
+        int m=-row;
+        size_t p=cell(c,0,i);
+        if(kind==SYY)out[cell(c,m,i)]-=v;
+        else if(kind==SXY)out[cell(c,m-1,i)]-=v;
+        else if(kind==VX) {
+            out[cell(c,m,i)]+=v;
+            for(r=0;r<4;r++)yx[cell(c,r,i)]+=2.0*m*h*w[r]*v;
+        } else {
+            struct surface_material s=surface_material(c->lambda[p],c->mu[p]);
+            double factor=(2.0*m-1.0)*h*v;
+            out[cell(c,m-1,i)]+=v;
+            xx[p]+=factor*s.alpha;
+            if(bg) {gl[p]+=s.al*bg[compact(c,p)]*factor; gm[p]+=s.am*bg[compact(c,p)]*factor;}
+        }
+    }
+}
+
+static void surface_y_transpose(const struct denise_elastic_psv_born_mpi *c,double *out,
+                                const double *bar,int derivative,int kind,
+                                double *xx,double *yx,const float *bg,
+                                double *gl,double *gm) {
+    static const double fd[4]={9.0/8.0,-9.0/8.0,-1.0/24.0,1.0/24.0};
+    int i,j,k,o=derivative==DY_FWD?1:0;
+    int offsets[4]={o,o-1,o+1,o-2};
+    for(j=0;j<c->ny;j++)for(i=0;i<c->nx;i++)for(k=0;k<4;k++) {
+        int row=j+offsets[k];
+        double v=(double)c->coefficient*fd[k]*bar[cell(c,j,i)];
+        surface_value_transpose(c,out,row,i,kind,v,xx,yx,bg,gl,gm);
+    }
+}
+
+static void surface_reverse_step(struct denise_elastic_psv_born_mpi *c,double **bar,
+                                 double **psi,double *q,double *gcorner,
+                                 double *xybar,const float *bg,double *gl,double *gm,
+                                 const float *data,int timestep) {
+    double *xx=xybar,*yx=xybar+c->cells;
+    size_t p;
+    int i,j,r;
+    if(c->oy==0)for(i=0;i<c->nx;i++)bar[SYY][cell(c,0,i)]=0.0;
+    for(j=0;j<c->ny;j++)for(i=0;i<c->nx;i++) {
+        double sx,sy,ss,bx,by,bxy,byx;
+        p=cell(c,j,i); sx=bar[SXX][p];sy=bar[SYY][p];ss=bar[SXY][p];
+        bx=bg[compact(c,p)];byx=bg[c->owned_cells+compact(c,p)];bxy=bg[2*c->owned_cells+compact(c,p)];by=bg[3*c->owned_cells+compact(c,p)];
+        if(c->oy==0 && j==0) {
+            struct surface_material s=surface_material(c->lambda[p],c->mu[p]);
+            gl[p]+=s.bl*bx*sx;gm[p]+=s.bm*bx*sx;
+            xx[p]=s.a*sx;
+        } else {
+            gl[p]+=(sx+sy)*(bx+by);gm[p]+=2.0*(sx*bx+sy*by);
+            xx[p]=((double)c->lambda[p]+2.0*c->mu[p])*sx+c->lambda[p]*sy;
+        }
+        yx[p]=(double)c->mu_corner[p]*ss;
+        gcorner[p]=ss*(byx+bxy);
+    }
+    harmonic_transpose_add(c,gcorner,gm);
+    halo_double(c,gm,1);
+    c->material_transposes++;
+    c->material_halo_bytes+=4u*(size_t)(c->nx+c->ny+4)*sizeof(double);
+    for(p=0;p<c->cells;p++)if(owned(c,p))q[p]=(double)c->mu_corner[p]*bar[SXY][p];
+    reverse_pml_field(c,PVXY,q,psi[PVXY]);
+    surface_y_transpose(c,bar[VX],q,DY_FWD,VX,xx,yx,bg,gl,gm);
+    for(j=0;j<c->ny;j++)for(i=0;i<c->nx;i++) {
+        p=cell(c,j,i);
+        q[p]=(c->oy==0 && j==0)?0.0:c->lambda[p]*bar[SXX][p]+((double)c->lambda[p]+2.0*c->mu[p])*bar[SYY][p];
+    }
+    reverse_pml_field(c,PVYY,q,psi[PVYY]);
+    surface_y_transpose(c,bar[VY],q,DY_BACK,VY,xx,yx,bg,gl,gm);
+    reverse_pml_field(c,PVXX,xx,psi[PVXX]);derivative_transpose_add(c,bar[VX],xx,DX_BACK,c->coefficient);
+    reverse_pml_field(c,PVYX,yx,psi[PVYX]);derivative_transpose_add(c,bar[VY],yx,DX_FWD,c->coefficient);
+    for(r=VX;r<=VY;r++)halo_double(c,bar[r],1);
+    c->adjoint_velocity_exchanges++;
+    for(r=0;r<c->receiver_count;r++) {
+        p=cell(c,c->receiver_j[r],c->receiver_i[r]);
+        bar[VX][p]+=data[((size_t)timestep*c->receiver_count+r)*2];
+        bar[VY][p]+=data[((size_t)timestep*c->receiver_count+r)*2+1];
+    }
+    for(p=0;p<c->cells;p++)if(owned(c,p))q[p]=(double)c->invrho_x[p]*bar[VX][p];
+    reverse_pml_field(c,PSXX,q,psi[PSXX]);derivative_transpose_add(c,bar[SXX],q,DX_FWD,c->coefficient);
+    for(p=0;p<c->cells;p++)if(owned(c,p))q[p]=(double)c->invrho_x[p]*bar[VX][p];
+    reverse_pml_field(c,PSXYY,q,psi[PSXYY]);
+    surface_y_transpose(c,bar[SXY],q,DY_BACK,SXY,NULL,NULL,NULL,NULL,NULL);
+    for(p=0;p<c->cells;p++)if(owned(c,p))q[p]=(double)c->invrho_y[p]*bar[VY][p];
+    reverse_pml_field(c,PSXYX,q,psi[PSXYX]);derivative_transpose_add(c,bar[SXY],q,DX_BACK,c->coefficient);
+    for(p=0;p<c->cells;p++)if(owned(c,p))q[p]=(double)c->invrho_y[p]*bar[VY][p];
+    reverse_pml_field(c,PSYY,q,psi[PSYY]);
+    surface_y_transpose(c,bar[SYY],q,DY_FWD,SYY,NULL,NULL,NULL,NULL,NULL);
+    for(r=SXX;r<=SXY;r++)halo_double(c,bar[r],1);
+    c->adjoint_stress_exchanges++;
+    c->adjoint_halo_bytes+=5u*4u*(size_t)(c->nx+c->ny+4)*sizeof(double);
+    if(c->oy==0)for(i=0;i<c->nx;i++)bar[SYY][cell(c,0,i)]=0.0;
+}
+
 static int core_apply_jt(struct denise_elastic_psv_born_mpi *c,
                                      const float *data,double *glam,double *gmu) {
-    double *bar[FIELD_COUNT],*psi[PSI_COUNT],*q=NULL,*gcorner=NULL;
+    double *bar[FIELD_COUNT],*psi[PSI_COUNT],*q=NULL,*gcorner=NULL,*surface_q=NULL;
     int k,r,segment,segment_count,status=-1;size_t p;
     if(!c||!data||!glam||!gmu)return fail("elastic P/SV Born Jt received a null pointer");
     if(!c->prepared)return fail("elastic P/SV Born Jt requires a prepared background trajectory");
@@ -966,6 +1172,10 @@ static int core_apply_jt(struct denise_elastic_psv_born_mpi *c,
     if(agree(c,allocate_adjoint(bar,psi,&q,c->cells)!=0)!=0){fail("out of memory allocating Born adjoint state");goto cleanup;}
     gcorner=checked_calloc(c->cells,sizeof(double));
     if(agree(c,!gcorner)!=0){fail("out of memory allocating harmonic-mu transpose");goto cleanup;}
+    if(c->free_surface) {
+        surface_q=checked_calloc(2*c->cells,sizeof(double));
+        if(agree(c,!surface_q)!=0) {fail("out of memory allocating surface reverse scratch");goto cleanup;}
+    }
     c->replayed_forward_steps_last=0;
     segment_count=c->replay_segments>0?c->replay_segments:1;
     for(segment=segment_count-1;segment>=0;segment--) {
@@ -978,6 +1188,10 @@ static int core_apply_jt(struct denise_elastic_psv_born_mpi *c,
       for(k=end-1;k>=start;k--) {
         const float *bg=background_slot(c,segment,k);
         memset(gcorner,0,c->cells*sizeof(double));
+        if(c->free_surface) {
+            surface_reverse_step(c,bar,psi,q,gcorner,surface_q,bg,glam,gmu,data,k);
+            continue;
+        }
         for(p=0;p<c->cells;p++) if(owned(c,p)) {
             double xx=bg[compact(c,p)],yx=bg[c->owned_cells+compact(c,p)],xy=bg[2*c->owned_cells+compact(c,p)],yy=bg[3*c->owned_cells+compact(c,p)];
             glam[p]+=(bar[SXX][p]+bar[SYY][p])*(xx+yy);
@@ -1018,14 +1232,14 @@ static int core_apply_jt(struct denise_elastic_psv_born_mpi *c,
     }
     status=0;
 cleanup:
-    free(gcorner);free_adjoint(bar,psi,q);return status;
+    free(surface_q);free(gcorner);free_adjoint(bar,psi,q);return status;
 }
 
 static int core_nonlinear(struct denise_elastic_psv_born_mpi *c,
                                       const float *lambda,const float *mu,float *data) {
     size_t p;
     if(!c||!lambda||!mu||!data)return fail("elastic P/SV nonlinear map received a null pointer");
-    for(p=0;p<c->cells;p++) if(owned(c,p))if(!(mu[p]>0.0f)||!isfinite(lambda[p]))return fail("elastic P/SV nonlinear material is invalid");
+    for(p=0;p<c->cells;p++) if(owned(c,p))if(!(mu[p]>0.0f)||!isfinite(lambda[p])||(c->free_surface && !((double)lambda[p]+2.0*mu[p]>0.0)))return fail("elastic P/SV nonlinear material is invalid");
     return run_nonlinear(c,lambda,mu,data,NULL,0,0);
 }
 
@@ -1081,7 +1295,7 @@ int denise_elastic_psv_born_mpi_storage_diagnostics(
     }
     if(checked_product(18u,c->cells,&values)!=0
        || checked_product(values,sizeof(float),&d->forward_working_bytes)!=0
-       || checked_product(15u,c->cells,&values)!=0
+       || checked_product(c->free_surface?17u:15u,c->cells,&values)!=0
        || checked_product(values,sizeof(double),&d->adjoint_working_bytes)!=0)
         return fail("elastic P/SV working-state diagnostic overflows size_t");
     d->initial_forward_steps=c->prepared?(size_t)c->nt:0;
@@ -1118,6 +1332,11 @@ static int core_checkpoint_roundtrip(
                      c->mu_corner,timestep+1,NULL,NULL,0);
     if(agree(c,checkpoint_restore(c,&checkpoint,timestep,restored,restored_psi)!=0)!=0)
         goto cleanup;
+    if(c->free_surface) {
+        size_t p;
+        for(kind=0;kind<FIELD_COUNT;kind++)for(p=0;p<c->cells;p++)
+            if(!owned(c,p))restored[kind][p]=NAN;
+    }
     forward_timestep(c,restored,restored_psi,restored_q,c->lambda,c->mu,
                      c->mu_corner,timestep+1,NULL,NULL,0);
     for(kind=0;kind<FIELD_COUNT;kind++)
@@ -1196,15 +1415,16 @@ int denise_elastic_psv_born_mpi_create(
     if(!same_int(comm,cfg->nprocx)||!same_int(comm,cfg->nprocy))bad=1;
     if(cfg->nprocx<1||cfg->nprocy<1 || (int64_t)cfg->nprocx*cfg->nprocy!=size)bad=1;
     if(q->nx<5||q->ny<5||q->nt<1||q->receiver_count<1||q->mpi_size!=size)bad=1;
-    if(q->l!=0||q->invmat1!=3||q->fdorder!=4||q->ndt!=1||q->dtinv!=1||q->free_surface||q->boundary||q->receiver_components!=2)bad=1;
+    if(q->l!=0||q->invmat1!=3||q->fdorder!=4||q->ndt!=1||q->dtinv!=1||(q->free_surface!=0&&q->free_surface!=1)||q->boundary||q->receiver_components!=2)bad=1;
     if(!isfinite(q->dh)||!isfinite(q->dt)||!(q->dh>0)||!(q->dt>0))bad=1;
     if(cfg->nprocx>0&&cfg->nprocy>0){
         lnx=q->nx/cfg->nprocx;lny=q->ny/cfg->nprocy;
-        if(q->nx%cfg->nprocx||q->ny%cfg->nprocy||lnx<2||lny<2)bad=1;
+        if(q->nx%cfg->nprocx||q->ny%cfg->nprocy||lnx<2||lny<(q->free_surface?4:2))bad=1;
     }
     /* Two owned layers supply the FD4 +/-2 one-neighbor exchange. */
     if(lnx>INT_MAX-4||lny>INT_MAX-4 || (uint64_t)(lnx+4)*(uint64_t)(lny+4)>INT_MAX)bad=1;
     if(q->fw<0||2LL*q->fw>=q->nx||2LL*q->fw>=q->ny||!!q->cpml_enabled!=(q->fw>0))bad=1;
+    if(q->free_surface && (q->source_j==0 || q->fw>=q->ny-3))bad=1;
     if(q->cpml_enabled&&(!(q->pml_reflection>0)||!(q->pml_reflection<1)||!(q->pml_power>0)||!(q->pml_kmax>=1)||!(q->pml_fpml>=0)||!(q->pml_damping_speed>0)))bad=1;
     if(!q->lambda||!q->mu||!q->rho||!q->source_samples||!q->receiver_i||!q->receiver_j)bad=1;
     if(q->source_i<0||q->source_i>=q->nx||q->source_j<0||q->source_j>=q->ny)bad=1;
@@ -1220,7 +1440,7 @@ int denise_elastic_psv_born_mpi_create(
     n=(size_t)lnx*lny;
     for(k=0;k<q->nt;k++)if(!isfinite(q->source_samples[k]))bad=1;
     for(r=0;r<q->receiver_count;r++)if(q->receiver_i[r]<0||q->receiver_i[r]>=q->nx||q->receiver_j[r]<0||q->receiver_j[r]>=q->ny)bad=1;
-    for(n=0;n<(size_t)lnx*lny;n++)if(!isfinite(q->lambda[n])||!isfinite(q->mu[n])||!isfinite(q->rho[n])||!(q->mu[n]>0)||!(q->rho[n]>0))bad=1;
+    for(n=0;n<(size_t)lnx*lny;n++)if(!isfinite(q->lambda[n])||!isfinite(q->mu[n])||!isfinite(q->rho[n])||!(q->mu[n]>0)||!(q->rho[n]>0)||(q->free_surface&&!((double)q->lambda[n]+2.0*q->mu[n]>0.0)))bad=1;
     hash=(unsigned long long)signature(q);
     MPI_Allreduce(&hash,&lo,1,MPI_UNSIGNED_LONG_LONG,MPI_MIN,comm);
     MPI_Allreduce(&hash,&hi,1,MPI_UNSIGNED_LONG_LONG,MPI_MAX,comm);
@@ -1245,6 +1465,7 @@ int denise_elastic_psv_born_mpi_create(
     c->cells=(size_t)(lnx+4)*(lny+4);c->owned_cells=(size_t)lnx*lny;
     c->nt=q->nt;c->fw=q->fw;c->dh=q->dh;c->dt=q->dt;c->coefficient=q->dt/q->dh;
     c->cpml_enabled=q->cpml_enabled;c->global_receivers=q->receiver_count;
+    c->free_surface=q->free_surface;
     c->source_owned=q->source_i/lnx+c->px*(q->source_j/lny)==rank;
     c->source_i=q->source_i-c->ox;c->source_j=q->source_j-c->oy;
     c->receiver_count=q->receiver_count;
@@ -1278,6 +1499,15 @@ int denise_elastic_psv_born_mpi_create(
         c->profile[k].b=checked_calloc((size_t)len,sizeof(float));
         bad=bad||!c->profile[k].kappa||!c->profile[k].a||!c->profile[k].b;
         if(agree(c,bad)!=0){free_profile(&global);goto failure;}
+        if(c->free_surface && k<PROFILE_Y && c->fw>0) {
+            int j;
+            for(j=0;j<c->gx;j++)if(global.a[j]==0.0f && global.b[j]==1.0f)
+                global.b[j]=(float)exp(-M_PI*q->pml_fpml*c->dt);
+        }
+        if(c->free_surface && k>=PROFILE_Y) {
+            int j;
+            for(j=0;j<c->gy-1-c->fw;j++) {global.kappa[j]=1.0f;global.a[j]=0.0f;global.b[j]=1.0f;}
+        }
         copy_floats(c->profile[k].kappa,global.kappa+offset,(size_t)len);
         copy_floats(c->profile[k].a,global.a+offset,(size_t)len);
         copy_floats(c->profile[k].b,global.b+offset,(size_t)len);

@@ -436,7 +436,7 @@ def test_component_adapter_basis(migration_library, time, receiver, component):
 @pytest.mark.parametrize("field,value,fragment", [
     ("l", 1, "L=0"), ("invmat1", 1, "INVMAT1=3"),
     ("fdorder", 2, "FDORDER=4"), ("ndt", 2, "NDT=DTINV=1"),
-    ("dtinv", 2, "NDT=DTINV=1"), ("free_surface", 1, "FREE_SURF"),
+    ("dtinv", 2, "NDT=DTINV=1"), ("free_surface", 2, "FREE_SURF"),
     ("boundary", 1, "BOUNDARY"), ("mpi_size", 2, "one MPI rank"),
     ("receiver_components", 1, "direct vx/vy"), ("inv_stf", 1, "INV_STF=0"),
 ])
