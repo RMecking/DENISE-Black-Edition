@@ -408,3 +408,19 @@ clean:
 	find . -name "*.bck" -exec rm {} \;
 	rm $(EXEC)/denise 
 
+
+# Isolated M9 elastic internal verification ABI; never a dependency of denise.
+M9_CUDA_BUILD_DIR ?= .cuda/m9
+M9_CUDA_FLAGS ?= -O2 -std=c++14
+M9_HOST_FLAGS ?= -O2 -std=c99 -Wall -Wextra -Werror -pedantic -fPIC -fvisibility=hidden
+.PHONY: cuda_m9_elastic_psv cuda_m9_elastic_psv_nofma
+cuda_m9_elastic_psv: $(M9_CUDA_BUILD_DIR)/libdenise_m9_cuda.so
+cuda_m9_elastic_psv_nofma: $(M9_CUDA_BUILD_DIR)/libdenise_m9_cuda_nofma.so
+$(M9_CUDA_BUILD_DIR):
+	mkdir -p $@
+$(M9_CUDA_BUILD_DIR)/host.o: CUDA/m9_elastic_host.c CUDA/m9_elastic_host.h PSV/elastic_psv_born.c ../include/denise_elastic_psv_born.h | $(M9_CUDA_BUILD_DIR)
+	$(CC) $(M9_HOST_FLAGS) -I../include -c $< -o $@
+$(M9_CUDA_BUILD_DIR)/libdenise_m9_cuda.so: CUDA/m9_elastic_forward.cu CUDA/m9_elastic_host.h ../include/denise_cuda_m9_elastic.h $(M9_CUDA_BUILD_DIR)/host.o
+	$(NVCC) $(M9_CUDA_FLAGS) $(CUDA_GENCODE) -Xcompiler -fPIC -I../include -shared $< $(M9_CUDA_BUILD_DIR)/host.o -o $@
+$(M9_CUDA_BUILD_DIR)/libdenise_m9_cuda_nofma.so: CUDA/m9_elastic_forward.cu CUDA/m9_elastic_host.h ../include/denise_cuda_m9_elastic.h $(M9_CUDA_BUILD_DIR)/host.o
+	$(NVCC) $(M9_CUDA_FLAGS) --fmad=false $(CUDA_GENCODE) -Xcompiler -fPIC -I../include -shared $< $(M9_CUDA_BUILD_DIR)/host.o -o $@
