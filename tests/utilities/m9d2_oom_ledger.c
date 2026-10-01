@@ -81,6 +81,7 @@ static struct result run_case(const char *phase,int px,int py,int segments,
     cfg.global.receiver_count=RECEIVERS;cfg.global.receiver_i=ri;cfg.global.receiver_j=rj;
     cfg.global.l=0;cfg.global.invmat1=3;cfg.global.fdorder=4;cfg.global.ndt=1;cfg.global.dtinv=1;
     cfg.global.mpi_size=px*py;cfg.global.receiver_components=2;
+    cfg.global.free_surface=getenv("M9D3_FREE_SURF")?atoi(getenv("M9D3_FREE_SURF")):0;
     /* Replay fixture includes CPML and interfaces; the confirmed FULL fixture
      * remains FW=0 and reproduces the original 1536/3072/4800-byte sites. */
     if(segments){cfg.global.fw=3;cfg.global.cpml_enabled=1;

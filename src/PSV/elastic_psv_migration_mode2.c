@@ -414,7 +414,7 @@ int denise_elastic_psv_migration_mode2(void) {
         return mode2_fail("M9c MODE=2 requires FDORDER=4 (got %d)", FDORDER);
     if (NDT != 1 || DTINV != 1)
         return mode2_fail("M9c MODE=2 requires NDT=DTINV=1");
-    if (FREE_SURF != 0) return mode2_fail("M9c MODE=2 does not support FREE_SURF");
+    if (FREE_SURF != 0 && FREE_SURF != 1) return mode2_fail("M9 MODE=2 FREE_SURF must be 0 or 1");
     if (BOUNDARY != 0) return mode2_fail("M9c MODE=2 does not support BOUNDARY");
     if (INV_STF != 0)
         return mode2_fail("M9c MODE=2 requires INV_STF=0 and prepared source samples");
@@ -448,6 +448,7 @@ int denise_elastic_psv_migration_mode2(void) {
         goto failure;
     if (validate_cfl(lambda, mu, rho, cells, DH, DT, &vmax) != 0) goto failure;
     if (read_sources(SOURCE_FILE, NSHOTS, NX, NY, DH, &sources) != 0) goto failure;
+    if(FREE_SURF)for(shot=0;shot<NSHOTS;shot++)if(sources[shot].j==0) {mode2_fail("M9 free surface rejects explosive source at j=1");goto failure;}
     if (read_receivers(REC_FILE, NX, NY, DH, REFREC,
                        &receiver_i, &receiver_j, &receiver_count) != 0)
         goto failure;
@@ -691,10 +692,10 @@ int denise_elastic_psv_migration_mode2_mpi(void) {
     }
     if(mode2_collective(bad))goto failure;
     bad=NCOLORS!=1||NP!=size||NPROCX<1||NPROCY<1||(long long)NPROCX*NPROCY!=size;
-    bad|=NX<5||NY<5||L!=0||INVMAT1!=3||FDORDER!=4||NDT!=1||DTINV!=1||FREE_SURF!=0||BOUNDARY!=0||INV_STF!=0||!READMOD||READREC!=1||SRCREC!=1||RUN_MULTIPLE_SHOTS!=1||SEISMO!=1||QUELLART!=3||NSHOTS<1;
+    bad|=NX<5||NY<5||L!=0||INVMAT1!=3||FDORDER!=4||NDT!=1||DTINV!=1||(FREE_SURF!=0&&FREE_SURF!=1)||BOUNDARY!=0||INV_STF!=0||!READMOD||READREC!=1||SRCREC!=1||RUN_MULTIPLE_SHOTS!=1||SEISMO!=1||QUELLART!=3||NSHOTS<1;
     bad|=!isfinite(TIME)||!isfinite(DT)||!isfinite(DH)||!(TIME>0)||!(DT>0)||!(DH>0)||TIME/DT>(float)(INT_MAX-1);
-    if(NPROCX>0&&NPROCY>0){nx=NX/NPROCX;ny=NY/NPROCY;bad|=NX%NPROCX!=0||NY%NPROCY!=0||nx<2||ny<2;}
-    if(mode2_collective(bad)){mode2_fail("M9d2 unsupported MPI topology/configuration (NCOLORS=1, equal FD4 tiles >=2, L=0, FREE_SURF=BOUNDARY=0 required)");goto failure;}
+    if(NPROCX>0&&NPROCY>0){nx=NX/NPROCX;ny=NY/NPROCY;bad|=NX%NPROCX!=0||NY%NPROCY!=0||nx<2||ny<(FREE_SURF?4:2);}
+    if(mode2_collective(bad)){mode2_fail("M9 unsupported MPI topology/configuration (NCOLORS=1, equal FD4 tiles, L=0, FREE_SURF=0/1, BOUNDARY=0 required)");goto failure;}
     NT=iround(TIME/DT);cells=(size_t)NX*NY;local_cells=(size_t)nx*ny;
     bad=NT<1||cells>INT_MAX||FW<0||2LL*FW>=NX||2LL*FW>=NY;
     if(mode2_collective(bad))goto failure;
@@ -711,6 +712,7 @@ int denise_elastic_psv_migration_mode2_mpi(void) {
     }
     MPI_Bcast(&vmax,1,MPI_FLOAT,0,MPI_COMM_WORLD);
     if(rank==0)bad=read_sources(SOURCE_FILE,NSHOTS,NX,NY,DH,&sources)||read_receivers(REC_FILE,NX,NY,DH,REFREC,&ri,&rj,&nrec);
+    if(rank==0 && !bad && FREE_SURF)for(s=0;s<NSHOTS;s++)if(sources[s].j==0)bad=mode2_fail("M9 free surface rejects explosive source at j=1")!=0;
     if(mode2_collective(bad))goto failure;
     MPI_Bcast(&nrec,1,MPI_INT,0,MPI_COMM_WORLD);
     if(rank!=0){sources=calloc((size_t)NSHOTS,sizeof(*sources));ri=malloc((size_t)nrec*sizeof(int));rj=malloc((size_t)nrec*sizeof(int));}

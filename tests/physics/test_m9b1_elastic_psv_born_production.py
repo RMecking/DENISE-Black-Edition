@@ -528,7 +528,7 @@ def test_repeated_j_and_jt_match_fresh_contexts(born_library):
     ("l", 1, "L=0"), ("invmat1", 1, "INVMAT1=3"),
     ("fdorder", 2, "FDORDER=4"),
     ("ndt", 2, "NDT=DTINV=1"), ("dtinv", 2, "NDT=DTINV=1"),
-    ("free_surface", 1, "FREE_SURF"), ("boundary", 1, "BOUNDARY"),
+    ("free_surface", 2, "FREE_SURF"), ("boundary", 1, "BOUNDARY"),
     ("mpi_size", 2, "one MPI rank"), ("receiver_components", 1, "vx/vy"),
 ])
 def test_failure_closed_envelope(born_library, field, value, fragment):
