@@ -17,6 +17,21 @@ struct denise_cuda_m9_diagnostics {
 const char *denise_cuda_m9_last_error(void);
 int denise_cuda_m9_create(const struct denise_elastic_psv_born_config *,
                          const struct denise_cuda_m9_options *,struct denise_cuda_m9 **);
+/* Additive FULL-J constructor: accepts FREE_SURF=0/1. The legacy constructor
+ * retains its M9e-1 FREE_SURF=0 contract and original device budget. */
+int denise_cuda_m9_create_full(const struct denise_elastic_psv_born_config *,
+                             const struct denise_cuda_m9_options *,struct denise_cuda_m9 **);
+struct denise_cuda_m9_born_diagnostics {
+ size_t physical_bytes,cpml_bytes,direction_bytes,corner_bytes,operand_bytes,data_bytes;
+ int valid;
+ float elapsed_ms;
+};
+int denise_cuda_m9_apply_j(struct denise_cuda_m9 *,const float *delta_lambda,
+                          const float *delta_mu,size_t cells);
+/* Transactional optional outputs: data [t][r][2], fields [5][y][x], psi [8],
+ * final tangent operands [4][y][x], harmonic corner tangent [y][x]. */
+int denise_cuda_m9_born_download(struct denise_cuda_m9 *,float *,float *,float *,float *,float *);
+int denise_cuda_m9_born_diagnostics(const struct denise_cuda_m9 *,struct denise_cuda_m9_born_diagnostics *);
 int denise_cuda_m9_prepare(struct denise_cuda_m9 *);
 int denise_cuda_m9_nonlinear(struct denise_cuda_m9 *,const float *,const float *);
 /* Data [t][receiver][vx,vy], fields [5][y][x], psi [8][y][x], operands [t][4][y][x]. */
@@ -30,6 +45,11 @@ void denise_cuda_m9_ledger(size_t *device_bytes,size_t *host_bytes,size_t *event
 /* Test-only operations invalidate prepared state. Arbitrary physical/psi state,
  * optional packed profiles, and actual production halos are exposed explicitly. */
 int denise_cuda_m9_test_step(struct denise_cuda_m9 *,const float *state13,const float *profiles);
+int denise_cuda_m9_test_evolve(struct denise_cuda_m9 *,const float *state13);
+/* Pure local production blocks; mode 0 projection/mirrors, 1 velocity ghosts,
+ * 2 A closure. Physical/halo fields [5][ny+4][nx+4], compact q/bg [4][ny][nx]. */
+int denise_cuda_m9_test_surface(struct denise_cuda_m9 *,int mode,float *padded,
+                               const float *q,const float *bg,const float *dl,const float *dm);
 int denise_cuda_m9_test_halo(struct denise_cuda_m9 *,int velocity,float *five_padded);
 int denise_cuda_m9_test_static(struct denise_cuda_m9 *,float *maps,float *profiles,float *source,int *geometry);
 /* Pure copy layout gate: overwrite/download FULL operands, invalidate results. */
