@@ -416,6 +416,10 @@ M9_HOST_FLAGS ?= -O2 -std=c99 -Wall -Wextra -Werror -pedantic -fPIC -fvisibility
 .PHONY: cuda_m9_elastic_psv cuda_m9_elastic_psv_nofma
 cuda_m9_elastic_psv: $(M9_CUDA_BUILD_DIR)/libdenise_m9_cuda.so
 cuda_m9_elastic_psv_nofma: $(M9_CUDA_BUILD_DIR)/libdenise_m9_cuda_nofma.so
+.PHONY: cuda_m9_free_surface_born cuda_m9_free_surface_born_nofma
+# Additive M9e-2 names for the same isolated backend; CPU denise has no edge.
+cuda_m9_free_surface_born: cuda_m9_elastic_psv
+cuda_m9_free_surface_born_nofma: cuda_m9_elastic_psv_nofma
 $(M9_CUDA_BUILD_DIR):
 	mkdir -p $@
 $(M9_CUDA_BUILD_DIR)/host.o: CUDA/m9_elastic_host.c CUDA/m9_elastic_host.h PSV/elastic_psv_born.c ../include/denise_elastic_psv_born.h | $(M9_CUDA_BUILD_DIR)
