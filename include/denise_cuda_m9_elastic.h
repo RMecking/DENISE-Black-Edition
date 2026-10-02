@@ -1,11 +1,32 @@
 #ifndef DENISE_CUDA_M9_ELASTIC_H
 #define DENISE_CUDA_M9_ELASTIC_H
-/* INTERNAL verification ABI: isolated M9 elastic forward, never MODE=2. */
+/* Additive internal M9 elastic CUDA ABI. Existing structure sizes are frozen. */
 #include "denise_elastic_psv_born.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
 struct denise_cuda_m9;
+struct denise_cuda_m9_options;
+struct denise_cuda_m9_replay_diagnostics {
+ size_t checkpoint_values,checkpoint_payload_bytes,checkpoint_metadata_bytes;
+ size_t checkpoint_pointer_bytes,segment_schedule_bytes,segment_operand_bytes;
+ size_t alignment_bytes,retained_bytes,full_operand_bytes,owned_device_bytes;
+ size_t initial_forward_steps,replayed_forward_steps;
+ int requested_segments,effective_segments,checkpoint_count,max_segment_length,selected_replay;
+};
+/* automatic=0 forces replay; automatic=1 uses the strict differential-storage rule. */
+int denise_cuda_m9_create_replay(const struct denise_elastic_psv_born_config *,
+ const struct denise_cuda_m9_options *,int segments,int automatic,struct denise_cuda_m9 **);
+int denise_cuda_m9_replay_diagnostics(const struct denise_cuda_m9 *,struct denise_cuda_m9_replay_diagnostics *);
+/* Pure checked estimator: active[k] counts coordinates where the built profile a != 0. */
+int denise_cuda_m9_estimate_replay(size_t nx,size_t ny,size_t nt,size_t segments,
+ const size_t active[8],struct denise_cuda_m9_replay_diagnostics *);
+int denise_cuda_m9_segment_bounds(int nt,int segments,int segment,int *start,int *end);
+/* Transactional test probes. time=-1 denotes the restored segment-start state.
+ * FULL uses uninterrupted canonical propagation in its already-owned J workspace.
+ * Replay restores the requested checkpoint then regenerates up to time. */
+int denise_cuda_m9_test_replay_probe(struct denise_cuda_m9 *,int segment,int time,float *state13,float *q4);
+int denise_cuda_m9_test_checkpoints(struct denise_cuda_m9 *,float *,size_t values);
 struct denise_cuda_m9_options { int device; size_t cap_bytes; size_t reserve_bytes; };
 struct denise_cuda_m9_diagnostics {
  size_t mandatory_bytes,usable_budget,remaining_budget,owned_bytes;
@@ -61,6 +82,8 @@ int denise_cuda_m9_destroy(struct denise_cuda_m9 **);
 /* Candidate-owned fault/ledger diagnostics. at=0 disables injection; at>0 fails
  * one indexed operation before execution. Cleanup is never fault-injected. */
 void denise_cuda_m9_fault(size_t at);
+/* Scoped new-operation fault counter; legacy denise_cuda_m9_fault disables it. */
+void denise_cuda_m9_replay_fault(size_t at);
 void denise_cuda_m9_ledger(size_t *device_bytes,size_t *host_bytes,size_t *events,size_t *calls);
 /* Test-only operations invalidate prepared state. Arbitrary physical/psi state,
  * optional packed profiles, and actual production halos are exposed explicitly. */

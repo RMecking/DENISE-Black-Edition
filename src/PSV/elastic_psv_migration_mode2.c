@@ -1,5 +1,8 @@
 #include "fd.h"
 #include "denise_elastic_psv_migration.h"
+#ifdef DENISE_ENABLE_CUDA_M9_MODE2
+#include "denise_cuda_m9_migration.h"
+#endif
 #include "denise_elastic_psv_migration_mpi.h"
 
 #include <errno.h>
@@ -391,7 +394,14 @@ int denise_elastic_psv_migration_mode2(void) {
     memset(&result, 0, sizeof(result));
     lambda_final[0] = mu_final[0] = lambda_temp[0] = mu_temp[0] = '\0';
 
+#ifdef DENISE_ENABLE_CUDA_M9_MODE2
+    if (NP != 1 || NPROCX != 1 || NPROCY != 1)
+        return mode2_fail("CUDA-M9e-4 unsupported envelope: exactly one MPI rank and NPROCX=NPROCY=1 required");
+    fprintf(stdout,"M9 MODE=2 backend: CUDA-M9e-4 (no CPU fallback)\n");
+#else
     if (NP != 1 || NPROCX != 1 || NPROCY != 1) return denise_elastic_psv_migration_mode2_mpi();
+    fprintf(stdout,"M9 MODE=2 backend: CPU-M9\n");
+#endif
     if (MYID != 0 || NP != 1 || NPROCX != 1 || NPROCY != 1)
         return mode2_fail("M9c MODE=2 requires one MPI rank and NPROCX=NPROCY=1");
     if (make_path(lambda_final, sizeof(lambda_final), "%s.image_lambda_raw.bin",
@@ -523,9 +533,14 @@ shot_failure:
     request.pml_power=npower; request.pml_kmax=k_max_PML;
     request.pml_fpml=FPML; request.pml_damping_speed=DAMPING;
     request.shot_count=NSHOTS; request.shots=shots;
+#ifdef DENISE_ENABLE_CUDA_M9_MODE2
+    if (denise_cuda_m9_migrate_request(&request, &result) != 0) {
+        mode2_fail("CUDA-M9e-4 migration failed: %s",denise_cuda_m9_migration_last_error());
+#else
     if (denise_elastic_psv_migrate(&request, &result) != 0) {
         mode2_fail("M9c migration failed: %s",
                    denise_elastic_psv_migration_last_error());
+#endif
         goto failure;
     }
     if (write_f64_file(lambda_temp, result.image_lambda_raw, result.cell_count) != 0
@@ -557,7 +572,11 @@ shot_failure:
             "  initial/replayed forward steps per shot: %lu / %lu\n"
             "  global image bytes: %lu\n"
             "  maximum shot data bytes: %lu\n"
+#ifdef DENISE_ENABLE_CUDA_M9_MODE2
+            "  CPML peak CPU-only diagnostic (not sampled by CUDA): %.9g\n"
+#else
             "  CPML memory peak: %.9g\n"
+#endif
             "  CFL vmax diagnostic: %.9g m/s\n",
             NSHOTS, lambda_final, NX, NY,
             (unsigned long)(result.cell_count * sizeof(double)),

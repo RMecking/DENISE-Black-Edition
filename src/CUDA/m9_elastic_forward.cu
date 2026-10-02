@@ -15,6 +15,7 @@ static_assert(sizeof(float)==4 && sizeof(int)==4,"M9 verification ABI requires F
 
 static char error_text[512];
 static size_t fault_at, calls, device_owned, host_owned, events_owned;
+static bool replay_fault_only;
 static int error(const char *fmt, ...) {
     if (!error_text[0]) {
         va_list ap; va_start(ap,fmt); vsnprintf(error_text,sizeof(error_text),fmt,ap); va_end(ap);
@@ -23,6 +24,8 @@ static int error(const char *fmt, ...) {
 }
 static void begin() { error_text[0]=0; }
 static bool gate(const char *name) {
+    if(replay_fault_only && !strstr(name,"checkpoint") && !strstr(name,"replay") &&
+       !strstr(name,"migration shot") && !strstr(name,"migration output") && strcmp(name,"host allocation")!=0)return true;
     ++calls;
     if (fault_at && calls==fault_at) { error("injected M9 CUDA failure at %s (%zu)",name,calls); return false; }
     return true;
@@ -47,7 +50,15 @@ extern "C" void m9_host_free(void *p) {
     if(p) { HostHeader *h=(HostHeader *)p-1;host_owned-=h->bytes;free(h); }
 }
 extern "C" const char *denise_cuda_m9_last_error(void) {return error_text[0]?error_text:"no M9 CUDA error";}
-extern "C" void denise_cuda_m9_fault(size_t at) {fault_at=at;calls=0;begin();}
+extern "C" void denise_cuda_m9_fault(size_t at) {fault_at=at;calls=0;replay_fault_only=false;begin();}
+extern "C" void denise_cuda_m9_replay_fault(size_t at) {denise_cuda_m9_fault(at);replay_fault_only=true;}
+extern "C" int m9_host_gate(const char *name){return gate(name)?0:-1;}
+extern "C" void m9_host_begin(void){begin();}
+extern "C" void *m9_host_publish(size_t count,size_t width) {
+    if(width && count>SIZE_MAX/width){error("M9 migration output overflow");return NULL;}
+    if(!gate("migration output allocation"))return NULL;
+    void *p=calloc(count,width);if(!p)error("M9 migration output allocation unavailable");return p;
+}
 extern "C" void denise_cuda_m9_ledger(size_t *d,size_t *h,size_t *e,size_t *n) {
     if(d)*d=device_owned;
     if(h)*h=host_owned;
@@ -68,6 +79,7 @@ static bool adjoint_layout(size_t padded,size_t cells,size_t data,size_t base,
        !add(reverse,d.alignment_bytes,reverse) || !add(base,reverse,total))return false;
     out=d;return true;
 }
+#include "m9_elastic_replay_layout.h"
 #ifndef DENISE_M9_HOST_SANITIZER_ONLY
 
 /* Kernel argument view: host metadata only; all pointers refer to one arena. */
@@ -97,6 +109,8 @@ struct denise_cuda_m9 {
     int device,valid;
     FullJ *full;
     FullJT *jt;
+    M9Replay *replay;
+    struct denise_cuda_m9_replay_diagnostics replay_diag;
 };
 __device__ static float fd(const float *f,size_t p,int w,int kind,bool rounded=false) {
     const float a=9.0f/8.0f,b=-1.0f/24.0f;
@@ -373,10 +387,11 @@ extern "C" int denise_cuda_m9_destroy(denise_cuda_m9 **out) {
     if(c->start){if(!checked(cudaEventDestroy(c->start),"destroy start event"))return -1;c->start=NULL;--events_owned;}
     if(c->end){if(!checked(cudaEventDestroy(c->end),"destroy end event"))return -1;c->end=NULL;--events_owned;}
     if(c->arena){if(!checked(cudaFree(c->arena),"free arena"))return -1;device_owned-=c->d.owned_bytes;c->arena=NULL;}
-    m9_host_destroy(&c->host);m9_host_free(c->jt);m9_host_free(c->full);m9_host_free(c);*out=NULL;return 0;
+    m9_host_destroy(&c->host);m9_host_free(c->replay);m9_host_free(c->jt);m9_host_free(c->full);m9_host_free(c);*out=NULL;return 0;
 }
 static int create(const denise_elastic_psv_born_config *q,
-    const denise_cuda_m9_options *options,denise_cuda_m9 **out,bool full,bool adjoint=false) {
+    const denise_cuda_m9_options *options,denise_cuda_m9 **out,bool full,bool adjoint=false,
+    M9Replay **replay_owner=NULL,m9_host **host_owner=NULL) {
     begin();if(!out)return error("M9 CUDA output context is null");*out=NULL;
     if(!q)return error("M9 CUDA configuration is null");
     if(!full && q->free_surface!=0)return error("M9 CUDA requires FREE_SURF=0 before mutation");
@@ -391,6 +406,13 @@ static int create(const denise_elastic_psv_born_config *q,
        !mul(q->nt,q->receiver_count,data_count) || !mul(data_count,8,data_count) ||
        !add(q->nx,q->ny,prof_count) || !mul(prof_count,24,prof_count))return error("M9 CUDA size overflow");
     size_t wave,psi,model,src,geom;
+    M9Replay *plan=replay_owner?*replay_owner:NULL;
+    size_t checkpoint_storage=0;
+    if(plan) {
+        trajectory=plan->d.segment_operand_bytes;
+        if(!add(plan->d.checkpoint_payload_bytes,plan->d.alignment_bytes,checkpoint_storage))return error("M9 checkpoint size overflow");
+        total=checkpoint_storage;
+    }
     if(!mul(padded,20,wave) || !mul(padded,32,psi) || !mul(padded,20,model) ||
        !mul(q->nt,4,src) || !mul(q->receiver_count,12,geom))return error("M9 CUDA size overflow");
     const size_t parts[]={wave,psi,model,prof_count,src,geom,data_count,trajectory};
@@ -423,6 +445,9 @@ static int create(const denise_elastic_psv_born_config *q,
     c->d.workspace_bytes=extra+reverse;
     c->d.host_metadata_bytes=sizeof(*c)+m9_host_metadata_bytes();c->d.visible_devices=count;c->d.runtime_version=version;c->d.major=prop.major;c->d.minor=prop.minor;
     *out=c; /* Partial ownership remains destroyable if a real cleanup error occurs. */
+    if(plan){c->replay=plan;*replay_owner=NULL;c->replay_diag=plan->d;
+        c->d.host_metadata_bytes+=plan->d.checkpoint_metadata_bytes-sizeof(HostHeader)+plan->d.segment_schedule_bytes;}
+    if(host_owner){c->host=*host_owner;*host_owner=NULL;}
     if(full) {
         c->full=(FullJ *)m9_host_calloc(1,sizeof(FullJ));if(!c->full)goto failure;
         c->d.host_metadata_bytes+=sizeof(FullJ);
@@ -435,7 +460,7 @@ static int create(const denise_elastic_psv_born_config *q,
         c->d.host_metadata_bytes+=sizeof(FullJT);
         c->jt->d=rd;
     }
-    if(m9_host_create(q,&c->host)) { error("M9 canonical preparation: %s",m9_host_error());goto failure; }
+    if(!c->host && m9_host_create(q,&c->host)) { error("M9 canonical preparation: %s",m9_host_error());goto failure; }
     if(!CUDA(cudaMalloc(&c->arena,total)))goto failure;
     c->d.owned_bytes=total;device_owned+=total;
     {
@@ -445,6 +470,7 @@ static int create(const denise_elastic_psv_born_config *q,
         v.field=(float *)p;p+=wave;v.psi=(float *)p;p+=psi;v.map=(float *)p;p+=model;
         v.profile=(float *)p;p+=prof_count;v.source=(float *)p;p+=src;v.geometry=(int *)p;p+=geom;
         v.data=(float *)p;p+=data_count;v.strain=(float *)p;p+=trajectory;
+        if(plan){plan->payload=(float *)p;p+=checkpoint_storage;}
         if(full) {
             FullJ &j=*c->full;j.v=v;
             j.v.field=(float *)p;p+=wave;j.v.psi=(float *)p;p+=psi;
@@ -470,21 +496,26 @@ extern "C" int denise_cuda_m9_create_full(const denise_elastic_psv_born_config *
     const denise_cuda_m9_options *o,denise_cuda_m9 **c) {return create(q,o,c,true);}
 extern "C" int denise_cuda_m9_create_migration(const denise_elastic_psv_born_config *q,
     const denise_cuda_m9_options *o,denise_cuda_m9 **c) {return create(q,o,c,true,true);}
+#include "m9_elastic_replay.cuh"
 static int run(denise_cuda_m9 *c,const m9_host *model,int prepared) {
     if(!select(c))return finish_failure(c);invalidate(c);
     /* Profiles/rho/source/geometry remain the original canonical background.
      * Only supplied lambda/mu and their harmonic corner map change. */
     if(!upload(c,c->host,true) || (model!=c->host && !upload(c,model,false)) ||
        !zero(c) || !CUDA(cudaEventRecord(c->start)))return finish_failure(c);
-    for(int t=0;t<c->v.nt;t++)if(!step(c,t))return finish_failure(c);
+    if(c->replay) {
+        if(!replay_prepare(c))return finish_failure(c);
+    } else for(int t=0;t<c->v.nt;t++)if(!step(c,t))return finish_failure(c);
     if(!CUDA(cudaEventRecord(c->end)) || !CUDA(cudaEventSynchronize(c->end)) ||
        !CUDA(cudaEventElapsedTime(&c->d.elapsed_ms,c->start,c->end)))return finish_failure(c);
-    c->valid=1;c->d.valid_steps=c->v.nt;c->d.prepared=prepared;return 0;
+    c->valid=1;c->d.valid_steps=c->v.nt;c->d.prepared=prepared;
+    c->replay_diag.initial_forward_steps=c->v.nt;return 0;
 }
 extern "C" int denise_cuda_m9_prepare(denise_cuda_m9 *c) {
     begin();if(!c)return error("M9 CUDA context is null");return run(c,c->host,1);
 }
 extern "C" int denise_cuda_m9_nonlinear(denise_cuda_m9 *c,const float *l,const float *m) {
+    if(c && c->replay){begin();return error("M9 replay nonlinear evaluation unsupported");}
     begin();if(!c || !l || !m)return finish_failure(c);invalidate(c);
     denise_elastic_psv_born_config q=*m9_host_config(c->host);q.lambda=l;q.mu=m;
     m9_host *h=NULL;
@@ -494,6 +525,7 @@ extern "C" int denise_cuda_m9_nonlinear(denise_cuda_m9 *c,const float *l,const f
 static bool copy_out(void *out,const void *in,size_t bytes) {return CUDA(cudaMemcpy(out,in,bytes,cudaMemcpyDeviceToHost));}
 extern "C" int denise_cuda_m9_apply_j(denise_cuda_m9 *c,const float *dl,const float *dm,size_t cells) {
     begin();
+    if(c && c->replay)return error("M9 replay apply_j unsupported; use the FULL constructor");
     if(!c || !c->full || !c->d.prepared || !c->valid || !dl || !dm || cells!=c->v.cells) {
         error("M9 CUDA J requires FULL prepared context and exact direction pointers/count");return finish_failure(c);
     }
@@ -533,6 +565,7 @@ extern "C" int denise_cuda_m9_born_diagnostics(const denise_cuda_m9 *c,struct de
 }
 extern "C" int denise_cuda_m9_download(denise_cuda_m9 *c,float *data,float *fields,float *psi,float *operands) {
     begin();if(!c || !c->valid)return error("M9 CUDA output unavailable: no completed valid run");
+    if(c->replay && (fields || psi || operands))return error("M9 replay has no FULL trajectory/final workspace output; use replay probes");
     if(!select(c))return finish_failure(c);
     size_t sizes[4]={(size_t)c->v.nt*c->v.nr*8,5*c->v.cells*4,8*c->v.cells*4,c->d.trajectory_bytes};
     void *outs[4]={data,fields,psi,operands};float *scratch[4]={NULL,NULL,NULL,NULL};bool ok=true;
@@ -549,6 +582,7 @@ extern "C" int denise_cuda_m9_diagnostics(const denise_cuda_m9 *c,struct denise_
     if(!c || !d)return error("M9 CUDA diagnostics argument is null");*d=c->d;return 0;
 }
 static int initial_run(denise_cuda_m9 *c,const float *state,const float *profiles,int steps) {
+    if(c && c->replay){begin();return error("M9 replay rejects FULL test-evolve APIs; use replay probes");}
     begin();if(!c || !state)return finish_failure(c);invalidate(c);
     if(!select(c) || !upload(c,c->host,true) || !zero(c))return finish_failure(c);
     bool ok=true;
@@ -607,6 +641,7 @@ extern "C" int denise_cuda_m9_test_static(denise_cuda_m9 *c,float *maps,float *p
     m9_host_free(tmp);return ok?0:finish_failure(c);
 }
 extern "C" int denise_cuda_m9_test_trajectory_roundtrip(denise_cuda_m9 *c,float *operands) {
+    if(c && c->replay){begin();return error("M9 replay has no FULL trajectory roundtrip");}
     begin();if(!c || !operands)return finish_failure(c);invalidate(c);
     float *tmp=(float *)m9_host_calloc(c->d.trajectory_bytes,1);
     bool ok=tmp && select(c) && CUDA(cudaMemcpy(c->v.strain,operands,c->d.trajectory_bytes,cudaMemcpyHostToDevice)) &&
