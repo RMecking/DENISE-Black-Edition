@@ -4,6 +4,7 @@ import ctypes as C
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import time
 import numpy as np
@@ -23,8 +24,12 @@ class BornDiagnostics(C.Structure):
 def backends(tmp_path_factory):
     build=Path(os.environ['DENISE_M9E2_BUILD']) if 'DENISE_M9E2_BUILD' in os.environ else tmp_path_factory.mktemp('m9e2-build')
     if 'DENISE_M9E2_BUILD' not in os.environ:
+        candidates=[Path(os.environ.get('NVCC','/usr/local/cuda/bin/nvcc'))]
+        candidates+=sorted(Path('/usr/local').glob('cuda-*/bin/nvcc'),reverse=True)
+        nvcc=next((str(path) for path in candidates if path.is_file() and os.access(path,os.X_OK)),shutil.which('nvcc'))
+        if not nvcc: pytest.skip('CUDA prerequisite unavailable: nvcc not found')
         subprocess.run(['make','-C',str(ROOT/'src'),'cuda_m9_elastic_psv','cuda_m9_elastic_psv_nofma',
-            'NVCC='+os.environ.get('NVCC','/usr/local/cuda-12.8/bin/nvcc'),'CUDA_ARCHS=86','M9_CUDA_BUILD_DIR='+str(build)],check=True)
+            'NVCC='+nvcc,'CUDA_ARCHS=86','M9_CUDA_BUILD_DIR='+str(build)],check=True)
         subprocess.run(['cc','-std=c99','-O3','-Wall','-Wextra','-Werror','-pedantic','-fPIC','-shared',
             '-I'+str(ROOT/'include'),str(ROOT/'tests/utilities/m9e2_cuda_free_surface_born_harness.c'),'-lm','-o',str(build/'cpu_e2.so')],check=True)
     cpu=C.CDLL(str(build/'cpu_e2.so'))
