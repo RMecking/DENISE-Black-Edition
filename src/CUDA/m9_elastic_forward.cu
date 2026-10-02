@@ -54,9 +54,21 @@ extern "C" void denise_cuda_m9_ledger(size_t *d,size_t *h,size_t *e,size_t *n) {
     if(e)*e=events_owned;
     if(n)*n=calls;
 }
-#ifndef DENISE_M9_HOST_SANITIZER_ONLY
 static bool mul(size_t a,size_t b,size_t &v) { if(a && b>SIZE_MAX/a)return false;v=a*b;return true; }
 static bool add(size_t a,size_t b,size_t &v) { if(b>SIZE_MAX-a)return false;v=a+b;return true; }
+/* Pure checked layout gate is exercised without a CUDA driver by sanitizers. */
+static bool adjoint_layout(size_t padded,size_t cells,size_t data,size_t base,
+    struct denise_cuda_m9_adjoint_diagnostics &out,size_t &total) {
+    struct denise_cuda_m9_adjoint_diagnostics d={};size_t reverse=0;
+    d.alignment_bytes=(8-base%8)%8;d.data_bytes=data;
+    if(!mul(padded,40,d.field_bytes) || !mul(cells,64,d.cpml_bytes) ||
+       !mul(cells,16,d.image_bytes) || !mul(cells,32,d.workspace_bytes) ||
+       !add(d.field_bytes,d.cpml_bytes,reverse) || !add(reverse,d.image_bytes,reverse) ||
+       !add(reverse,d.workspace_bytes,reverse) || !add(reverse,data,reverse) ||
+       !add(reverse,d.alignment_bytes,reverse) || !add(base,reverse,total))return false;
+    out=d;return true;
+}
+#ifndef DENISE_M9_HOST_SANITIZER_ONLY
 
 /* Kernel argument view: host metadata only; all pointers refer to one arena. */
 struct View {
@@ -71,6 +83,11 @@ struct FullJ {
     float *dl,*dm,*corner;
     struct denise_cuda_m9_born_diagnostics d;
 };
+struct FullJT {
+ double *field,*psi,*q,*images;
+ float *data;
+ struct denise_cuda_m9_adjoint_diagnostics d;
+};
 struct denise_cuda_m9 {
     View v;
     struct denise_cuda_m9_diagnostics d;
@@ -79,6 +96,7 @@ struct denise_cuda_m9 {
     cudaEvent_t start,end;
     int device,valid;
     FullJ *full;
+    FullJT *jt;
 };
 __device__ static float fd(const float *f,size_t p,int w,int kind,bool rounded=false) {
     const float a=9.0f/8.0f,b=-1.0f/24.0f;
@@ -265,7 +283,7 @@ __global__ static void direct_j(View v,const float *bg,const float *dl,const flo
     }
     v.field[4*v.padded+p]+=mc[k]*(yx+xy);
 }
-static void invalidate(denise_cuda_m9 *c) { if(c){c->valid=0;c->d.valid_steps=0;c->d.prepared=0;if(c->full)c->full->d.valid=0;} }
+static void invalidate(denise_cuda_m9 *c) { if(c){c->valid=0;c->d.valid_steps=0;c->d.prepared=0;if(c->full)c->full->d.valid=0;if(c->jt)c->jt->d.valid=0;} }
 static bool select(denise_cuda_m9 *c) { return c && CUDA(cudaSetDevice(c->device)); }
 static bool launch_check() { return CUDA(cudaGetLastError()); }
 static unsigned blocks(size_t n) { return (unsigned)((n+127)/128); }
@@ -355,10 +373,10 @@ extern "C" int denise_cuda_m9_destroy(denise_cuda_m9 **out) {
     if(c->start){if(!checked(cudaEventDestroy(c->start),"destroy start event"))return -1;c->start=NULL;--events_owned;}
     if(c->end){if(!checked(cudaEventDestroy(c->end),"destroy end event"))return -1;c->end=NULL;--events_owned;}
     if(c->arena){if(!checked(cudaFree(c->arena),"free arena"))return -1;device_owned-=c->d.owned_bytes;c->arena=NULL;}
-    m9_host_destroy(&c->host);m9_host_free(c->full);m9_host_free(c);*out=NULL;return 0;
+    m9_host_destroy(&c->host);m9_host_free(c->jt);m9_host_free(c->full);m9_host_free(c);*out=NULL;return 0;
 }
 static int create(const denise_elastic_psv_born_config *q,
-    const denise_cuda_m9_options *options,denise_cuda_m9 **out,bool full) {
+    const denise_cuda_m9_options *options,denise_cuda_m9 **out,bool full,bool adjoint=false) {
     begin();if(!out)return error("M9 CUDA output context is null");*out=NULL;
     if(!q)return error("M9 CUDA configuration is null");
     if(!full && q->free_surface!=0)return error("M9 CUDA requires FREE_SURF=0 before mutation");
@@ -381,6 +399,14 @@ static int create(const denise_elastic_psv_born_config *q,
     if(full && (!mul(cells,12,direction) || !mul(cells,16,current) ||
         !add(wave,psi,extra) || !add(extra,direction,extra) || !add(extra,current,extra) ||
         !add(extra,data_count,extra) || !add(total,extra,total)))return error("M9 CUDA tangent size overflow");
+    size_t reverse=0,align=0,rfield=0,rpsi=0,rimage=0,rwork=0;
+    struct denise_cuda_m9_adjoint_diagnostics rd={};
+    if(adjoint) {
+        size_t next=0;
+        if(!adjoint_layout(padded,cells,data_count,total,rd,next))return error("M9 CUDA adjoint size overflow");
+        reverse=next-total;total=next;align=rd.alignment_bytes;rfield=rd.field_bytes;
+        rpsi=rd.cpml_bytes;rimage=rd.image_bytes;rwork=rd.workspace_bytes;
+    }
     int count=0,device=options?options->device:0,version=0;cudaDeviceProp prop;
     if(!CUDA(cudaGetDeviceCount(&count)))return -1;
     if(count==0 || device<0 || device>=count)return error("M9 CUDA backend/device unavailable (visible=%d, requested=%d)",count,device);
@@ -394,7 +420,7 @@ static int create(const denise_elastic_psv_born_config *q,
     c->device=device;c->d.mandatory_bytes=total;c->d.usable_budget=usable;c->d.remaining_budget=usable-total;
     c->d.model_bytes=model;c->d.wavefield_bytes=wave;c->d.cpml_bytes=psi;c->d.profile_bytes=prof_count;
     c->d.source_bytes=src;c->d.receiver_bytes=geom+data_count;c->d.trajectory_bytes=trajectory;
-    c->d.workspace_bytes=extra;
+    c->d.workspace_bytes=extra+reverse;
     c->d.host_metadata_bytes=sizeof(*c)+m9_host_metadata_bytes();c->d.visible_devices=count;c->d.runtime_version=version;c->d.major=prop.major;c->d.minor=prop.minor;
     *out=c; /* Partial ownership remains destroyable if a real cleanup error occurs. */
     if(full) {
@@ -403,6 +429,11 @@ static int create(const denise_elastic_psv_born_config *q,
         c->full->d.physical_bytes=wave;c->full->d.cpml_bytes=psi;
         c->full->d.direction_bytes=8*cells;c->full->d.corner_bytes=4*cells;
         c->full->d.operand_bytes=current;c->full->d.data_bytes=data_count;
+    }
+    if(adjoint) {
+        c->jt=(FullJT *)m9_host_calloc(1,sizeof(FullJT));if(!c->jt)goto failure;
+        c->d.host_metadata_bytes+=sizeof(FullJT);
+        c->jt->d=rd;
     }
     if(m9_host_create(q,&c->host)) { error("M9 canonical preparation: %s",m9_host_error());goto failure; }
     if(!CUDA(cudaMalloc(&c->arena,total)))goto failure;
@@ -418,7 +449,12 @@ static int create(const denise_elastic_psv_born_config *q,
             FullJ &j=*c->full;j.v=v;
             j.v.field=(float *)p;p+=wave;j.v.psi=(float *)p;p+=psi;
             j.dl=(float *)p;p+=4*cells;j.dm=(float *)p;p+=4*cells;j.corner=(float *)p;p+=4*cells;
-            j.v.strain=(float *)p;p+=current;j.v.data=(float *)p;
+            j.v.strain=(float *)p;p+=current;j.v.data=(float *)p;p+=data_count;
+        }
+        if(adjoint) {
+            p+=align;FullJT &r=*c->jt;
+            r.field=(double *)p;p+=rfield;r.psi=(double *)p;p+=rpsi;
+            r.images=(double *)p;p+=rimage;r.q=(double *)p;p+=rwork;r.data=(float *)p;
         }
     }
     if(!CUDA(cudaEventCreate(&c->start)))goto failure;++events_owned;
@@ -432,6 +468,8 @@ extern "C" int denise_cuda_m9_create(const denise_elastic_psv_born_config *q,
     const denise_cuda_m9_options *o,denise_cuda_m9 **c) {return create(q,o,c,false);}
 extern "C" int denise_cuda_m9_create_full(const denise_elastic_psv_born_config *q,
     const denise_cuda_m9_options *o,denise_cuda_m9 **c) {return create(q,o,c,true);}
+extern "C" int denise_cuda_m9_create_migration(const denise_elastic_psv_born_config *q,
+    const denise_cuda_m9_options *o,denise_cuda_m9 **c) {return create(q,o,c,true,true);}
 static int run(denise_cuda_m9 *c,const m9_host *model,int prepared) {
     if(!select(c))return finish_failure(c);invalidate(c);
     /* Profiles/rho/source/geometry remain the original canonical background.
@@ -576,4 +614,5 @@ extern "C" int denise_cuda_m9_test_trajectory_roundtrip(denise_cuda_m9 *c,float 
     if(ok)memcpy(operands,tmp,c->d.trajectory_bytes);
     m9_host_free(tmp);return ok?0:finish_failure(c);
 }
+#include "m9_elastic_adjoint.cuh"
 #endif /* Host-only sanitizer compiles the actual tracked allocation code. */
