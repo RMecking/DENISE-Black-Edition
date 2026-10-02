@@ -323,9 +323,11 @@ DENISE += alloc_fwiSH.c \
 
 SNAPMERGE_OBJ = $(SNAPMERGE_SCR:.c=.o)
 DENISE_OBJ = $(DENISE:.c=.o)      
-CUDA_DENISE_OBJ = $(filter-out psv.o,$(DENISE_OBJ)) \
+M9_CUDA_BUILD_DIR ?= .cuda/m9
+CUDA_DENISE_OBJ = $(filter-out psv.o elastic_psv_migration_mode2.o,$(DENISE_OBJ)) \
 	$(CUDA_PSV_SOLVER_OBJ) $(CUDA_PSV_DISPATCH_OBJ) $(CUDA_PSV_EXACT_FWI_OBJ) \
-	$(CUDA_BACKEND_OBJ) $(CUDA_PSV_OBJ)
+	$(CUDA_BACKEND_OBJ) $(CUDA_PSV_OBJ) $(CUDA_BUILD_DIR)/m9_mode2.o \
+	$(M9_CUDA_BUILD_DIR)/migration.o $(M9_CUDA_BUILD_DIR)/forward.o $(M9_CUDA_BUILD_DIR)/host.o
 CUDA_FORWARD_LINK_OBJ = $(filter-out denise.o psv.o,$(DENISE_OBJ)) \
 	$(CUDA_PSV_SOLVER_OBJ) $(CUDA_PSV_DISPATCH_OBJ) $(CUDA_PSV_EXACT_FWI_OBJ) \
 	$(CUDA_BACKEND_OBJ) $(CUDA_PSV_OBJ) $(CUDA_FORWARD_HARNESS_OBJ)
@@ -424,7 +426,15 @@ $(M9_CUDA_BUILD_DIR):
 	mkdir -p $@
 $(M9_CUDA_BUILD_DIR)/host.o: CUDA/m9_elastic_host.c CUDA/m9_elastic_host.h PSV/elastic_psv_born.c ../include/denise_elastic_psv_born.h | $(M9_CUDA_BUILD_DIR)
 	$(CC) $(M9_HOST_FLAGS) -I../include -c $< -o $@
-$(M9_CUDA_BUILD_DIR)/libdenise_m9_cuda.so: CUDA/m9_elastic_forward.cu CUDA/m9_elastic_adjoint.cuh CUDA/m9_elastic_host.h ../include/denise_cuda_m9_elastic.h $(M9_CUDA_BUILD_DIR)/host.o
-	$(NVCC) $(M9_CUDA_FLAGS) $(CUDA_GENCODE) -Xcompiler -fPIC -I../include -shared $< $(M9_CUDA_BUILD_DIR)/host.o -o $@
-$(M9_CUDA_BUILD_DIR)/libdenise_m9_cuda_nofma.so: CUDA/m9_elastic_forward.cu CUDA/m9_elastic_adjoint.cuh CUDA/m9_elastic_host.h ../include/denise_cuda_m9_elastic.h $(M9_CUDA_BUILD_DIR)/host.o
-	$(NVCC) $(M9_CUDA_FLAGS) --fmad=false $(CUDA_GENCODE) -Xcompiler -fPIC -I../include -shared $< $(M9_CUDA_BUILD_DIR)/host.o -o $@
+M9_REPLAY_HEADERS = CUDA/m9_elastic_replay.cuh CUDA/m9_elastic_replay_layout.h
+$(M9_CUDA_BUILD_DIR)/host.o: PSV/elastic_psv_migration.c ../include/denise_elastic_psv_migration.h
+$(CUDA_BUILD_DIR)/m9_mode2.o: PSV/elastic_psv_migration_mode2.c ../include/denise_cuda_m9_migration.h | $(CUDA_BUILD_DIR)
+	$(CC) $(CFLAGS) -std=c99 -DDENISE_ENABLE_CUDA_M9_MODE2 $(IFLAGS) -c $< -o $@
+$(M9_CUDA_BUILD_DIR)/migration.o: CUDA/m9_elastic_migration.c CUDA/m9_elastic_host.h ../include/denise_cuda_m9_elastic.h ../include/denise_cuda_m9_migration.h | $(M9_CUDA_BUILD_DIR)
+	$(CC) $(filter-out -fvisibility=hidden,$(M9_HOST_FLAGS)) -I../include -c $< -o $@
+$(M9_CUDA_BUILD_DIR)/forward.o: CUDA/m9_elastic_forward.cu CUDA/m9_elastic_adjoint.cuh $(M9_REPLAY_HEADERS) CUDA/m9_elastic_host.h ../include/denise_cuda_m9_elastic.h | $(M9_CUDA_BUILD_DIR)
+	$(NVCC) $(M9_CUDA_FLAGS) $(CUDA_GENCODE) -I../include -c $< -o $@
+$(M9_CUDA_BUILD_DIR)/libdenise_m9_cuda.so: CUDA/m9_elastic_forward.cu CUDA/m9_elastic_adjoint.cuh $(M9_REPLAY_HEADERS) CUDA/m9_elastic_host.h ../include/denise_cuda_m9_elastic.h $(M9_CUDA_BUILD_DIR)/host.o $(M9_CUDA_BUILD_DIR)/migration.o
+	$(NVCC) $(M9_CUDA_FLAGS) $(CUDA_GENCODE) -Xcompiler -fPIC -I../include -shared $< $(M9_CUDA_BUILD_DIR)/host.o $(M9_CUDA_BUILD_DIR)/migration.o -o $@
+$(M9_CUDA_BUILD_DIR)/libdenise_m9_cuda_nofma.so: CUDA/m9_elastic_forward.cu CUDA/m9_elastic_adjoint.cuh $(M9_REPLAY_HEADERS) CUDA/m9_elastic_host.h ../include/denise_cuda_m9_elastic.h $(M9_CUDA_BUILD_DIR)/host.o $(M9_CUDA_BUILD_DIR)/migration.o
+	$(NVCC) $(M9_CUDA_FLAGS) --fmad=false $(CUDA_GENCODE) -Xcompiler -fPIC -I../include -shared $< $(M9_CUDA_BUILD_DIR)/host.o $(M9_CUDA_BUILD_DIR)/migration.o -o $@

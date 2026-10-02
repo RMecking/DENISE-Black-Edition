@@ -53,3 +53,23 @@ void m9_host_profiles(const struct m9_host *h,float *out){
 }
 
 size_t m9_host_metadata_bytes(void){return sizeof(struct m9_host)+sizeof(struct denise_elastic_psv_born);}
+void m9_host_active_counts(const struct m9_host *h,size_t active[8]){
+ const int profiles[8]={1,2,0,3,0,1,3,2};int k,i;
+ for(k=0;k<8;k++){
+  const struct pml_profile *p=&h->cpu->profile[profiles[k]];active[k]=0;
+  for(i=0;i<p->length;i++)if(p->a[i]!=0.0f)++active[k];
+ }
+}
+/* Reuse the canonical request validator without changing CPU production or
+ * invoking its migration driver. All included entry points stay private. */
+#define checked_product m9_migration_checked_product
+#define denise_elastic_psv_migrate m9_private_migrate
+#define denise_elastic_psv_migration_pack_components m9_private_pack_components
+#define denise_elastic_psv_migration_result_destroy m9_private_result_destroy
+#define denise_elastic_psv_migration_last_error m9_private_migration_error
+#include "../PSV/elastic_psv_migration.c"
+int m9_host_validate_migration(const struct denise_elastic_psv_migration_request *q,
+ size_t *cells,size_t *trajectory,size_t *images,size_t *data){
+ migration_error[0]=0;return validate_request(q,cells,trajectory,images,data);
+}
+const char *m9_host_migration_error(void){return m9_private_migration_error();}

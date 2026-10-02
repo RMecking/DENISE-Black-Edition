@@ -177,7 +177,16 @@ extern "C" int denise_cuda_m9_apply_jt(denise_cuda_m9 *c,const float *data,size_
  if(!select(c) || !CUDA(cudaMemset(r.field,0,r.d.field_bytes+r.d.cpml_bytes+r.d.image_bytes+r.d.workspace_bytes)) ||
     !CUDA(cudaMemcpy(r.data,data,r.d.data_bytes,cudaMemcpyHostToDevice)) ||
     !CUDA(cudaEventRecord(c->start)))return finish_failure(c);
- for(int t=c->v.nt-1;t>=0;t--)
+ c->replay_diag.replayed_forward_steps=0;
+ if(c->replay) {
+  M9Replay &p=*c->replay;
+  for(int s=p.d.effective_segments-1;s>=0;s--) {
+   if(!replay_segment(c,s))return finish_failure(c);
+   int start=p.schedule[2*s],end=p.schedule[2*s+1];
+   for(int t=end-1;t>=start;t--)
+    if(!reverse_step(c->v,r,c->v.strain+(size_t)(t-start)*4*c->v.cells,t))return finish_failure(c);
+  }
+ } else for(int t=c->v.nt-1;t>=0;t--)
   if(!reverse_step(c->v,r,c->v.strain+(size_t)t*4*c->v.cells,t))return finish_failure(c);
  if(!CUDA(cudaEventRecord(c->end)) || !CUDA(cudaEventSynchronize(c->end)) ||
     !CUDA(cudaEventElapsedTime(&r.d.elapsed_ms,c->start,c->end)))return finish_failure(c);
