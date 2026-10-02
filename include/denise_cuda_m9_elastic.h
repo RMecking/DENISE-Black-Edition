@@ -26,6 +26,26 @@ struct denise_cuda_m9_born_diagnostics {
  int valid;
  float elapsed_ms;
 };
+/* Additive FULL J/JT arena. Legacy constructors/budgets remain unchanged. */
+int denise_cuda_m9_create_migration(const struct denise_elastic_psv_born_config *,
+                                  const struct denise_cuda_m9_options *,struct denise_cuda_m9 **);
+struct denise_cuda_m9_adjoint_diagnostics {
+ size_t field_bytes,cpml_bytes,image_bytes,data_bytes,workspace_bytes,alignment_bytes;
+ int valid;
+ float elapsed_ms;
+};
+int denise_cuda_m9_apply_jt(struct denise_cuda_m9 *,const float *,size_t values);
+int denise_cuda_m9_image_download(struct denise_cuda_m9 *,double *,double *,size_t cells);
+int denise_cuda_m9_migrate(struct denise_cuda_m9 *,const float *,size_t values,double *,double *,size_t cells);
+int denise_cuda_m9_adjoint_diagnostics(const struct denise_cuda_m9 *,struct denise_cuda_m9_adjoint_diagnostics *);
+/* Test-only reverse blocks, transactional in/out padded fields, compact psi8,
+ * q4, images2. Modes: 0 halo(first field), 1 CPML(kind,q0), 2 FD(kind,field),
+ * 3 surface ghost(field=0/1), 4 mirror(field=3/4), 5 projection,
+ * 6 material images/q, 7 receiver(time), 8 surface A closure, 9 harmonic(q3),
+ * 10 complete source-free reverse step (residual time zero).
+ * The background is compact q4; residual chronological FP32. */
+int denise_cuda_m9_test_reverse(struct denise_cuda_m9 *,int mode,int kind,int field,
+ double *padded,double *psi,double *q,double *images,const float *background,const float *residual);
 int denise_cuda_m9_apply_j(struct denise_cuda_m9 *,const float *delta_lambda,
                           const float *delta_mu,size_t cells);
 /* Transactional optional outputs: data [t][r][2], fields [5][y][x], psi [8],
