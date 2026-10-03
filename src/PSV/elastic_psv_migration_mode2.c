@@ -320,7 +320,8 @@ static int validate_cfl(const float *lambda, const float *mu, const float *rho,
     const double fd4_bound = 29.0 / 12.0;
     for (cell = 0; cell < cells; ++cell) {
         double speed2;
-        if (!(rho[cell] > 0.0f) || !(mu[cell] > 0.0f) || !isfinite(lambda[cell]))
+        if (!(rho[cell] > 0.0f) || !(mu[cell] >= 0.0f) || !isfinite(lambda[cell])
+            || (mu[cell] == 0.0f && !isfinite(rho[cell])))
             return mode2_fail("M9c lambda/mu/rho model has an invalid cell at flat index %lu",
                               (unsigned long)cell);
         speed2 = ((double)lambda[cell] + 2.0 * (double)mu[cell]) / (double)rho[cell];

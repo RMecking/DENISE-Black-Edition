@@ -516,7 +516,10 @@ extern "C" int denise_cuda_m9_prepare(denise_cuda_m9 *c) {
 }
 extern "C" int denise_cuda_m9_nonlinear(denise_cuda_m9 *c,const float *l,const float *m) {
     if(c && c->replay){begin();return error("M9 replay nonlinear evaluation unsupported");}
-    begin();if(!c || !l || !m)return finish_failure(c);invalidate(c);
+    begin();if(!c || !l || !m)return finish_failure(c);
+    for(size_t p=0;p<c->v.cells;p++)if(m[p]==0.0f)
+        return error("fluid CUDA requires FLUID-4 before GPU numerical execution");
+    invalidate(c);
     denise_elastic_psv_born_config q=*m9_host_config(c->host);q.lambda=l;q.mu=m;
     m9_host *h=NULL;
     if(m9_host_create(&q,&h))return error("M9 canonical nonlinear material: %s",m9_host_error());
