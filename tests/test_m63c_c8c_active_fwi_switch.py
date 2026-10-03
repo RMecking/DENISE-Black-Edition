@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 import math
 import re
@@ -13,6 +12,8 @@ import textwrap
 
 import pytest
 
+from tests.utilities.sh_fwi_fixture import write_sh_parameter as _write_sh_parameter
+
 
 def _write_model(path: Path, values: list[float], cells: int) -> None:
     """Production reads native floats in explicit x-major, then y-minor order."""
@@ -20,59 +21,6 @@ def _write_model(path: Path, values: list[float], cells: int) -> None:
     assert all(math.isfinite(value) and value > 0.0 for value in values)
     path.write_bytes(struct.pack(f"={len(values)}f", *values))
     assert path.stat().st_size == 4 * len(values)
-
-
-def _write_sh_parameter(
-    repository_root: Path, output: Path, *, mode: int = 0,
-    model_prefix: str = "model/true", grad_method: int = 1,
-    nprocx: int = 1, nprocy: int = 1, eps_scale: float = 1.0e6,
-    stepmax: int = 10, invmat1: int = 1, inv_mod_out: int = 0,
-    inv_model_file: str = "model/inverted", itermax: int = 1,
-    grad_form: int = 2, grad_filter: int = 0,
-) -> None:
-    """Invoke the repository's SH parameter serializer without its plotting imports."""
-    serializer = repository_root / "par" / "pythonIO_SH" / "denise_sh_IO" / "denise_sh_out.py"
-    tree = ast.parse(serializer.read_text(encoding="utf-8"), filename=str(serializer))
-    writer = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "write_denise_para")
-    namespace: dict[str, object] = {}
-    exec(compile(ast.fix_missing_locations(ast.Module(body=[writer], type_ignores=[])), str(serializer), "exec"), namespace)
-    # This is the SH serializer's complete field set.  Forward-relevant values
-    # are deliberately small and physical; inactive FWI fields are safe parser
-    # defaults required by read_par.c's positional legacy grammar.
-    fields: dict[str, object] = {
-        "filename": str(output), "descr": "pytest ephemeral viscoelastic SH forward",
-        "MODE": mode, "PHYSICS": 5, "NPROCX": nprocx, "NPROCY": nprocy, "FD_ORDER": 4,
-        "max_relative_error": 0, "NX": 32, "NY": 32, "DH": 10.0, "TIME": 0.08, "DT": 0.0005,
-        "QUELLART": 1, "SIGNAL_FILE": "source/signal.dat", "TS": 0.0, "SOURCE_FILE": "source/one.dat",
-        "RUN_MULTIPLE_SHOTS": 1, "FC_SPIKE_1": 0.0, "FC_SPIKE_2": 0.0, "ORDER_SPIKE": 2, "WRITE_STF": 0,
-        "MFILE": model_prefix, "L": 1, "FL": 20.0, "FREE_SURF": 0, "FW": 6, "DAMPING": 2000.0,
-        "FPML": 20.0, "npower": 2.0, "k_max_PML": 1.0, "SNAP": 0, "SNAP_SHOT": 1,
-        "TSNAP1": 0.0, "TSNAP2": 0.0, "TSNAPINC": 0.0, "IDX": 1, "IDY": 1, "SNAP_FILE": "snap/field",
-        "SEISMO": 1, "READREC": 1, "REC_FILE": "receiver/line", "NDT": 1,
-        "SEIS_FILE_VX": "su/unused_x.su", "SEIS_FILE_VY": "su/observed_y.su",
-        "SEIS_FILE_CURL": "su/unused_curl.su", "SEIS_FILE_DIV": "su/unused_div.su", "SEIS_FILE_P": "su/unused_p.su",
-        "LOG_FILE": "log/denise", "ITERMAX": itermax, "JACOBIAN": "jacobian/unused", "DATA_DIR": "su/observed",
-        "TAPERLENGTH": 1, "GRADT1": 1, "GRADT2": 1, "GRADT3": 1, "GRADT4": 1,
-        "INVMAT1": 1, "GRAD_FORM": grad_form, "QUELLTYPB": 2, "TESTSHOT_START": 1, "TESTSHOT_END": 1,
-        "TESTSHOT_INCR": 1, "SWS_TAPER_GRAD_VERT": 0, "SWS_TAPER_GRAD_HOR": 0,
-        "EXP_TAPER_GRAD_HOR": 1.0, "SWS_TAPER_GRAD_SOURCES": 0, "SWS_TAPER_CIRCULAR_PER_SHOT": 0,
-        "SRTSHAPE": 1, "SRTRADIUS": 50.0, "SWS_TAPER_FILE": 0, "TFILE": "taper/unused",
-        "INV_MOD_OUT": inv_mod_out, "INV_MODELFILE": inv_model_file, "VPUPPERLIM": 5000.0, "VPLOWERLIM": 100.0,
-        "VSUPPERLIM": 5000.0, "VSLOWERLIM": 100.0, "RHOUPPERLIM": 5000.0, "RHOLOWERLIM": 100.0,
-        "QSUPPERLIM": 100.0, "QSLOWERLIM": 10.0, "GRAD_METHOD": grad_method, "PCG_BETA": 1, "NLBFGS": 1,
-        # The real raw Q gradient is O(1e-7) here; 1e6 makes B5A's first
-        # subtractive Q trial O(1e-1), safely above float resolution at Q=70.
-        "MODEL_FILTER": 0, "FILT_SIZE": 1, "DTINV": 1, "EPS_SCALE": eps_scale, "STEPMAX": stepmax,
-        # The active B5A bracket contracts require a strictly expanding factor.
-        "SCALEFAC": 2.0, "TRKILL": 0, "TRKILL_FILE": "tracekill/unused", "PICKS_FILE": "picks/unused",
-        "MISFIT_LOG_FILE": "log/misfit", "MIN_ITER": 1, "GRAD_FILTER": grad_filter, "FILT_SIZE_GRAD": 1,
-    }
-    fields["INVMAT1"] = invmat1
-    write = namespace["write_denise_para"]
-    assert callable(write)
-    write(fields)
-    # Q controls are parser cases 116--119, newer than the SH serializer.
-    output.write_text(output.read_text(encoding="utf-8") + "\nQ_PARAMETERIZATION_MODE = 1\nQ_APPROX_FMIN = 5.0\nQ_APPROX_FMAX = 40.0\nQ_APPROX_DF = 1.0\n", encoding="utf-8")
 
 
 def _write_ephemeral_sh_forward_fixture(
@@ -110,7 +58,7 @@ def _write_ephemeral_sh_forward_fixture(
     receiver = root / "receiver" / "line.dat"
     receiver.write_text("100 160\n120 160\n140 160\n180 160\n200 160\n220 160\n", encoding="ascii")
     par = root / "true_forward.inp"
-    _write_sh_parameter(repository_root, par, invmat1=invmat1)
+    _write_sh_parameter(par, invmat1=invmat1)
     workflow = root / "workflow.inp"
     workflow.write_text(
         "PRO TIME_FILT FC_low FC_high ORDER TIME_WIN GAMMA TWIN- TWIN+ INV_VP_ITER INV_VS_ITER INV_RHO_ITER INV_QS_ITER SPATFILTER WD_DAMP WD_DAMP1 EPRECOND LNORM ROWI STF_INV OFFSETC_STF EPS_STF NORMALIZE OFFSET_MUTE OFFSETC SCALERHO SCALEQS ENV GAMMA_GRAV N_ORDER\n"
@@ -249,7 +197,7 @@ def _run_accepted_fwi_with_model_output(
     assert forward.returncode == 0, forward.stdout
     parameter = fixture["root"] / f"active_{invmat1}_{inv_mod_out}.inp"
     _write_sh_parameter(
-        repository_root, parameter, mode=1, model_prefix="model/start", grad_method=0,
+        parameter, mode=1, model_prefix="model/start", grad_method=0,
         invmat1=invmat1, inv_mod_out=inv_mod_out, inv_model_file=output_prefix,
         itermax=itermax, nprocx=nprocx, nprocy=nprocy,
     )
@@ -278,6 +226,52 @@ def _compact(text: str) -> str:
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
     text = re.sub(r"//[^\n]*", "", text)
     return re.sub(r"\s+", "", text)
+
+
+@pytest.mark.parametrize("mode,invmat1,nprocx", [(0, 1, 1), (1, 1, 2), (1, 3, 1)])
+def test_sh_fixture_parameter_records_are_complete_and_explicit(
+    tmp_path: Path, mode: int, invmat1: int, nprocx: int,
+) -> None:
+    parameter = tmp_path / "parameters.inp"
+    _write_sh_parameter(
+        parameter, mode=mode, invmat1=invmat1, nprocx=nprocx,
+        model_prefix="model/start", grad_method=0, inv_mod_out=1,
+    )
+    records = [line.partition("=") for line in parameter.read_text(encoding="ascii").splitlines()
+               if line and not line.startswith("#")]
+    assert len(records) == 119
+    assert all(separator == "=" and value.strip() for _, separator, value in records)
+    names = [name.strip().strip("()") for name, _, _ in records]
+    assert len(set(names)) == 119
+    # Positions are read_par.c's schema, not a whitespace golden snapshot.
+    positions = {
+        1: "MODE", 2: "PHYSICS", 3: "NPROCX", 4: "NPROCY",
+        5: "FD_ORDER", 7: "NX", 8: "NY", 9: "DH", 10: "TIME", 11: "DT",
+        15: "SRCREC", 22: "READMOD", 24: "WRITEMOD", 25: "L", 26: "FL",
+        27: "TAU", 34: "BOUNDARY", 44: "SEISMO", 45: "READREC",
+        47: "REFREC", 51: "NDT", 52: "SEIS_FORMAT", 60: "ITERMAX",
+        62: "DATA_DIR", 65: "GRADT", 66: "INVMAT1", 67: "GRAD_FORM",
+        68: "QUELLTYPB", 69: "TESTSHOTS", 80: "INV_MOD_OUT", 81: "INV_MODELFILE",
+        90: "GRAD_METHOD", 95: "DTINV", 96: "EPS_SCALE", 97: "STEPMAX",
+        98: "SCALEFAC", 104: "GRAD_FILTER", 106: "TIMELAPSE", 109: "GRAVITY",
+        115: "RTM_SHOT", 116: "Q_PARAMETERIZATION_MODE",
+        117: "Q_APPROX_FMIN", 118: "Q_APPROX_FMAX", 119: "Q_APPROX_DF",
+    }
+    assert all(names[position - 1] == name for position, name in positions.items())
+    controls = {name: value.strip() for name, (_, _, value) in zip(names, records)}
+    for name, expected in {
+        "MODE": mode, "PHYSICS": 5, "NPROCX": nprocx, "NPROCY": 1,
+        "NX": 32, "NY": 32, "DH": 10.0, "TIME": 0.08, "DT": 0.0005,
+        "L": 1, "FL": 20.0, "FW": 6, "FREE_SURF": 0, "READMOD": 1,
+        "WRITEMOD": 1, "TAU": 1.0, "INVMAT1": invmat1, "GRAD_FORM": 2,
+        "GRAD_METHOD": 0, "INV_MOD_OUT": 1, "SEIS_FORMAT": 1, "DTINV": 1,
+        "Q_PARAMETERIZATION_MODE": 1, "Q_APPROX_FMIN": 5.0,
+        "Q_APPROX_FMAX": 40.0, "Q_APPROX_DF": 1.0,
+    }.items():
+        assert float(controls[name]) == expected
+    assert controls["MFILE"] == "model/start"
+    assert controls["DATA_DIR"] == "su/observed"
+    assert controls["SEIS_FILE_VY"] == "su/observed_y.su"
 
 
 def test_production_fwi_object_is_linked_with_the_active_switch_harness(
@@ -359,6 +353,9 @@ def test_ephemeral_true_viscoelastic_sh_forward_produces_observed_data(
     assert len(samples) == 6 * trace_size
     values = struct.unpack(f"={nt}f", samples[240:trace_size])
     assert all(value == value and abs(value) != float("inf") for value in values)
+    for offset in range(0, len(samples), trace_size):
+        trace = struct.unpack(f"={nt}f", samples[offset + 240:offset + trace_size])
+        assert all(math.isfinite(value) for value in trace)
     assert any(value != 0.0 for value in values)
     assert len(set(values)) > 1
     assert fixture["observed"] == fixture["fwi_observed"]
@@ -382,7 +379,7 @@ def test_real_active_fwi_completes_one_exact_iteration(
     }
     # This is exactly the active driver's documented supported configuration:
     # MODE=1, L=1, physical Q, a loaded start model, no gravity, and GRAD=0.
-    _write_sh_parameter(repository_root, fwi_parameter, mode=1, model_prefix="model/start", grad_method=0)
+    _write_sh_parameter(fwi_parameter, mode=1, model_prefix="model/start", grad_method=0)
     run = _run_denise(repository_root, fixture, fwi_parameter)
     assert run.returncode == 0, run.stdout
     assert "TDFWI ITERATION 1" in run.stdout
@@ -403,7 +400,7 @@ def test_real_active_fwi_rejects_unsupported_optimizers_before_model_mutation(
         for suffix in (".vs", ".rho", ".qs")
     }
     parameter = fixture["root"] / f"unsupported_{grad_method}.inp"
-    _write_sh_parameter(repository_root, parameter, mode=1, model_prefix="model/start", grad_method=grad_method)
+    _write_sh_parameter(parameter, mode=1, model_prefix="model/start", grad_method=grad_method)
     run = _run_denise(repository_root, fixture, parameter)
     assert run.returncode != 0
     assert "Exact viscoelastic SH FWI currently supports GRAD_METHOD == 0 only." in run.stdout
@@ -437,7 +434,7 @@ def test_real_active_fwi_rejects_representative_unsupported_controls_before_mode
     }
     parameter = fixture["root"] / f"unsupported_{name}.inp"
     _write_sh_parameter(
-        repository_root, parameter, mode=1, model_prefix="model/start", grad_method=0,
+        parameter, mode=1, model_prefix="model/start", grad_method=0,
         grad_filter=grad_filter, inv_model_file="model/must_not_be_accepted",
     )
     _set_workflow_controls(
@@ -464,7 +461,7 @@ def test_real_active_fwi_completes_one_exact_iteration_with_two_ranks(
     assert forward.returncode == 0, forward.stdout
     parameter = fixture["root"] / "active_fwi_two_rank.inp"
     _write_sh_parameter(
-        repository_root, parameter, mode=1, model_prefix="model/start", grad_method=0,
+        parameter, mode=1, model_prefix="model/start", grad_method=0,
         nprocx=2, nprocy=1,
     )
     run = _run_denise(repository_root, fixture, parameter, ranks=2)
@@ -487,7 +484,7 @@ def test_real_active_fwi_two_rank_preacceptance_failure_keeps_start_model(
     # With the measured raw-Q magnitude, this makes every B5A trial invisible
     # at Q=70 and exercises the collective failure before accepted B2.
     _write_sh_parameter(
-        repository_root, parameter, mode=1, model_prefix="model/start", grad_method=0,
+        parameter, mode=1, model_prefix="model/start", grad_method=0,
         nprocx=2, nprocy=1, eps_scale=0.1, stepmax=10,
         inv_model_file="model/must_not_be_accepted",
     )
@@ -622,3 +619,31 @@ def test_two_rank_accepted_vs_model_is_merged_globally_and_roundtrips_through_re
     updated_cell = 15 * 32 + 15
     assert q[updated_cell] != 70.0
     assert q[updated_cell] != tau[updated_cell]
+
+
+def test_forward_and_accepted_fwi_repeat_from_fresh_directories(
+    tmp_path: Path, repository_root: Path,
+) -> None:
+    products = []
+    for repetition in range(2):
+        fixture, output_root = _run_accepted_fwi_with_model_output(
+            tmp_path / f"repeat_{repetition}", repository_root,
+            invmat1=1, inv_mod_out=1, output_prefix="model/accepted_repeat",
+        )
+        raw = fixture["observed"].read_bytes()
+        trace_size = 240 + 4 * 160
+        assert len(raw) == 6 * trace_size
+        # Compare numerical samples, never the run-dependent SU header bytes.
+        samples = tuple(
+            struct.unpack("=160f", raw[offset + 240:offset + trace_size])
+            for offset in range(0, len(raw), trace_size)
+        )
+        assert all(math.isfinite(value) for trace in samples for value in trace)
+        model = {
+            suffix: _read_native_model(Path(f"{output_root}_stage_1_it_1{suffix}"), 32 * 32)[1]
+            for suffix in (".vs", ".rho", ".qs")
+        }
+        assert model[".qs"][15 * 32 + 15] != 70.0
+        products.append((samples, model))
+    # Same-binary, same-runtime repeatability; no cross-platform fingerprint.
+    assert products[0] == products[1]
