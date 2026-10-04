@@ -3,6 +3,7 @@ from __future__ import annotations
 import cmath
 import json
 import math
+import re
 import struct
 from pathlib import Path
 
@@ -465,16 +466,42 @@ def test_q_conversion_is_shared_by_sh_and_psv_readers(repository_root):
     assert "2.0 / (double)target_q" in implementation
 
 
-def test_physical_q_fwi_warning_is_limited_to_active_attenuation_inversion(repository_root):
-    source = (repository_root / "src" / "read_par_inv.c").read_text()
-    assert "Q_PARAMETERIZATION_MODE == Q_PARAMETERIZATION_PHYSICAL" in source
-    assert "MODE == 1" in source
-    assert "L > 0" in source
-    assert "INV_QS_ITER <= ITERMAX" in source
-    assert "only maps physical Q input to the initial tau fields" in source
-    assert "Attenuation/Q inversion is unverified and appears incomplete" in source
-    assert "not production-ready physical-Q inversion" in source
-    assert "No Q-to-tau chain rule is applied" in source
+def test_physical_q_fwi_status_is_limited_to_supported_exact_sh_route(repository_root):
+    source = (repository_root / "src" / "read_par_inv.c").read_text(encoding="utf-8")
+    code = re.sub(r"/\*.*?\*/|//[^\n]*", "", source, flags=re.DOTALL)
+    route = re.search(r"\bexact_sh_route\s*=\s*\((.*?)\)\s*;", code, re.DOTALL)
+    assert route is not None
+    assert {
+        re.sub(r"[()\s]", "", term) for term in route.group(1).split("&&")
+    } == {
+        "Q_PARAMETERIZATION_MODE==Q_PARAMETERIZATION_PHYSICAL",
+        "MODE==1",
+        "PHYSICS==5",
+        "L>0",
+    }
+    route_blocks = re.findall(
+        r"\bif\s*\(\s*exact_sh_route\s*\)\s*\{([^{}]*)\}", code, re.DOTALL
+    )
+    for status in (
+        "Physical-Q inversion is supported by exact viscoelastic SH steepest descent",
+        "unsupported configurations are validated separately",
+        "Exact SH primary, density, and physical Q are active from iteration 1",
+    ):
+        assert any(status in block for block in route_blocks)
+    for obsolete in (
+        "only maps physical Q input to the initial tau fields",
+        "Attenuation/Q inversion is unverified and appears incomplete",
+        "not production-ready physical-Q inversion",
+        "No Q-to-tau chain rule is applied",
+    ):
+        assert obsolete not in source
+
+    driver = (repository_root / "src/SH/FWI_SH_visc.c").read_text(encoding="utf-8")
+    driver = re.sub(r"/\*.*?\*/|//[^\n]*", "", driver, flags=re.DOTALL)
+    assert (
+        'exact_sh_require_config_int("INV_QS_ITER",INV_QS_ITER,0,1,nstage);'
+        in re.sub(r"\s+", "", driver)
+    )
 
 
 def test_qstd_reference_reproduces_recovered_matlab_expression():
