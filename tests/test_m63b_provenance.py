@@ -23,6 +23,17 @@ def _git(repository_root: Path, *arguments: str) -> subprocess.CompletedProcess[
     )
 
 
+def _git_bytes(repository_root: Path, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        ["git", *arguments],
+        cwd=repository_root,
+        text=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+
 def test_m63b_validation_artifact_locks_healthy_runs_and_raw_objectives(repository_root):
     path = repository_root / "tests/m6.3b_visco_sh_fwi_attenuation_validation.json"
     assert hashlib.sha256(path.read_bytes()).hexdigest() == VALIDATION_SHA256
@@ -105,9 +116,22 @@ def test_m63b_validation_artifact_locks_healthy_runs_and_raw_objectives(reposito
     )
 
 
-def test_m63b_lineage_audit_immutability_and_strict_red_classification(repository_root):
-    audit = repository_root / "docs/m6.3_visco_sh_fwi_attenuation_audit.md"
-    assert hashlib.sha256(audit.read_bytes()).hexdigest() == AUDIT_DOCUMENT_SHA256
+def test_m63b_historical_audit_and_red_oracle_provenance(repository_root):
+    audit_path = "docs/m6.3_visco_sh_fwi_attenuation_audit.md"
+    historical_audit = _git_bytes(
+        repository_root, "show", f"{AUDIT_SHA}:{audit_path}"
+    )
+    assert historical_audit.returncode == 0, historical_audit.stderr
+    assert hashlib.sha256(historical_audit.stdout).hexdigest() == AUDIT_DOCUMENT_SHA256
+
+    # Current documentation explains supersession; historical bytes stay frozen.
+    current_audit = (repository_root / audit_path).read_text(encoding="utf-8")
+    for marker in (
+        "Closeout and supersession",
+        "historical audit finding",
+        "M6.3 SCIENTIFICALLY",
+    ):
+        assert marker in current_audit
     head = _git(repository_root, "rev-parse", "HEAD")
     assert head.returncode == 0
     current_lineage = _git(
@@ -139,9 +163,13 @@ def test_m63b_lineage_audit_immutability_and_strict_red_classification(repositor
     assert production.returncode == 0
     assert production.stdout.strip() == ""
 
-    integration = (
-        repository_root / "tests/physics/test_visco_sh_fwi_attenuation_oracle.py"
-    ).read_text(encoding="utf-8")
+    historical_oracle = _git(
+        repository_root,
+        "show",
+        f"{M63B_ORACLE_SHA}:tests/physics/test_visco_sh_fwi_attenuation_oracle.py",
+    )
+    assert historical_oracle.returncode == 0, historical_oracle.stderr
+    integration = historical_oracle.stdout
     for exception in (
         "KnownM63ActivePhysicsSplit",
         "KnownM63ViscoAdjointDefect",
