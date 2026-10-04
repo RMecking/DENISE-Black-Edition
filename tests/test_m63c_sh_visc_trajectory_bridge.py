@@ -99,13 +99,20 @@ def test_capture_lifecycle_brackets_real_kernel_updates(repository_root: Path):
     assert implementation.count("visco_sh_material_observable_end_step()") == 1
 
 
-def test_capture_kernels_and_active_fwi_path_remain_unchanged(repository_root: Path):
+def test_capture_kernels_and_exact_trajectory_are_reachable_from_active_fwi(
+    repository_root: Path,
+):
     velocity = _source(repository_root, "src/SH/update_v_PML_SH.c")
     stress = _source(repository_root, "src/SH/update_s_visc_PML_SH.c")
     driver = _compact(_source(repository_root, "src/SH/FWI_SH_visc.c"))
+    multi_shot = _compact(_source(repository_root, "src/SH/grad_obj_sh_visc_exact.c"))
+    shot = _compact(_source(repository_root, "src/SH/grad_obj_sh_visc_exact_shot.c"))
 
     assert velocity.count("visco_sh_material_observable_is_active()") == 1
     assert stress.count("visco_sh_material_observable_is_active()") == 1
-    assert "L2sum=grad_obj_sh(" in driver
-    assert "grad_obj_sh_visc_exact(" not in driver
-    assert "visco_sh_reverse_time_adjoint_material(" not in driver
+    assert driver.count("visco_sh_exact_objective_gradient(") == 1
+    assert "grad_obj_sh(" not in driver
+    assert "visco_sh_exact_objective_gradient_shot(" not in driver
+    assert multi_shot.count("visco_sh_exact_objective_gradient_shot(") == 1
+    assert shot.count("sh_visc_with_material_trajectory(") == 1
+    assert shot.count("visco_sh_reverse_time_adjoint_material(") == 1

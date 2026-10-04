@@ -1,4 +1,4 @@
-"""M6.3c-8b2-b2 inactive exact multi-shot orchestration contracts."""
+"""Exact multi-shot orchestration and current active SH integration contracts."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def _compact(text: str) -> str:
     return re.sub(r"\s+", "", text)
 
 
-def test_multi_shot_api_is_declared_built_and_inactive(repository_root: Path):
+def test_multi_shot_api_is_declared_built_and_active(repository_root: Path):
     header = _read(repository_root, "include/fd.h")
     makefile = _read(repository_root, "src/Makefile")
     source = _compact(_read(repository_root, "src/SH/grad_obj_sh_visc_exact.c"))
@@ -29,9 +29,9 @@ def test_multi_shot_api_is_declared_built_and_inactive(repository_root: Path):
     assert "struct visco_sh_exact_multi_shot_request" in header
     assert "visco_sh_exact_objective_gradient(" in header
     assert "grad_obj_sh_visc_exact.c" in makefile
-    assert "visco_sh_exact_objective_gradient(" not in active
+    assert active.count("visco_sh_exact_objective_gradient(") == 1
     assert "visco_sh_exact_objective_gradient_shot(" not in active
-    assert "L2sum=grad_obj_sh(" in active
+    assert "grad_obj_sh(" not in active
     assert source.count("visco_sh_exact_objective_gradient_shot(") == 1
 
 

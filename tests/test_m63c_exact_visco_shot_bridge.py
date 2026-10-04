@@ -1,4 +1,4 @@
-"""M6.3c-8b2-b1 inactive exact viscoelastic SH shot-bridge contracts."""
+"""Exact viscoelastic SH shot-bridge and active reachability contracts."""
 
 from __future__ import annotations
 
@@ -110,14 +110,20 @@ def test_three_distinct_internal_cotangent_workspaces(repository_root: Path):
     assert "&terminal.state,&initial.state,&scratch.state" in source
 
 
-def test_active_fwi_path_and_locked_capture_kernels_remain_unchanged(
+def test_active_fwi_reaches_exact_shot_bridge_and_locked_capture_kernels(
     repository_root: Path,
 ):
     driver = _compact(_read(repository_root, "src/SH/FWI_SH_visc.c"))
+    multi_shot = _compact(_read(repository_root, "src/SH/grad_obj_sh_visc_exact.c"))
+    shot = _compact(_read(repository_root, "src/SH/grad_obj_sh_visc_exact_shot.c"))
     velocity = _read(repository_root, "src/SH/update_v_PML_SH.c")
     stress = _read(repository_root, "src/SH/update_s_visc_PML_SH.c")
-    assert "L2sum=grad_obj_sh(" in driver
+    assert driver.count("visco_sh_exact_objective_gradient(") == 1
+    assert "grad_obj_sh(" not in driver
     assert "visco_sh_exact_objective_gradient_shot(" not in driver
+    assert multi_shot.count("visco_sh_exact_objective_gradient_shot(") == 1
+    assert shot.count("sh_visc_with_material_trajectory(") == 1
+    assert shot.count("visco_sh_reverse_time_adjoint_material(") == 1
     assert velocity.count("visco_sh_material_observable_is_active()") == 1
     assert stress.count("visco_sh_material_observable_is_active()") == 1
 
