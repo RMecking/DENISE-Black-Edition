@@ -11,6 +11,7 @@ ehthumbs.db
 __pycache__/
 .pytest_cache/
 .tmp-m*/
+.tmp-app-fluid2-*/
 
 # Folder config file
 Desktop.ini
@@ -62,6 +63,7 @@ Temporary Items
 model*/*
 DENISE-Benchmark
 model_*
+!tools/denise_case/model_io.py
 
 # Optional M9 elastic CUDA build outputs
 src/.cuda/m9/

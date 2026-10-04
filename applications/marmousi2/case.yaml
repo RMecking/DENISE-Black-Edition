@@ -1,0 +1,86 @@
+{
+  "case": {
+    "id": "marmousi2-current-denise-true-forward",
+    "title": "Marmousi-II benchmark-derived elastic P/SV true forward",
+    "phase": "A0/A1",
+    "purpose": "Reproducible observed-data generation and scientific QC; no FWI or RTM"
+  },
+  "provenance": {
+    "denise_core_sha": "f315d157c2e817480990c97a3de45c4a23e465db",
+    "benchmark_repository": "https://github.com/daniel-koehn/DENISE-Benchmark.git",
+    "benchmark_sha": "931131e8dc53649320a5620befe751ad32d2f7bd",
+    "benchmark_checkout": "../../DENISE-Benchmark",
+    "redistribution": "External benchmark assets are imported locally into ignored paths; no explicit benchmark repository license was found at the frozen revision."
+  },
+  "backend": {
+    "executable": "../../bin/denise",
+    "launcher": "mpiexec",
+    "environment": "posix-mpi",
+    "ranks": 15,
+    "nprocx": 5,
+    "nprocy": 3
+  },
+  "grid": {
+    "nx": 500,
+    "ny": 174,
+    "dh_m": 20.0,
+    "disk_dtype": "little-endian IEEE-754 FP32",
+    "disk_order": "x-major, y-fastest",
+    "scientific_array_orientation": "[depth_y, horizontal_x], row 0 shallow, depth increases downward"
+  },
+  "time": {
+    "dt_s": 0.002,
+    "time_s": 6.0,
+    "sample_stride": 1
+  },
+  "physics": {
+    "kind": "2-D isotropic elastic P/SV",
+    "fd_order": 8,
+    "max_relative_error": 1,
+    "attenuation_mechanisms": 0
+  },
+  "boundary": {
+    "free_surface": true,
+    "absorbing_width_gridpoints": 10,
+    "damping_velocity_m_s": 1500.0,
+    "pml_frequency_hz": 10.0,
+    "npower": 4.0,
+    "k_max_pml": 1.0
+  },
+  "models": {
+    "true": {"prefix": "Marmousi-II/start/marmousi_II_marine"},
+    "start_1d": {"prefix": "Marmousi-II/start/marmousi_II_start_1D"},
+    "smooth2": {"prefix": "Marmousi-II/start/marmousi_II_smooth2"}
+  },
+  "acquisition": {
+    "name": "historical OBC/VSP source line with OBC receiver line",
+    "sources": "Marmousi-II/source/source_OBC_VSP.dat",
+    "receivers": "Marmousi-II/receiver/receiver_OBC.dat",
+    "require_grid_alignment": true
+  },
+  "wavelet": {
+    "type": 6,
+    "description": "benchmark filtered spike",
+    "highpass_hz": -5.0,
+    "lowpass_hz": 15.0,
+    "filter_order": 5,
+    "klauder_duration_s": 8.0
+  },
+  "outputs": {
+    "forward_data": "generated/true_forward/data",
+    "rtm_future": "runs/rtm",
+    "fwi_future": "runs/fwi",
+    "qc": "qc"
+  },
+  "run": {
+    "name": "true_forward",
+    "mode": 0,
+    "preserve_benchmark_acquisition": true,
+    "metadata": ["manifest identity", "generator identity", "core SHA", "benchmark SHA", "resolved input", "model and geometry identities", "command", "backend", "runtime", "output identities"]
+  },
+  "qc": {
+    "selected_shots": [1, 50, 100],
+    "selected_receivers": [1, 200, 400],
+    "gather_display": "symmetric linear scale clipped at absolute 99th percentile; data unchanged"
+  }
+}
