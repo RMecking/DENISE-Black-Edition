@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import json
 import re
 import shutil
 import subprocess
@@ -107,16 +108,29 @@ def test_all_visco_material_lifecycles_free_owned_q(repository_root: Path):
         assert compact.count("free_matrix(matSH.pqs,-nd+1,NY+nd,-nd+1,NX+nd)") == 1
 
 
-def test_c8b1_does_not_switch_active_gradient_or_touch_c8a(repository_root: Path):
+def test_owned_physical_q_is_connected_to_active_exact_path_and_c8a_audit_is_historical(
+    repository_root: Path,
+):
     driver = _compact(_source(repository_root, "src/SH/FWI_SH_visc.c"))
-    assert "L2sum=grad_obj_sh(" in driver
-    assert "grad_obj_sh_visc_exact(" not in driver
-    assert "visco_sh_reverse_time_adjoint_material(" not in driver
+    for assignment in (
+        "exact_material_request.physical_q=exact_base_q;",
+        "exact_objective_request.grad_q=exact_grad_q;",
+        "exact_optimizer_boundary.grad_raw_q=exact_grad_q;",
+        "exact_optimizer_boundary.optimizer_step_q=exact_step_q;",
+    ):
+        assert assignment in driver
+    assert driver.count("visco_sh_exact_objective_gradient(") == 1
+    assert driver.count("visco_sh_exact_build_steepest_subtractive_step(") == 1
+    assert "grad_obj_sh(" not in driver
 
-    inventory = _source(repository_root, "tests/m6.3c_c8_active_path_inventory.json")
-    assert '"locked_input_sha": "47caffc441c5f3862682f3e36bbb45e11997e151"' in inventory
-    assert '"base_gradient_entry": {' in inventory
-    assert '"status": "RED"' in inventory
+    # This immutable RED snapshot records genealogy, not today's active path.
+    historical = json.loads(
+        _source(repository_root, "tests/m6.3c_c8_active_path_inventory.json")
+    )
+    assert historical["milestone"] == "M6.3c-8a"
+    assert historical["locked_input_sha"] == "47caffc441c5f3862682f3e36bbb45e11997e151"
+    assert historical["classification"] == "active-path audit and RED contract freeze"
+    assert historical["inventory"]["base_gradient_entry"]["status"] == "RED"
 
 
 def test_c8b2_trajectory_hook_analysis_is_source_supported(repository_root: Path):
