@@ -1,4 +1,4 @@
-"""CPU MPI fluid F and migration/CUDA boundaries; no fluid J/JT science."""
+"""Historical CPU fluid fixtures with restricted J/JT and CUDA boundaries."""
 import ctypes as C
 from dataclasses import replace
 import os
@@ -72,7 +72,7 @@ def compare_mpi(fluid_mpi,fluid_library,tmp_path,top,exp,fs,pattern):
                 actual=np.fromfile(folder/(name+'.bin'),np.float64).reshape(c.shape)
                 np.testing.assert_array_equal(actual,maps[k])
                 if k==2:assert not np.signbit(actual).any()
-        serial.RECORDS.append({'mpi_forward':[list(top),pattern,fs],'serial_bitwise':True,'independent_relative_l2':float(error),'J_JT_collective_no_mutation':True})
+        serial.RECORDS.append({'mpi_forward':[list(top),pattern,fs],'serial_bitwise':True,'independent_relative_l2':float(error),'restricted_J_JT_and_invalid_dMu_transaction':True})
     finally:c.close()
 @pytest.mark.parametrize('pattern',['horizontal','vertical'])
 @pytest.mark.parametrize('fs',[0,1])
@@ -85,15 +85,19 @@ def test_negative_mu_one_rank_collective_rejection(fluid_mpi,tmp_path,top):
 @pytest.mark.parametrize('ranks',[1,2])
 @pytest.mark.parametrize('fs',[0,1])
 @pytest.mark.integration
-def test_mode2_fluid_cfl_valid_but_no_migration_output(tmp_path,denise_binary,mpiexec,ranks,fs):
+def test_mode2_fluid_cfl_valid_and_restricted_migration_output(tmp_path,denise_binary,mpiexec,ranks,fs):
     exp=experiment('homogeneous',nt=20);data=[np.ones((exp.nt,len(exp.receivers),2),np.float32)]
     paths=driver._write_mode2_case(tmp_path,exp,data)
     inp=tmp_path/'denise.inp';inp.write_text(inp.read_text().replace('NPROCX =1',f'NPROCX ={ranks}').replace('FREE_SURF =0',f'FREE_SURF ={fs}'))
     p=subprocess.run([mpiexec,'-n',str(ranks),str(denise_binary),'denise.inp','workflow.inp'],cwd=tmp_path,
       capture_output=True,text=True,timeout=90)
-    assert p.returncode!=0 and 'FLUID-2' in p.stdout+p.stderr,p.stdout+p.stderr
+    assert p.returncode==0 and 'FLUID-2' not in p.stdout+p.stderr,p.stdout+p.stderr
     assert 'invalid cell' not in p.stdout+p.stderr and 'CFL check failed' not in p.stdout+p.stderr
-    assert not paths['lambda'].exists() and not paths['mu'].exists()
+    assert paths['lambda'].exists() and paths['mu'].exists()
+    images=np.stack([np.fromfile(paths[name],np.float64).reshape(exp.mu.shape) for name in ('lambda','mu')])
+    assert np.isfinite(images).all()
+    np.testing.assert_array_equal(images[1],0.)
+    assert not np.signbit(images[1]).any()
     # Same request files, return to valid solid model: no stale publication.
     solid=replace(exp,mu=np.ones_like(exp.mu))
     driver._write_mode2_case(tmp_path,solid,data)
@@ -101,12 +105,26 @@ def test_mode2_fluid_cfl_valid_but_no_migration_output(tmp_path,denise_binary,mp
     q=subprocess.run([mpiexec,'-n',str(ranks),str(denise_binary),'denise.inp','workflow.inp'],cwd=tmp_path,capture_output=True,text=True,timeout=90)
     assert q.returncode==0,q.stdout+q.stderr
     assert paths['lambda'].exists() and paths['mu'].exists()
-def test_fluid_migration_request_returns_no_images(migration_library):
+def test_fluid_migration_request_returns_restricted_images(migration_library):
     exp=experiment('homogeneous',nt=20);owner=driver.RequestOwner(exp,[np.ones((exp.nt,len(exp.receivers),2),np.float32)])
     result=driver.MigrationResult()
-    assert migration_library.denise_elastic_psv_migrate(C.byref(owner.request),C.byref(result))!=0
-    assert b'FLUID-2' in migration_library.denise_elastic_psv_migration_last_error()
+    try:
+        assert migration_library.denise_elastic_psv_migrate(C.byref(owner.request),C.byref(result))==0
+        assert b'FLUID-2' not in migration_library.denise_elastic_psv_migration_last_error()
+        assert result.image_lambda_raw and result.image_mu_raw
+        images=np.stack([np.ctypeslib.as_array(a,shape=(result.cell_count,)).copy().reshape(exp.mu.shape)
+            for a in (result.image_lambda_raw,result.image_mu_raw)])
+        assert np.isfinite(images).all()
+        np.testing.assert_array_equal(images[1],0.)
+        assert not np.signbit(images[1]).any()
+    finally:migration_library.denise_elastic_psv_migration_result_destroy(C.byref(result))
     assert not result.image_lambda_raw and not result.image_mu_raw
+    owner.model[1][0,0]=-1.
+    assert migration_library.denise_elastic_psv_migrate(C.byref(owner.request),C.byref(result))!=0
+    assert not result.image_lambda_raw and not result.image_mu_raw
+    owner.model[1][0,0]=0.
+    recovered,_=driver._run(migration_library,owner)
+    assert np.stack(recovered).tobytes()==images.tobytes()
     owner.model[1].fill(1)
     images,_=driver._run(migration_library,owner);assert all(np.isfinite(a).all() for a in images)
 @pytest.mark.parametrize('name',['forward','full','migration','replay'])

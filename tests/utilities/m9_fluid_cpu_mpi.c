@@ -11,13 +11,14 @@ static void write_values(const char *dir,const char *name,const void *p,size_t n
     require(fwrite(p,s,n,f)==n);require(fclose(f)==0);
 }
 int main(int argc,char **argv) {
-    int h[7],size,px,py,segments,k,nx,ny,j,i,nr,invalid;float p[7];
+    int h[7],size,px,py,segments,k,nx,ny,j,i,nr,invalid,owner,candidate;float p[7];
     float *global[5],*local[5],*src,*data,*again,*out,*q;
-    int *ri,*rj;size_t n,gn,dc;FILE *f;
+    int *ri,*rj;size_t n,gn,dc,fluid_cell;FILE *f;
     double *images,*assembled;
     struct denise_elastic_psv_born_mpi_config cfg;
     struct denise_elastic_psv_born_mpi *c=NULL;
     struct denise_elastic_psv_born_storage_diagnostics before,after;
+    struct denise_elastic_psv_born_mpi_diagnostics work_before,work_after;
     MPI_Init(&argc,&argv);MPI_Comm_rank(MPI_COMM_WORLD,&rank);MPI_Comm_size(MPI_COMM_WORLD,&size);
     require(argc==6);px=atoi(argv[3]);py=atoi(argv[4]);segments=atoi(argv[5]);
     f=fopen(argv[1],"rb");require(f!=NULL);read_values(f,h,7,sizeof(int));read_values(f,p,7,sizeof(float));
@@ -51,15 +52,23 @@ int main(int argc,char **argv) {
     data=calloc(dc+1,4);again=calloc(dc+1,4);out=malloc(((size_t)h[2]*h[6]*2+1)*4);
     images=malloc(n*2*sizeof(double));assembled=malloc(gn*sizeof(double));q=malloc(4*n*4);
     require(data&&again&&out&&images&&assembled&&q);
-    /* Capability guard is also explicit on an unprepared fluid context. */
+    /* Valid pointers/directions, but no background has been prepared. The
+       public MPI preflight uses a collective diagnostic for this lifecycle
+       failure; do not expect the removed FLUID-2 capability diagnostic. */
+    require(!denise_elastic_psv_born_mpi_is_prepared(c));
+    require(denise_elastic_psv_born_mpi_diagnostics(c,&work_before)==0);
     for(k=0;k<(int)dc;k++)again[k]=37;
     for(k=0;k<(int)(2*n);k++)images[k]=41;
     require(denise_elastic_psv_born_mpi_apply_j(c,local[3],local[4],again)!=0);
-    require(strstr(denise_elastic_psv_born_mpi_last_error(),"FLUID-2")!=NULL);
+    require(strcmp(denise_elastic_psv_born_mpi_last_error(),"MPI elastic P/SV collective failure (including a remote rank)")==0);
     require(denise_elastic_psv_born_mpi_apply_jt(c,data,images,images+n)!=0);
-    require(strstr(denise_elastic_psv_born_mpi_last_error(),"FLUID-2")!=NULL);
+    require(strcmp(denise_elastic_psv_born_mpi_last_error(),"MPI elastic P/SV collective failure (including a remote rank)")==0);
     for(k=0;k<(int)dc;k++)require(again[k]==37);
     for(k=0;k<(int)(2*n);k++)require(images[k]==41);
+    require(denise_elastic_psv_born_mpi_diagnostics(c,&work_after)==0);
+    require(memcmp(&work_before,&work_after,sizeof(work_before))==0);
+    require(!denise_elastic_psv_born_mpi_is_prepared(c));
+    if(!rank)puts("FLUID_MPI_UNPREPARED_LIFECYCLE_NO_WORK_PASS");
     for(k=0;k<3;k++) {
         float *map=k==0?c->invrho_x:k==1?c->invrho_y:c->mu_corner;size_t z;
         for(z=0;z<c->cells;z++)if(owned(c,z))images[compact(c,z)]=map[z];
@@ -72,21 +81,56 @@ int main(int argc,char **argv) {
     require(denise_elastic_psv_born_mpi_copy_strain(c,h[2]-1,q)==0);
     require(denise_elastic_psv_born_mpi_checkpoint_roundtrip(c,h[2]/2)==0);
     require(fetestexcept(FE_DIVBYZERO|FE_INVALID)==0);
+    /* Prepared restricted J/JT are now supported on these same old fixtures. */
+    for(k=0;k<(int)n;k++) {
+        local[3][k]=0.001f*local[0][k];
+        local[4][k]=local[1][k]==0.0f?0.0f:0.001f*local[1][k];
+    }
+    require(denise_elastic_psv_born_mpi_apply_j(c,local[3],local[4],again)==0);
+    require(strstr(denise_elastic_psv_born_mpi_last_error(),"FLUID-2")==NULL);
+    for(k=0;k<(int)dc;k++)require(isfinite(again[k]));
+    require(denise_elastic_psv_born_mpi_apply_jt(c,data,images,images+n)==0);
+    require(strstr(denise_elastic_psv_born_mpi_last_error(),"FLUID-2")==NULL);
+    for(k=0;k<(int)n;k++) {
+        require(isfinite(images[k])&&isfinite(images[n+k]));
+        if(local[1][k]==0.0f)require(images[n+k]==0.0&&!signbit(images[n+k]));
+    }
+    require(denise_elastic_psv_born_mpi_is_prepared(c));
+    require(denise_elastic_psv_born_mpi_storage_diagnostics(c,&after)==0);
+    require(after.initial_forward_steps==(size_t)h[2]);
+    require(after.replayed_forward_steps_last==(segments?(size_t)h[2]:0));
+    require(fetestexcept(FE_DIVBYZERO|FE_INVALID)==0);
+    if(!rank)puts("FLUID_MPI_PREPARED_RESTRICTED_J_JT_PASS");
+    /* Exactly one owned physical fluid cell is invalid, not every fluid J. */
+    fluid_cell=n;candidate=size;
+    for(k=0;k<(int)n;k++)if(local[1][k]==0.0f&&fluid_cell==n) {
+        fluid_cell=(size_t)k;candidate=rank;
+    }
+    MPI_Allreduce(&candidate,&owner,1,MPI_INT,MPI_MIN,MPI_COMM_WORLD);
+    require(owner<size);
+    if(rank==owner)local[4][fluid_cell]=1.0f;
+    for(k=0;k<=(int)dc;k++)again[k]=37;
     require(denise_elastic_psv_born_mpi_storage_diagnostics(c,&before)==0);
-    for(k=0;k<(int)dc;k++)again[k]=37;
-    for(k=0;k<(int)(2*n);k++)images[k]=41;
+    require(denise_elastic_psv_born_mpi_diagnostics(c,&work_before)==0);
     require(denise_elastic_psv_born_mpi_apply_j(c,local[3],local[4],again)!=0);
-    require(strstr(denise_elastic_psv_born_mpi_last_error(),"FLUID-2")!=NULL);
-    require(denise_elastic_psv_born_mpi_apply_jt(c,data,images,images+n)!=0);
-    require(strstr(denise_elastic_psv_born_mpi_last_error(),"FLUID-2")!=NULL);
-    for(k=0;k<(int)dc;k++)require(again[k]==37);
-    for(k=0;k<(int)(2*n);k++)require(images[k]==41);
+    require(strstr(denise_elastic_psv_born_mpi_last_error(),"nonzero fluid dMu")!=NULL);
+    for(k=0;k<=(int)dc;k++)require(again[k]==37);
     require(denise_elastic_psv_born_mpi_storage_diagnostics(c,&after)==0);
     require(memcmp(&before,&after,sizeof(before))==0);
+    require(denise_elastic_psv_born_mpi_diagnostics(c,&work_after)==0);
+    require(memcmp(&work_before,&work_after,sizeof(work_before))==0);
+    if(rank==owner)local[4][fluid_cell]=0.0f;
+    require(denise_elastic_psv_born_mpi_apply_j(c,local[3],local[4],again)==0);
+    for(k=0;k<(int)dc;k++)require(isfinite(again[k]));
+    if(!rank)puts("FLUID_MPI_SINGLE_OWNER_INVALID_DMU_TRANSACTION_RECOVERY_PASS");
     /* One-rank-only invalid trial; all ranks reject before material transport. */
+    for(k=0;k<(int)dc;k++)again[k]=37;
+    require(denise_elastic_psv_born_mpi_storage_diagnostics(c,&before)==0);
     if(rank==0)local[1][0]=local[1][0]==0?1:0;
     require(denise_elastic_psv_born_mpi_nonlinear(c,local[0],local[1],again)!=0);
     for(k=0;k<(int)dc;k++)require(again[k]==37);
+    require(denise_elastic_psv_born_mpi_storage_diagnostics(c,&after)==0);
+    require(memcmp(&before,&after,sizeof(before))==0);
     for(j=0;j<ny;j++)for(i=0;i<nx;i++)local[1][(size_t)j*nx+i]=global[1][(size_t)(rank/px*ny+j)*h[0]+rank%px*nx+i];
     require(denise_elastic_psv_born_mpi_nonlinear(c,local[0],local[1],again)==0);
     require(memcmp(data,again,dc*4)==0);

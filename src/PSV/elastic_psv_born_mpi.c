@@ -938,6 +938,11 @@ static void harmonic_tangent(const struct denise_elastic_psv_born_mpi *c,
         int ip=(i+1),jp=(j+1); size_t p=cell(c,j,i);
         size_t p10=cell(c,j,ip),p01=cell(c,jp,i),p11=cell(c,jp,ip);
         double h=c->mu_corner[p];
+        /* Fixed classification: a mixed/fluid corner is constant zero. */
+        if(c->mu[p]==0.0f || c->mu[p10]==0.0f
+           || c->mu[p01]==0.0f || c->mu[p11]==0.0f) {
+            out[p]=0.0f; continue;
+        }
         out[p]=(float)(0.25*h*h*(dmu[p]/((double)c->mu[p]*c->mu[p])
              +dmu[p10]/((double)c->mu[p10]*c->mu[p10])
              +dmu[p01]/((double)c->mu[p01]*c->mu[p01])
@@ -1038,7 +1043,11 @@ static void harmonic_transpose_add(const struct denise_elastic_psv_born_mpi *c,
     for(j=0;j<c->ny;j++) for(i=0;i<c->nx;i++) {
         int ip=(i+1),jp=(j+1); size_t p=cell(c,j,i);
         size_t p10=cell(c,j,ip),p01=cell(c,jp,i),p11=cell(c,jp,ip);
-        double common=0.25*(double)c->mu_corner[p]*c->mu_corner[p]*corner_bar[p];
+        double common;
+        /* No harmonic VJP to ANY contributor of a mixed/fluid corner. */
+        if(c->mu[p]==0.0f || c->mu[p10]==0.0f
+           || c->mu[p01]==0.0f || c->mu[p11]==0.0f)continue;
+        common=0.25*(double)c->mu_corner[p]*c->mu_corner[p]*corner_bar[p];
         gmu[p]+=common/((double)c->mu[p]*c->mu[p]);
         gmu[p10]+=common/((double)c->mu[p10]*c->mu[p10]);
         gmu[p01]+=common/((double)c->mu[p01]*c->mu[p01]);
@@ -1552,11 +1561,14 @@ static int compact_inputs(struct denise_elastic_psv_born_mpi *c,const float *a,c
     for(p=0;p<c->owned_cells;p++) {
         size_t background=cell(c,(int)(p/c->nx),(int)(p%c->nx));
         if(!isfinite(a[p])||!isfinite(b[p]))bad=1;
+        /* Collective owned validation before allocation, tangent halos,
+           replay counters and caller output writes. Signed zero is valid. */
+        if(!material && c->mu[background]==0.0f && b[p]!=0.0f)bad=1;
         if(material && (!(b[p]>=0.0f)||(b[p]==0.0f)!=(c->mu[background]==0.0f)
             ||(b[p]==0.0f && !(a[p]>0.0f))
             ||(c->free_surface && !((double)a[p]+2.0*b[p]>0.0))))bad=1;
     }
-    if(agree(c,bad)!=0)return fail("MPI nonlinear/direction material invalid or changes prepared fluid classification");
+    if(agree(c,bad)!=0)return fail("MPI nonlinear/direction material invalid, changes prepared fluid classification, or has nonzero fluid dMu");
     *ha=checked_calloc(c->cells,sizeof(float));*hb=checked_calloc(c->cells,sizeof(float));
     if(agree(c,!*ha||!*hb)!=0){free(*ha);free(*hb);*ha=*hb=NULL;return -1;}
     unpack(c,*ha,a);unpack(c,*hb,b);halo_float(c,*hb,0);
@@ -1565,11 +1577,7 @@ static int compact_inputs(struct denise_elastic_psv_born_mpi *c,const float *a,c
 int denise_elastic_psv_born_mpi_apply_j(struct denise_elastic_psv_born_mpi *c,const float *a,const float *b,float *data) {
     float *ha,*hb;int status;
     if(!c)return fail("MPI context is null");
-    {
-        size_t p;int fluid=0;
-        for(p=0;p<c->cells;p++)if(owned(c,p)&&c->mu[p]==0.0f)fluid=1;
-        if(agree(c,fluid)!=0)return fail("fluid MPI J requires FLUID-2 restricted tangent implementation");
-    }
+
     if(preflight(c,!c->prepared||(!data&&c->data_count))!=0)return -1;
     if(compact_inputs(c,a,b,&ha,&hb,0)!=0)return -1;
     status=core_apply_j(c,ha,hb,data?data:ha);free(ha);free(hb);return agree(c,status!=0);
@@ -1583,15 +1591,14 @@ int denise_elastic_psv_born_mpi_nonlinear(struct denise_elastic_psv_born_mpi *c,
 int denise_elastic_psv_born_mpi_apply_jt(struct denise_elastic_psv_born_mpi *c,const float *data,double *a,double *b) {
     double *ha,*hb;size_t p;int status,bad=0;float empty=0;
     if(!c)return fail("MPI context is null");
-    for(p=0;p<c->cells;p++)if(owned(c,p)&&c->mu[p]==0.0f)bad=1;
-    if(agree(c,bad)!=0)return fail("fluid MPI JT requires FLUID-2 restricted tangent implementation");
+
     if(preflight(c,!c->prepared||!a||!b||(!data&&c->data_count))!=0)return -1;
     for(p=0;p<c->data_count;p++)if(!isfinite(data[p]))bad=1;
     if(agree(c,bad)!=0)return -1;
     ha=checked_calloc(c->cells,sizeof(double));hb=checked_calloc(c->cells,sizeof(double));
     if(agree(c,!ha||!hb)!=0){free(ha);free(hb);return -1;}
     status=core_apply_jt(c,data?data:&empty,ha,hb);
-    for(p=0;p<c->cells;p++)if(owned(c,p)){a[compact(c,p)]=ha[p];b[compact(c,p)]=hb[p];}
+    for(p=0;p<c->cells;p++)if(owned(c,p)){a[compact(c,p)]=ha[p];b[compact(c,p)]=c->mu[p]==0.0f?0.0:hb[p];}
     free(ha);free(hb);return agree(c,status!=0);
 }
 int denise_elastic_psv_born_mpi_copy_strain(const struct denise_elastic_psv_born_mpi *c,int timestep,float *out) {

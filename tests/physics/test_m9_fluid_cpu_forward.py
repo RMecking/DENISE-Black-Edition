@@ -86,7 +86,8 @@ def test_wrapped_production_material_maps(fluid_library,pattern):
         np.testing.assert_array_equal(c.maps(),np.stack((m.rx,m.ry,m.corner)).astype(np.float32))
     finally:c.close()
 @pytest.mark.parametrize('segments',[0,1,3,7])
-def test_actual_homogeneous_acoustic_forward_and_fail_closed(fluid_library,segments):
+def test_actual_homogeneous_acoustic_forward_and_restricted_jjt(fluid_library,segments):
+    from tests.physics.test_m9_fluid_restricted_jjt import j,jt
     c=Context(fluid_library,segments=segments)
     try:
         got=c.prepare();data,state,q,_=c.products();assert got.tobytes()==data.tobytes()
@@ -98,14 +99,23 @@ def test_actual_homogeneous_acoustic_forward_and_fail_closed(fluid_library,segme
         reference=frozen.acoustic_forward()[0];error=np.linalg.norm(got-reference)/np.linalg.norm(reference)
         assert error<=1e-5
         c.check(fluid_library.denise_elastic_psv_born_checkpoint_roundtrip(c.c,43))
-        before=c.snapshot();out=np.full(c.data_shape,37,np.float32);image=np.full((2,*c.shape),41.,np.float64);direction=np.zeros(c.shape,np.float32)
-        assert fluid_library.denise_elastic_psv_born_apply_j(c.c,fp(direction),fp(direction),fp(out))!=0
-        assert b'FLUID-2' in fluid_library.denise_elastic_psv_born_last_error()
-        assert fluid_library.denise_elastic_psv_born_apply_jt(c.c,fp(got),dp(image[0]),dp(image[1]))!=0
-        assert b'FLUID-2' in fluid_library.denise_elastic_psv_born_last_error()
-        assert np.all(out==37) and np.all(image==41) and c.snapshot()==before
+        before=replay.StorageDiagnostics.from_buffer_copy(c.snapshot())
+        direction=np.zeros(c.shape,np.float32)
+        out=j(c,direction,direction)
+        np.testing.assert_array_equal(out,0.)
+        assert b'FLUID-2' not in fluid_library.denise_elastic_psv_born_last_error()
+        image=jt(c,got)
+        assert np.isfinite(image).all()
+        np.testing.assert_array_equal(image[1],0.)
+        assert not np.signbit(image[1]).any()
+        assert b'FLUID-2' not in fluid_library.denise_elastic_psv_born_last_error()
+        after=replay.StorageDiagnostics.from_buffer_copy(c.snapshot())
+        for name,_ in replay.StorageDiagnostics._fields_:
+            if name!='replayed_forward_steps_last':assert getattr(after,name)==getattr(before,name)
+        assert after.initial_forward_steps==c.cfg.nt
+        assert after.replayed_forward_steps_last==(c.cfg.nt if segments else 0)
         assert c.prepare().tobytes()==got.tobytes()
-        RECORDS.append({'homogeneous_segments':segments,'data_relative_l2':float(error),'strain_norm':float(np.linalg.norm(q)),'sxy_zero':True,'J_JT_no_mutation':True})
+        RECORDS.append({'homogeneous_segments':segments,'data_relative_l2':float(error),'strain_norm':float(np.linalg.norm(q)),'sxy_zero':True,'restricted_J_zero_JT_finite_gMu_positive_zero':True})
     finally:c.close()
 @pytest.mark.parametrize('fs',[0,1])
 @pytest.mark.parametrize('interface',[False,True])
@@ -152,7 +162,15 @@ def test_copied_fp32_classification_no_epsilon_or_caller_mask(fluid_library):
         expected=c.maps().copy();c.mu[0,0]=1 # External mutation cannot alter context classification.
         c.prepare();np.testing.assert_array_equal(c.maps(),expected)
         out=np.full(c.data_shape,19,np.float32);dm=np.zeros(c.shape,np.float32)
-        assert fluid_library.denise_elastic_psv_born_apply_j(c.c,fp(dm),fp(dm),fp(out))!=0 and np.all(out==19)
+        c.check(fluid_library.denise_elastic_psv_born_apply_j(c.c,fp(dm),fp(dm),fp(out)))
+        np.testing.assert_array_equal(out,0.)
+        before=c.snapshot();bad=dm.copy();bad[0,0]=1.;out.fill(19)
+        assert fluid_library.denise_elastic_psv_born_apply_j(c.c,fp(dm),fp(bad),fp(out))!=0
+        assert b'nonzero fluid dMu' in fluid_library.denise_elastic_psv_born_last_error()
+        assert np.all(out==19) and c.snapshot()==before
+        np.testing.assert_array_equal(c.maps(),expected)
+        c.check(fluid_library.denise_elastic_psv_born_apply_j(c.c,fp(dm),fp(dm),fp(out)))
+        np.testing.assert_array_equal(out,0.)
         assert c.maps()[2,1,1]>0
     finally:c.close()
 def test_preserve_negative_lambda_solid_envelope(fluid_library):

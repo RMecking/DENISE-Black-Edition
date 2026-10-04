@@ -958,6 +958,11 @@ static void harmonic_tangent(const struct denise_elastic_psv_born *c,
         int ip=wrap(i+1,c->nx),jp=wrap(j+1,c->ny); size_t p=cell(c,j,i);
         size_t p10=cell(c,j,ip),p01=cell(c,jp,i),p11=cell(c,jp,ip);
         double h=c->mu_corner[p];
+        /* Fixed classification: a mixed/fluid corner is constant zero. */
+        if(c->mu[p]==0.0f || c->mu[p10]==0.0f
+           || c->mu[p01]==0.0f || c->mu[p11]==0.0f) {
+            out[p]=0.0f; continue;
+        }
         out[p]=(float)(0.25*h*h*(dmu[p]/((double)c->mu[p]*c->mu[p])
              +dmu[p10]/((double)c->mu[p10]*c->mu[p10])
              +dmu[p01]/((double)c->mu[p01]*c->mu[p01])
@@ -1000,8 +1005,8 @@ int denise_elastic_psv_born_apply_j(struct denise_elastic_psv_born *c,
     float *f[FIELD_COUNT],*psi[PSI_COUNT],*q[4],*dcorner=NULL;
     int k,r,segment,segment_count; size_t p;
     if(!c||!dlam||!dmu||!data)return fail("elastic P/SV Born J received a null pointer");
-    for(p=0;p<c->cells;p++)if(c->mu[p]==0.0f)
-        return fail("fluid J requires FLUID-2 restricted tangent implementation");
+    for(p=0;p<c->cells;p++)if(c->mu[p]==0.0f && dmu[p]!=0.0f)
+        return fail("nonzero fluid dMu is outside the restricted tangent space");
     if(!c->prepared)return fail("elastic P/SV Born J requires a prepared background trajectory");
     memset(data,0,c->data_count*sizeof(float));
     if(allocate_forward(f,psi,q,c->cells)!=0) { free_forward(f,psi,q); return fail("out of memory allocating Born tangent state"); }
@@ -1056,7 +1061,11 @@ static void harmonic_transpose_add(const struct denise_elastic_psv_born *c,
     for(j=0;j<c->ny;j++) for(i=0;i<c->nx;i++) {
         int ip=wrap(i+1,c->nx),jp=wrap(j+1,c->ny); size_t p=cell(c,j,i);
         size_t p10=cell(c,j,ip),p01=cell(c,jp,i),p11=cell(c,jp,ip);
-        double common=0.25*(double)c->mu_corner[p]*c->mu_corner[p]*corner_bar[p];
+        double common;
+        /* No harmonic VJP to ANY contributor of a mixed/fluid corner. */
+        if(c->mu[p]==0.0f || c->mu[p10]==0.0f
+           || c->mu[p01]==0.0f || c->mu[p11]==0.0f)continue;
+        common=0.25*(double)c->mu_corner[p]*c->mu_corner[p]*corner_bar[p];
         gmu[p]+=common/((double)c->mu[p]*c->mu[p]);
         gmu[p10]+=common/((double)c->mu[p10]*c->mu[p10]);
         gmu[p01]+=common/((double)c->mu[p01]*c->mu[p01]);
@@ -1181,8 +1190,7 @@ int denise_elastic_psv_born_apply_jt(struct denise_elastic_psv_born *c,
     double *bar[FIELD_COUNT],*psi[PSI_COUNT],*q=NULL,*gcorner=NULL,*surface_q=NULL;
     int k,r,segment,segment_count;size_t p;
     if(!c||!data||!glam||!gmu)return fail("elastic P/SV Born Jt received a null pointer");
-    for(p=0;p<c->cells;p++)if(c->mu[p]==0.0f)
-        return fail("fluid JT requires FLUID-2 restricted tangent implementation");
+
     if(!c->prepared)return fail("elastic P/SV Born Jt requires a prepared background trajectory");
     memset(glam,0,c->cells*sizeof(double));memset(gmu,0,c->cells*sizeof(double));
     if(allocate_adjoint(bar,psi,&q,c->cells)!=0){free_adjoint(bar,psi,q);return fail("out of memory allocating Born adjoint state");}
@@ -1238,6 +1246,9 @@ int denise_elastic_psv_born_apply_jt(struct denise_elastic_psv_born *c,
         reverse_pml_field(c,PSYY,q,psi[PSYY]);derivative_transpose_add(c,bar[SYY],q,DY_FWD,c->coefficient);
       }
     }
+    /* Transpose of the restricted material injection, owned by this operator.
+       Wave/adjoint state and adjacent solid sensitivities are unchanged. */
+    for(p=0;p<c->cells;p++)if(c->mu[p]==0.0f)gmu[p]=0.0;
     free(surface_q);free(gcorner);free_adjoint(bar,psi,q);return 0;
 }
 
