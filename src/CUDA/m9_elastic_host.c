@@ -26,7 +26,16 @@ struct m9_host { struct denise_elastic_psv_born *cpu; struct denise_elastic_psv_
 int m9_host_create(const struct denise_elastic_psv_born_config *cfg,struct m9_host **out){
  struct m9_host *h;
  if(!out)return -1;
- *out=NULL;h=m9_host_calloc(1,sizeof(*h));if(!h)return -1;
+ *out=NULL;
+ /* CPU fluid F does not extend the published CUDA numerical envelope. This
+  * host-only guard also covers temporary nonlinear trial material contexts. */
+ if(cfg && cfg->mu && cfg->nx>0 && cfg->ny>0 &&
+    (uint64_t)cfg->nx*(uint64_t)cfg->ny<=INT_MAX) {
+  size_t n;
+  for(n=0;n<(size_t)cfg->nx*cfg->ny;n++)if(cfg->mu[n]==0.0f)
+   return fail("fluid CUDA requires FLUID-4 before GPU numerical execution");
+ }
+ h=m9_host_calloc(1,sizeof(*h));if(!h)return -1;
  if(m9_private_denise_elastic_psv_born_create(cfg,&h->cpu)){m9_host_free(h);return -1;}
  h->cfg=*cfg;h->cfg.lambda=h->cpu->lambda;h->cfg.mu=h->cpu->mu;h->cfg.rho=h->cpu->rho;
  h->cfg.source_samples=h->cpu->source_samples;h->cfg.receiver_i=h->cpu->receiver_i;h->cfg.receiver_j=h->cpu->receiver_j;

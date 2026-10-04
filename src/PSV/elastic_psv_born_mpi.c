@@ -347,7 +347,8 @@ static void build_material_maps(struct denise_elastic_psv_born_mpi *c) {
         double m01 = c->mu[cell(c,jp,i)], m11 = c->mu[cell(c,jp,ip)];
         c->invrho_x[p] = (float)(2.0 / ((double)c->rho[p] + c->rho[cell(c,j,ip)]));
         c->invrho_y[p] = (float)(2.0 / ((double)c->rho[p] + c->rho[cell(c,jp,i)]));
-        c->mu_corner[p] = (float)(4.0 / (1.0/m00 + 1.0/m10 + 1.0/m01 + 1.0/m11));
+        c->mu_corner[p] = (m00 == 0.0 || m10 == 0.0 || m01 == 0.0 || m11 == 0.0)
+            ? 0.0f : (float)(4.0 / (1.0/m00 + 1.0/m10 + 1.0/m01 + 1.0/m11));
     }
 }
 
@@ -874,7 +875,9 @@ static int run_nonlinear(struct denise_elastic_psv_born_mpi *c, const float *lam
     if(agree(c,!corner)!=0) { fail("out of memory allocating elastic shear map"); goto cleanup; }
     for(k=0;k<c->ny;k++) for(r=0;r<c->nx;r++) {
         int ip=(r+1),jp=(k+1); p=cell(c,k,r);
-        corner[p]=(float)(4.0/(1.0/mu[p]+1.0/mu[cell(c,k,ip)]
+        corner[p]=(mu[p]==0.0f || mu[cell(c,k,ip)]==0.0f
+                    || mu[cell(c,jp,r)]==0.0f || mu[cell(c,jp,ip)]==0.0f)
+                    ? 0.0f : (float)(4.0/(1.0/mu[p]+1.0/mu[cell(c,k,ip)]
                     +1.0/mu[cell(c,jp,r)]+1.0/mu[cell(c,jp,ip)]));
     }
     if(data) memset(data,0,c->data_count*sizeof(float));
@@ -1237,9 +1240,9 @@ cleanup:
 
 static int core_nonlinear(struct denise_elastic_psv_born_mpi *c,
                                       const float *lambda,const float *mu,float *data) {
-    size_t p;
     if(!c||!lambda||!mu||!data)return fail("elastic P/SV nonlinear map received a null pointer");
-    for(p=0;p<c->cells;p++) if(owned(c,p))if(!(mu[p]>0.0f)||!isfinite(lambda[p])||(c->free_surface && !((double)lambda[p]+2.0*mu[p]>0.0)))return fail("elastic P/SV nonlinear material is invalid");
+    /* Collective validation, including classification, precedes compact halo
+     * transport in the public nonlinear entry point. */
     return run_nonlinear(c,lambda,mu,data,NULL,0,0);
 }
 
@@ -1440,7 +1443,7 @@ int denise_elastic_psv_born_mpi_create(
     n=(size_t)lnx*lny;
     for(k=0;k<q->nt;k++)if(!isfinite(q->source_samples[k]))bad=1;
     for(r=0;r<q->receiver_count;r++)if(q->receiver_i[r]<0||q->receiver_i[r]>=q->nx||q->receiver_j[r]<0||q->receiver_j[r]>=q->ny)bad=1;
-    for(n=0;n<(size_t)lnx*lny;n++)if(!isfinite(q->lambda[n])||!isfinite(q->mu[n])||!isfinite(q->rho[n])||!(q->mu[n]>0)||!(q->rho[n]>0)||(q->free_surface&&!((double)q->lambda[n]+2.0*q->mu[n]>0.0)))bad=1;
+    for(n=0;n<(size_t)lnx*lny;n++)if(!isfinite(q->lambda[n])||!isfinite(q->mu[n])||!isfinite(q->rho[n])||!(q->mu[n]>=0)||!(q->rho[n]>0)||(q->mu[n]==0 && !(q->lambda[n]>0))||(q->free_surface&&!((double)q->lambda[n]+2.0*q->mu[n]>0.0)))bad=1;
     hash=(unsigned long long)signature(q);
     MPI_Allreduce(&hash,&lo,1,MPI_UNSIGNED_LONG_LONG,MPI_MIN,comm);
     MPI_Allreduce(&hash,&hi,1,MPI_UNSIGNED_LONG_LONG,MPI_MAX,comm);
@@ -1546,8 +1549,14 @@ static int compact_inputs(struct denise_elastic_psv_born_mpi *c,const float *a,c
     size_t p;int bad=!a||!b;
     *ha=NULL;*hb=NULL;
     if(preflight(c,bad)!=0)return -1;
-    for(p=0;p<c->owned_cells;p++)if(!isfinite(a[p])||!isfinite(b[p])||(material&&!(b[p]>0)))bad=1;
-    if(agree(c,bad)!=0)return -1;
+    for(p=0;p<c->owned_cells;p++) {
+        size_t background=cell(c,(int)(p/c->nx),(int)(p%c->nx));
+        if(!isfinite(a[p])||!isfinite(b[p]))bad=1;
+        if(material && (!(b[p]>=0.0f)||(b[p]==0.0f)!=(c->mu[background]==0.0f)
+            ||(b[p]==0.0f && !(a[p]>0.0f))
+            ||(c->free_surface && !((double)a[p]+2.0*b[p]>0.0))))bad=1;
+    }
+    if(agree(c,bad)!=0)return fail("MPI nonlinear/direction material invalid or changes prepared fluid classification");
     *ha=checked_calloc(c->cells,sizeof(float));*hb=checked_calloc(c->cells,sizeof(float));
     if(agree(c,!*ha||!*hb)!=0){free(*ha);free(*hb);*ha=*hb=NULL;return -1;}
     unpack(c,*ha,a);unpack(c,*hb,b);halo_float(c,*hb,0);
@@ -1555,7 +1564,13 @@ static int compact_inputs(struct denise_elastic_psv_born_mpi *c,const float *a,c
 }
 int denise_elastic_psv_born_mpi_apply_j(struct denise_elastic_psv_born_mpi *c,const float *a,const float *b,float *data) {
     float *ha,*hb;int status;
-    if(preflight(c,!c||!c->prepared||(!data&&c->data_count))!=0)return -1;
+    if(!c)return fail("MPI context is null");
+    {
+        size_t p;int fluid=0;
+        for(p=0;p<c->cells;p++)if(owned(c,p)&&c->mu[p]==0.0f)fluid=1;
+        if(agree(c,fluid)!=0)return fail("fluid MPI J requires FLUID-2 restricted tangent implementation");
+    }
+    if(preflight(c,!c->prepared||(!data&&c->data_count))!=0)return -1;
     if(compact_inputs(c,a,b,&ha,&hb,0)!=0)return -1;
     status=core_apply_j(c,ha,hb,data?data:ha);free(ha);free(hb);return agree(c,status!=0);
 }
@@ -1567,7 +1582,10 @@ int denise_elastic_psv_born_mpi_nonlinear(struct denise_elastic_psv_born_mpi *c,
 }
 int denise_elastic_psv_born_mpi_apply_jt(struct denise_elastic_psv_born_mpi *c,const float *data,double *a,double *b) {
     double *ha,*hb;size_t p;int status,bad=0;float empty=0;
-    if(preflight(c,!c||!c->prepared||!a||!b||(!data&&c->data_count))!=0)return -1;
+    if(!c)return fail("MPI context is null");
+    for(p=0;p<c->cells;p++)if(owned(c,p)&&c->mu[p]==0.0f)bad=1;
+    if(agree(c,bad)!=0)return fail("fluid MPI JT requires FLUID-2 restricted tangent implementation");
+    if(preflight(c,!c->prepared||!a||!b||(!data&&c->data_count))!=0)return -1;
     for(p=0;p<c->data_count;p++)if(!isfinite(data[p]))bad=1;
     if(agree(c,bad)!=0)return -1;
     ha=checked_calloc(c->cells,sizeof(double));hb=checked_calloc(c->cells,sizeof(double));

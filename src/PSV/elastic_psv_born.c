@@ -281,7 +281,9 @@ static int validate_config(const struct denise_elastic_psv_born_config *q) {
     if ((size_t)q->receiver_count > SIZE_MAX / (2u * (size_t)q->nt))
         return fail("elastic P/SV Born data size overflows size_t");
     for (p = 0; p < (int)cells; ++p)
-        if (!(q->rho[p] > 0.0f) || !(q->mu[p] > 0.0f) || !isfinite(q->lambda[p])
+        if (!(q->rho[p] > 0.0f) || !(q->mu[p] >= 0.0f) || !isfinite(q->lambda[p])
+            || (q->mu[p] == 0.0f && (!isfinite(q->rho[p])
+                || !(q->lambda[p] > 0.0f)))
             || (q->free_surface && !((double)q->lambda[p]+2.0*q->mu[p]>0.0)))
             return fail("elastic P/SV Born material arrays contain an invalid cell");
     for (p = 0; p < q->receiver_count; ++p)
@@ -319,7 +321,8 @@ static void build_material_maps(struct denise_elastic_psv_born *c) {
         double m01 = c->mu[cell(c,jp,i)], m11 = c->mu[cell(c,jp,ip)];
         c->invrho_x[p] = (float)(2.0 / ((double)c->rho[p] + c->rho[cell(c,j,ip)]));
         c->invrho_y[p] = (float)(2.0 / ((double)c->rho[p] + c->rho[cell(c,jp,i)]));
-        c->mu_corner[p] = (float)(4.0 / (1.0/m00 + 1.0/m10 + 1.0/m01 + 1.0/m11));
+        c->mu_corner[p] = (m00 == 0.0 || m10 == 0.0 || m01 == 0.0 || m11 == 0.0)
+            ? 0.0f : (float)(4.0 / (1.0/m00 + 1.0/m10 + 1.0/m01 + 1.0/m11));
     }
 }
 
@@ -894,7 +897,9 @@ static int run_nonlinear(struct denise_elastic_psv_born *c, const float *lambda,
     if(!corner) { free_forward(f,psi,q); return fail("out of memory allocating elastic shear map"); }
     for(k=0;k<c->ny;k++) for(r=0;r<c->nx;r++) {
         int ip=wrap(r+1,c->nx),jp=wrap(k+1,c->ny); p=cell(c,k,r);
-        corner[p]=(float)(4.0/(1.0/mu[p]+1.0/mu[cell(c,k,ip)]
+        corner[p]=(mu[p]==0.0f || mu[cell(c,k,ip)]==0.0f
+                    || mu[cell(c,jp,r)]==0.0f || mu[cell(c,jp,ip)]==0.0f)
+                    ? 0.0f : (float)(4.0/(1.0/mu[p]+1.0/mu[cell(c,k,ip)]
                     +1.0/mu[cell(c,jp,r)]+1.0/mu[cell(c,jp,ip)]));
     }
     if(data) memset(data,0,c->data_count*sizeof(float));
@@ -995,6 +1000,8 @@ int denise_elastic_psv_born_apply_j(struct denise_elastic_psv_born *c,
     float *f[FIELD_COUNT],*psi[PSI_COUNT],*q[4],*dcorner=NULL;
     int k,r,segment,segment_count; size_t p;
     if(!c||!dlam||!dmu||!data)return fail("elastic P/SV Born J received a null pointer");
+    for(p=0;p<c->cells;p++)if(c->mu[p]==0.0f)
+        return fail("fluid J requires FLUID-2 restricted tangent implementation");
     if(!c->prepared)return fail("elastic P/SV Born J requires a prepared background trajectory");
     memset(data,0,c->data_count*sizeof(float));
     if(allocate_forward(f,psi,q,c->cells)!=0) { free_forward(f,psi,q); return fail("out of memory allocating Born tangent state"); }
@@ -1174,6 +1181,8 @@ int denise_elastic_psv_born_apply_jt(struct denise_elastic_psv_born *c,
     double *bar[FIELD_COUNT],*psi[PSI_COUNT],*q=NULL,*gcorner=NULL,*surface_q=NULL;
     int k,r,segment,segment_count;size_t p;
     if(!c||!data||!glam||!gmu)return fail("elastic P/SV Born Jt received a null pointer");
+    for(p=0;p<c->cells;p++)if(c->mu[p]==0.0f)
+        return fail("fluid JT requires FLUID-2 restricted tangent implementation");
     if(!c->prepared)return fail("elastic P/SV Born Jt requires a prepared background trajectory");
     memset(glam,0,c->cells*sizeof(double));memset(gmu,0,c->cells*sizeof(double));
     if(allocate_adjoint(bar,psi,&q,c->cells)!=0){free_adjoint(bar,psi,q);return fail("out of memory allocating Born adjoint state");}
@@ -1236,7 +1245,14 @@ int denise_elastic_psv_born_nonlinear(struct denise_elastic_psv_born *c,
                                       const float *lambda,const float *mu,float *data) {
     size_t p;
     if(!c||!lambda||!mu||!data)return fail("elastic P/SV nonlinear map received a null pointer");
-    for(p=0;p<c->cells;p++)if(!(mu[p]>0.0f)||!isfinite(lambda[p])||(c->free_surface && !((double)lambda[p]+2.0*mu[p]>0.0)))return fail("elastic P/SV nonlinear material is invalid");
+    for(p=0;p<c->cells;p++) {
+        if((mu[p]==0.0f)!=(c->mu[p]==0.0f))
+            return fail("nonlinear trial changes prepared fluid classification");
+        if(!(mu[p]>=0.0f)||!isfinite(lambda[p])
+            ||(mu[p]==0.0f && (!(lambda[p]>0.0f)||!isfinite(c->rho[p])))
+            ||(c->free_surface && !((double)lambda[p]+2.0*mu[p]>0.0)))
+            return fail("elastic P/SV nonlinear material is invalid");
+    }
     return run_nonlinear(c,lambda,mu,data,NULL,0,0);
 }
 
