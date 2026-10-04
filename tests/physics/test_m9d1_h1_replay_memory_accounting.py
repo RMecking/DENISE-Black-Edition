@@ -278,6 +278,7 @@ def test_forced_backends_are_bit_identical_to_pre_h1(
 
 
 @pytest.mark.integration
+@pytest.mark.optional_prerequisite
 @pytest.mark.parametrize("case,backend", [
     ("loses", "FULL"), ("narrow", "SEGMENTED"),
     ("interior", "FULL"), ("active_cpml", "SEGMENTED"),
