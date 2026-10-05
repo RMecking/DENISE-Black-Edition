@@ -43,7 +43,7 @@ def builders(tmp_path_factory):
         if opt not in executables:
             flags = ["mpicc", "-std=c99", "-" + opt, "-fcommon", "-Wall", "-Wextra", "-Werror",
                      "-Wno-error=maybe-uninitialized",
-                     "-D_FORTIFY_SOURCE=0", "-I" + str(ROOT / "include")]
+                     "-U_FORTIFY_SOURCE", "-I" + str(ROOT / "include")]
             obj = directory / f"base-{opt}.o"
             subprocess.run(flags + ["-Dcheckfd_ssg_elastic=checkfd_ssg_elastic_BASE", "-c",
                                     str(base_source), "-o", str(obj)], check=True)
