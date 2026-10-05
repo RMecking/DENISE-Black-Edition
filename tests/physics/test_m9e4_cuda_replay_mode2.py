@@ -210,9 +210,17 @@ def test_request_ordered_multishot_fault_transaction(replay):
     assert_same(fresh,manual)
     RECORDS.append({'request_faults':count,'shot2_failures':shot2_failures})
 
+@pytest.fixture(scope='session')
+def cuda_mode2_binary(denise_binary):
+    candidate=denise_binary.with_name('denise_cuda')
+    if not candidate.is_file():
+        pytest.skip(f'CUDA executable prerequisite unavailable: {candidate}')
+    return candidate
+
 @pytest.mark.integration
+@pytest.mark.optional_prerequisite
 @pytest.mark.parametrize('surface,cpml,multiple',[(0,False,False),(0,True,False),(1,True,False),(1,False,True)])
-def test_mode2_same_files_dispatch_and_images(tmp_path,denise_binary,mpiexec,surface,cpml,multiple):
+def test_mode2_same_files_dispatch_and_images(tmp_path,denise_binary,mpiexec,cuda_mode2_binary,surface,cpml,multiple):
     exp=surf.fixture(nx=11,ny=9,nt=43,cpml=cpml)
     if multiple:exp=replace(exp,sources=((3,2),(8,3)))
     data=[np.random.default_rng(927+s).normal(size=(exp.nt,len(exp.receivers),2)).astype(np.float32) for s in range(len(exp.sources))]
@@ -222,7 +230,7 @@ def test_mode2_same_files_dispatch_and_images(tmp_path,denise_binary,mpiexec,sur
     cpu=driver._run_denise(tmp_path,denise_binary,mpiexec);assert cpu.returncode==0,cpu.stdout
     assert 'M9 MODE=2 backend: CPU-M9' in cpu.stdout
     expected=np.stack([np.fromfile(paths[n],np.float64) for n in ('lambda','mu')])
-    cuda=driver._run_denise(tmp_path,denise_binary.with_name('denise_cuda'),mpiexec);assert cuda.returncode==0,cuda.stdout
+    cuda=driver._run_denise(tmp_path,cuda_mode2_binary,mpiexec);assert cuda.returncode==0,cuda.stdout
     assert 'M9 MODE=2 backend: CUDA-M9e-4' in cuda.stdout and 'CPU-M9\n' not in cuda.stdout
     got=np.stack([np.fromfile(paths[n],np.float64) for n in ('lambda','mu')])
     metrics=[e3.metrics(got[k],expected[k]) for k in (0,1)];assert all(z['rel_l2']<=6e-5 for z in metrics)
@@ -230,8 +238,9 @@ def test_mode2_same_files_dispatch_and_images(tmp_path,denise_binary,mpiexec,sur
     RECORDS.append({'mode2':[surface,cpml,multiple],'cpu_images':metrics,'cuda_log':cuda.stdout})
 
 @pytest.mark.integration
+@pytest.mark.optional_prerequisite
 @pytest.mark.parametrize('fault',['ranks','unavailable','shot2'])
-def test_mode2_cuda_fail_closed(tmp_path,denise_binary,mpiexec,fault):
+def test_mode2_cuda_fail_closed(tmp_path,denise_binary,mpiexec,cuda_mode2_binary,fault):
     exp=replace(surf.fixture(nx=8,ny=8,nt=12,cpml=False),sources=((3,2),(6,3)))
     data=[np.ones((exp.nt,len(exp.receivers),2),np.float32)]*2
     paths=driver._write_mode2_case(tmp_path,exp,data);env=os.environ.copy();ranks=1
@@ -239,7 +248,7 @@ def test_mode2_cuda_fail_closed(tmp_path,denise_binary,mpiexec,fault):
         ranks=2;inp=tmp_path/'denise.inp';inp.write_text(inp.read_text().replace('NPROCX =1','NPROCX =2'))
     elif fault=='unavailable':env['CUDA_VISIBLE_DEVICES']=''
     else:Path(str(paths['vx1']).replace('shot_1','shot_2')).write_bytes(b'bad')
-    completed=subprocess.run([mpiexec,'-n',str(ranks),str(denise_binary.with_name('denise_cuda')),'denise.inp','workflow.inp'],
+    completed=subprocess.run([mpiexec,'-n',str(ranks),str(cuda_mode2_binary),'denise.inp','workflow.inp'],
         cwd=tmp_path,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=90)
     assert completed.returncode!=0,completed.stdout
     marker={'ranks':'CUDA-M9e-4 unsupported envelope','unavailable':'CUDA-M9e-4 migration failed','shot2':'shot_2'}[fault]
@@ -247,10 +256,10 @@ def test_mode2_cuda_fail_closed(tmp_path,denise_binary,mpiexec,fault):
     assert not paths['lambda'].exists() and not paths['mu'].exists()
     if fault!='ranks':
         driver._write_mode2_case(tmp_path,exp,data)
-        recovered=driver._run_denise(tmp_path,denise_binary.with_name('denise_cuda'),mpiexec);assert recovered.returncode==0,recovered.stdout
+        recovered=driver._run_denise(tmp_path,cuda_mode2_binary,mpiexec);assert recovered.returncode==0,recovered.stdout
         restored=np.stack([np.fromfile(paths[n],np.float64) for n in ('lambda','mu')])
         fresh_dir=tmp_path/'fresh';fresh_paths=driver._write_mode2_case(fresh_dir,exp,data)
-        fresh=driver._run_denise(fresh_dir,denise_binary.with_name('denise_cuda'),mpiexec);assert fresh.returncode==0,fresh.stdout
+        fresh=driver._run_denise(fresh_dir,cuda_mode2_binary,mpiexec);assert fresh.returncode==0,fresh.stdout
         expected=np.stack([np.fromfile(fresh_paths[n],np.float64) for n in ('lambda','mu')]);assert_same(restored,expected)
 @pytest.mark.parametrize('nt',[1,17,43,67])
 def test_schedule_and_checked_estimator(replay,nt):
@@ -309,7 +318,8 @@ def test_replay_envelope_and_legacy_probe_rejections(replay):
     finally:check(lib,lib.denise_cuda_m9_destroy(C.byref(c)))
 
 @pytest.mark.integration
-def test_mode2_small_full_fallback_matches_cuda_full(tmp_path,denise_binary,mpiexec,replay):
+@pytest.mark.optional_prerequisite
+def test_mode2_small_full_fallback_matches_cuda_full(tmp_path,denise_binary,mpiexec,cuda_mode2_binary,replay):
     _,libs=replay;lib=libs['fma'];exp=surf.fixture(nx=5,ny=5,nt=41,cpml=False)
     data=[np.random.default_rng(936).normal(size=(exp.nt,len(exp.receivers),2)).astype(np.float32)]
     cfg,a=e2.config_from_exp(exp,0);c=e3.create(lib,cfg)
@@ -317,6 +327,6 @@ def test_mode2_small_full_fallback_matches_cuda_full(tmp_path,denise_binary,mpie
         check(lib,lib.denise_cuda_m9_prepare(c));expected=e3.apply(lib,c,cfg,data[0])
     finally:check(lib,lib.denise_cuda_m9_destroy(C.byref(c)))
     paths=driver._write_mode2_case(tmp_path,exp,data)
-    completed=driver._run_denise(tmp_path,denise_binary.with_name('denise_cuda'),mpiexec);assert completed.returncode==0,completed.stdout
+    completed=driver._run_denise(tmp_path,cuda_mode2_binary,mpiexec);assert completed.returncode==0,completed.stdout
     assert 'trajectory backend: FULL' in completed.stdout
     got=np.stack([np.fromfile(paths[n],np.float64).reshape(5,5) for n in ('lambda','mu')]);assert_same(got,expected)

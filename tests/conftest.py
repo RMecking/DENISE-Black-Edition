@@ -73,6 +73,7 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo):
     if (
         item.config.getoption("--require-denise")
         and item.get_closest_marker("integration") is not None
+        and item.get_closest_marker("optional_prerequisite") is None
         and report.skipped
         and not getattr(report, "wasxfail", None)
     ):

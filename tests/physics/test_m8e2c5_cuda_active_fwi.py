@@ -29,7 +29,7 @@ from tests.test_m8e1b2a_cuda_psv_forward import _find_nvcc
 from tests.utilities.runner import result_summary, run_denise
 
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.optional_prerequisite]
 
 
 def _configure_cuda_envelope(directory: Path, q_mode: int) -> None:
