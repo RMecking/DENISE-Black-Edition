@@ -1,0 +1,90 @@
+{
+  "schema": 1,
+  "roots": [
+    "A25B",
+    "A25A",
+    "CORE",
+    "RUNS",
+    "MODELS"
+  ],
+  "references": {
+    "A25B": {
+      "blocked_handover/H15_numerical_identity.json": {
+        "sha256": "4c875265b40421f798fab70b115141a97e235de7be5cb31438a2601c627b4fdc",
+        "bytes": 1542548
+      },
+      "serial_h5_closure/comparison/H5_numerical_identity.json": {
+        "sha256": "171b06076ddb6acc746b16bf2f09a538bcfa47cce069afba61aa2d31b80aebda",
+        "bytes": 469487
+      },
+      "H15/summary.json": {
+        "sha256": "5652795e3c7b72b5cae8dcdda1bc67cb79b6a5abb2e5ff85b2322491eb5f6f7b",
+        "bytes": 7237601
+      },
+      "H5/summary.json": {
+        "sha256": "a75de5bd5d72f966f07e97068d7c9db7098501e3ea5aa1a7d848bd93f71de356",
+        "bytes": 1606267
+      },
+      "frozen_contract.json": {
+        "sha256": "91dc154b0c18a74cdfa50fe5464b9ec843143bbd5e356e3fbbf1885c1c1f2f67",
+        "bytes": 6796
+      },
+      "predeclared.json": {
+        "sha256": "ca1683de403ab40491ca660e53352b47725cf1e0be7c98adde4faf01b10dbda2",
+        "bytes": 173564
+      },
+      "source/gate_resolution.json": {
+        "sha256": "30835a71482607f405bcd2532d101164c24404a49211c2077374b735872c1808",
+        "bytes": 53899
+      },
+      "source/source5.npy": {
+        "sha256": "1daec20bcdd982bf548af324a88e068a363c9a8798d6d96c52c95919df1535ed",
+        "bytes": 12128
+      },
+      "build/receipt.json": {
+        "sha256": "2fe21e0638788d60faa152ccc3ecbc25031170253b7ff432de36c06dd389ad43",
+        "bytes": 29103
+      },
+      "build/liba25b.so": {
+        "sha256": "e6bd05919991d6f1c41f50a1481eb68d9d3e98ebe0cc146b8b597e2987e2af33",
+        "bytes": 106136
+      },
+      "serial_h5_closure/final_sealed_receipt.json": {
+        "sha256": "d414f6649fe42315bf4c7f0da07c5f9b4d15a02771c76999c128fc6fc2b8215f",
+        "bytes": 224592
+      },
+      "serial_h5_closure/comparison/frequency_comparison.json": {
+        "sha256": "383c8a244119df4f004dc320b895f00fc050b167e657b24728fa87fa4974556a",
+        "bytes": 7608
+      },
+      "serial_h5_closure/comparison/apertures.json": {
+        "sha256": "bb5c1f8f9f455f694a1b2f789a636f9a13e49610d3d14897e12627390bf688de",
+        "bytes": 18906
+      },
+      "serial_h5_closure/preparation.json": {
+        "sha256": "16051361f87fedb1b377170fa952aeaddd5df137367fba95f353c9641f1fccd9",
+        "bytes": 1543724
+      },
+      "serial_h5_closure/campaign_complete.json": {
+        "sha256": "282ad57b6dd548a10c552801a847aa34b80197887d0b6b5808c2b4d98181d170",
+        "bytes": 9376
+      }
+    },
+    "A25A": {
+      "receipt.json": {
+        "sha256": "ddd7f86b19dc07c4c202670961020217609238334c8331f55e74e4d2c410e4b0",
+        "bytes": 707413
+      }
+    }
+  },
+  "numerical_content_ids": {
+    "H15": "0ad22a66a152b9aad2fd89ee6fdb374228fec258bc23d9c797f7539b0e787721",
+    "H5": "5122f0654cd03dcb2921ccc84226849b07ae13ae30f0a5974b328579e8e7bb80"
+  },
+  "counts": {
+    "H15": 900,
+    "H5": 200
+  },
+  "a25a_content_id": "c32882f58f196ce7928c379db9e512f1c62ae62e77e2a600cfb8e53800fb0e07",
+  "jz_evidence": "Original per-shot receipts bind Jz array hashes and Euclidean norms; complete Jz arrays are not retained in these saved product directories. No fresh Jz hash verification is claimed."
+}

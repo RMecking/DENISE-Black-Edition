@@ -1,0 +1,190 @@
+{
+  "a25a_content_id": "c32882f58f196ce7928c379db9e512f1c62ae62e77e2a600cfb8e53800fb0e07",
+  "a25a_receipt_sha256": "ddd7f86b19dc07c4c202670961020217609238334c8331f55e74e4d2c410e4b0",
+  "aggregate_sha256": {
+    "lambda": "8e979872d9ec18f0fe7df4f9088a5722d707a32e6bd1c7af54153821dea8448a",
+    "mu": "f311970f856ff1a3239f056a74d4984b05249efab01e4a2f7ec4b84b3fbbee46"
+  },
+  "application_merge": "54c69297a6c1d5fef94c396b49451ebaadcec2ab",
+  "application_publication": "6c348d490862277d6c2c5d017bf2e4029ce54169",
+  "backend": "CPU/MPI one rank; exact accepted A2 serial Born API behind MODE2 NP=1 dispatch",
+  "coordinate": "fixed-density log velocity; H_log=A^T H_native A; native FP32 tangent API, FP64 native/log cotangent; mapping roundoff recorded",
+  "core_sha": "f5ae2f3506f4ea8024b96d28bcbc3fc2470bb31d",
+  "fluid": "exact original Vs=0/mu=0; lnVs tangent frozen; no floor, epsilon or repair mask",
+  "forbidden": [
+    "kernel/oracle changes",
+    "CUDA",
+    "FWI",
+    "optimization",
+    "A2/A2.5A mutation",
+    "Hessian compensation",
+    "randomized production",
+    "stage/commit/push/PR"
+  ],
+  "grid": {
+    "centers": "(index+1)*DH; depth positive down",
+    "dh_m": 20,
+    "dt_s": 0.002,
+    "nt": 3000,
+    "shape_y_x": [
+      174,
+      500
+    ],
+    "time_s": 6
+  },
+  "inner_products": "unweighted discrete Euclidean model/data dot products; no added DT/DH/area/source/receiver weights",
+  "low_frequency": {
+    "conditional_source_gate": "reproduce saved15Hz source from original spike/native libcseife filtering and psource conversion; then change only low-pass corner to5Hz with same rule",
+    "operator": "H_5 distinct from H_15",
+    "probes": [
+      "vp_c1560",
+      "vp_c2960"
+    ],
+    "shots": "1..100"
+  },
+  "measurement": {
+    "boundaries_cpml": "primary full-grid metrics include all cells; separately full/interior x220..9800,z<=3280/acquisition x800..8780; bottomz>3280; no cropping or weights in H",
+    "centroid_moments": "squared norm of full response; centroid and moments about centroid; report sigma_x/sigma_z and2*sigma widths; undefined on zero norm",
+    "classification": "descriptive multiple labels, no new acceptance oracle: R90<=200 and peak within40m=>WELL LOCALIZED; peak within200 withR90>200=>BROAD BUT TARGET-CENTERED; guard squared norm exceeds target=>INTERFACE-DOMINATED; other norm exceeds same=>STRONG PARAMETER CROSS-TALK; R90>1000 or peak offset>400=>STRONG SIDELOBES/NONLOCAL; aperture interpretation from declared group comparisons; otherwise INDETERMINATE",
+    "cross_talk": "full and target squared-norm and norm ratios of other/same log-coordinate channels; undefined when denominator zero",
+    "frozen_before_results": true,
+    "interface": "water inferred per column from exact original Vs=0; first-solid separately;450<=z<650 guard; also guards ending550/750",
+    "main_lobe_primary": "same fixed200m target disk; outside is fixed-window sidelobe (not an adaptive physical lobe)",
+    "main_lobe_secondary": "4-connected half-absolute-height component containing first row-major absolute local peak inside fixed400m disk; no resize or recenter; undefined for zero local peak",
+    "partitions": "shallow650<=z<1000; deep1000<=z<=3280; injection-depth-neighborhood abs(z-z0)<=200 across full x; shallower/deeper off-target outside neighborhood",
+    "radius": "physical Euclidean distance from injection sample centers; r50/r90 include complete tied radius shell; squared norm unweighted grid-coordinate sensitivity",
+    "target": "Euclidean disk radius200m centered on injection, including boundary/water cells; no recentering"
+  },
+  "model_sha256": {
+    "rho": "71ce144cc8d4817804cef2015711252800524ea6bd0cf09f56f7f707fdb929da",
+    "vp": "c8330c87b83a0b89a6e727ce09cfac2b9f460ef5f61ff245705f029e7632ec1a",
+    "vs": "ce67dfcc61c43656d220e81e78f0f9d626706ecb68d5ee051da71ba92bdab3f0"
+  },
+  "normalization": "one discrete unit basis entry; log-space Euclidean norm1; a linear-algebra column, not a physical100percent anomaly",
+  "numerical_gates": {
+    "case_gate": "triangle-bound operand mismatch using historical constants, with explicit native/log input-rounding contribution; positivity additionally requires pair-relative<=7e-5 plus measured mapping roundoff; symmetry absolute bound7e-5*||Jzi||*||Jzj|| plus mapping roundoff; never epsilon-normalize",
+    "historical_JT_relative_L2": 0.00006,
+    "historical_J_relative_L2": 0.00001,
+    "random_data_seed": 250502
+  },
+  "optional_extended_probes": "not selected; point/interface/lateral matrix fixed before results",
+  "physics": {
+    "BOUNDARY": 0,
+    "DTINV": 1,
+    "FD_ORDER": 4,
+    "FREE_SURF": 1,
+    "FW": 10,
+    "INVMAT1": 3,
+    "L": 0,
+    "MAX_RELATIVE_ERROR": 0,
+    "NDT": 1,
+    "pml_damping_speed": 1500,
+    "pml_fpml": 10,
+    "pml_kmax": 1,
+    "pml_power": 4,
+    "pml_reflection": 0.001
+  },
+  "pilot_shots": [
+    1,
+    50,
+    100
+  ],
+  "probes": [
+    {
+      "name": "vp_c0760",
+      "parameter": "lnvp",
+      "tier": 1,
+      "x_m": 5000,
+      "z_m": 760
+    },
+    {
+      "name": "vp_c1560",
+      "parameter": "lnvp",
+      "tier": 1,
+      "x_m": 5000,
+      "z_m": 1560
+    },
+    {
+      "name": "vp_c2360",
+      "parameter": "lnvp",
+      "tier": 1,
+      "x_m": 5000,
+      "z_m": 2360
+    },
+    {
+      "name": "vp_c2960",
+      "parameter": "lnvp",
+      "tier": 1,
+      "x_m": 5000,
+      "z_m": 2960
+    },
+    {
+      "name": "vs_c1560",
+      "parameter": "lnvs",
+      "tier": 1,
+      "x_m": 5000,
+      "z_m": 1560
+    },
+    {
+      "name": "vs_c2960",
+      "parameter": "lnvs",
+      "tier": 1,
+      "x_m": 5000,
+      "z_m": 2960
+    },
+    {
+      "name": "vp_l2360",
+      "parameter": "lnvp",
+      "tier": 2,
+      "x_m": 2000,
+      "z_m": 2360
+    },
+    {
+      "name": "vp_r2360",
+      "parameter": "lnvp",
+      "tier": 2,
+      "x_m": 8000,
+      "z_m": 2360
+    },
+    {
+      "name": "vp_interface",
+      "parameter": "lnvp",
+      "tier": "interface-control",
+      "x_m": 5000,
+      "z_m": 460
+    }
+  ],
+  "product_classes": [
+    "NUMERICAL_OPERATOR_RAW",
+    "DERIVED_DIAGNOSTIC",
+    "DISPLAY_ONLY"
+  ],
+  "rank_decomposition": [
+    1,
+    1
+  ],
+  "replay_segments": 32,
+  "schema": "marmousi-a25b-contract-v1",
+  "shot_order": "physical IDs ascending 1..100; no shot weights/rejection",
+  "symmetry_pairs": [
+    [
+      "vp_c1560",
+      "vp_c2360"
+    ],
+    [
+      "vp_c2960",
+      "vs_c2960"
+    ],
+    [
+      "vp_c2360",
+      "vp_interface"
+    ],
+    [
+      "vp_l2360",
+      "vp_r2360"
+    ]
+  ],
+  "tangent": "dLambda=2*rho*Vp^2*dLnVp-4*rho*Vs^2*dLnVs; dMu=2*rho*Vs^2*dLnVs",
+  "tier2_central_reuse": "vp_c2360 from Tier1, never rerun",
+  "transpose": "gLnVp=2*rho*Vp^2*gLambda; gLnVs=2*rho*Vs^2*(gMu-2*gLambda); no independent native output scaling"
+}

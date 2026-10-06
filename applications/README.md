@@ -1,5 +1,10 @@
 # DENISE applications: frozen Marmousi-II A0/A1/A2
 
+The subsequent solver-free **A2.5 publication candidate** is documented in
+[marmousi2_a25/README.md](marmousi2_a25/README.md), with frozen RTM-interpretation
+and H15/H5 PSF findings, external evidence identities and offline reproduction.
+The A0/A1/A2 historical records below retain their original scope.
+
 This package provides case preparation, input validation, forward-data QC and
 raw migration-image integration around existing DENISE operators. It is an
 unpublished publication candidate, not a new numerical implementation.

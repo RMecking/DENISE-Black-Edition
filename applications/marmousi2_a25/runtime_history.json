@@ -1,0 +1,79 @@
+{
+  "scope": "External historical runtime records, never rewritten. Auxiliary roots are audit references only, not numerical inputs or solver-free report dependencies. Complete process dumps excluded. Original interruption/exit195 ROOT CAUSE UNRESOLVED.",
+  "artifacts": {
+    "A25B": {
+      "pipeline/STOP.json": {
+        "bytes": 788,
+        "sha256": "1af00f205e79ceec753664f2a73c9aef6f095aa246204632f5850db5c2d11380"
+      },
+      "session_interruption_amendment.json": {
+        "bytes": 153127,
+        "sha256": "57113339ebe31c09880ce388d46ae79d9392926749316c26b1f484b7fbda11b4"
+      },
+      "direct_recovery_amendment.json": {
+        "bytes": 281565,
+        "sha256": "0c84bac3dfb1cd0a1c1d2665d0c5127a798b754e476fd482a83f4f8c6aaa5ccd"
+      },
+      "continuation3/STOP.json": {
+        "bytes": 788,
+        "sha256": "89903785114d252504cf40b8c6c826bd00ed6d824f75651b72b72d25e05bef7d"
+      },
+      "blocked_handover/blocked_receipt.json": {
+        "bytes": 405801,
+        "sha256": "fe3dceae80e012015e80348a01002a5a3b826b5cc46fc7f3652008c9516896f3"
+      },
+      "blocked_handover/BLOCKED_REPORT.md": {
+        "bytes": 40089,
+        "sha256": "5a62bdf48a02855000c133a4d626f8de1d80554b9531336b9d75225985f4c1b1"
+      },
+      "blocked_handover/runtime_observations.json": {
+        "bytes": 45948,
+        "sha256": "f25bcac0ee8a0cffc9cf7732a33ddef9fb94fade25a18459aa50401ab51e306e"
+      },
+      "serial_h5_closure/shot33_admission.json": {
+        "bytes": 7234,
+        "sha256": "5a8c37b1d1ed6701aade7ef2a3d13a16bb6da8401e99be31acbe7edf18a431dd"
+      },
+      "serial_h5_closure/campaign_complete.json": {
+        "bytes": 9376,
+        "sha256": "282ad57b6dd548a10c552801a847aa34b80197887d0b6b5808c2b4d98181d170"
+      },
+      "serial_h5_closure/final_sealed_receipt.json": {
+        "bytes": 224592,
+        "sha256": "d414f6649fe42315bf4c7f0da07c5f9b4d15a02771c76999c128fc6fc2b8215f"
+      }
+    },
+    "SHOT33_IDENTITY_GATE": {
+      "gate_receipt.json": {
+        "bytes": 83807,
+        "sha256": "5acd24f62150fef7cbf345f43005da0544014872fab329a2e3592db0080b1504"
+      },
+      "REPORT.md": {
+        "bytes": 5114,
+        "sha256": "ee3db534041524541b79ce5b21b16490d2a6fa267ad40bb55b5596bcacf6ec39"
+      }
+    },
+    "SHOT33_TWO_PROBE": {
+      "REPORT.md": {
+        "bytes": 11898,
+        "sha256": "a434f0857f2cfe70a8840deeca35912cebf01c64d6e53111e5169c3da927bf8e"
+      },
+      "outcome.json": {
+        "bytes": 6960,
+        "sha256": "9ec0ebcfef9767681cca8ea454d84d7624f87a6779475f7b9bb800f1f550b32a"
+      },
+      "numerical_validation.json": {
+        "bytes": 1952,
+        "sha256": "88a7445d449a3e14332fcf203f45499963e7defe47708c80977b6a56a2621809"
+      },
+      "termination.json": {
+        "bytes": 516,
+        "sha256": "f2f0a42c7c8cdc6303e0c0fe60b445a1b48921fe4ce62d8a11b4635446fb6bbe"
+      },
+      "final_manifest.json": {
+        "bytes": 7641,
+        "sha256": "634cec070c88cc975001733d4ca96287ed8d002910d35d42932a391600cde572"
+      }
+    }
+  }
+}

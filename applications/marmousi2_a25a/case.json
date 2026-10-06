@@ -1,0 +1,20 @@
+{
+  "execution_core": "f5ae2f3506f4ea8024b96d28bcbc3fc2470bb31d",
+  "benchmark_revision": "931131e8dc53649320a5620befe751ad32d2f7bd",
+  "grid": {"shape_y_x": [174, 500], "dh_m": 20, "image_dtype": "<f8", "image_order": "row-major [depth_y,x]"},
+  "roots": {"runs": "../../../app-marmousi2-fluid2/applications/marmousi2_fluid2/runs", "models": "../../../app-marmousi2-a01/applications/marmousi2_fd4/input/models"},
+  "aggregate_receipt": "campaign_100/aggregate/receipt.json",
+  "campaign_receipt": "campaign_100/summary.json",
+  "aggregate_hashes": {"lambda": "8e979872d9ec18f0fe7df4f9088a5722d707a32e6bd1c7af54153821dea8448a", "mu": "f311970f856ff1a3239f056a74d4984b05249efab01e4a2f7ec4b84b3fbbee46"},
+  "models": {
+    "vp": {"path": "smooth2.vp", "sha256": "c8330c87b83a0b89a6e727ce09cfac2b9f460ef5f61ff245705f029e7632ec1a"},
+    "vs": {"path": "smooth2.vs", "sha256": "ce67dfcc61c43656d220e81e78f0f9d626706ecb68d5ee051da71ba92bdab3f0"},
+    "rho": {"path": "smooth2.rho", "sha256": "71ce144cc8d4817804cef2015711252800524ea6bd0cf09f56f7f707fdb929da"}
+  },
+  "reference": {
+    "vp": {"path": "true.vp", "sha256": "2123cb08fe6cf81438a7b426a62b35ccc9d0699555ea99f8e1bda3400fc5831b"},
+    "vs": {"path": "true.vs", "sha256": "7c53d475a6265bd171f7a70bb915b3cad3bc5ad0d997d9abd233ea144c74e2e3"},
+    "rho": {"path": "true.rho", "sha256": "70af8aa26566d032437fdd575c4ab7689ce3e92a5432041d00023105ecec18be"}
+  },
+  "shots": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100]
+}

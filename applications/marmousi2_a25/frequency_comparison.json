@@ -1,0 +1,216 @@
+{
+  "vp_c1560": {
+    "H15": {
+      "definition": "unweighted squared Euclidean grid-coordinate cotangent norm, not seismic energy or continuum Hessian",
+      "full_cross_talk_norm": 0.2016139834809111,
+      "guard650_fraction": 0.0679098813097848,
+      "guard_over_target_norm": 0.46859682217731585,
+      "guard_over_target_squared_norm": 0.21958298175467905,
+      "labels": [
+        "BROAD BUT TARGET-CENTERED",
+        "STRONG SIDELOBES / NONLOCAL RESPONSE"
+      ],
+      "outside_over_target_norm": 1.4944720479169442,
+      "partitions": {
+        "bottom_cpml": 0.000001887312892190301,
+        "deep": 0.6647826661583107,
+        "first_solid": 0.010371015127625116,
+        "guard550": 0.0372349488449362,
+        "guard650": 0.0679098813097848,
+        "guard750": 0.09713436679836898,
+        "lateral_cpml": 7.079529013866762e-7,
+        "shallow": 0.09469073785569138,
+        "water": 0.17261482736332082
+      },
+      "peak_offset_m": 0,
+      "peak_x_z_m": [
+        5000,
+        1560
+      ],
+      "r50_m": 910.823802938856,
+      "r90_m": 2886.1739379323626,
+      "sampled_diagonal": 2.361492911826611e-10,
+      "strongest_fixed_sidelobe_abs": 6.386293676924022e-11,
+      "strongest_sidelobe_x_z_m": [
+        7520,
+        40
+      ],
+      "summed_Jz_energy": 2.361492831945707e-10,
+      "target_cross_talk_norm": 0.3429894589076895,
+      "target_fraction": 0.309267506830992,
+      "width_2sigma_x_z_m": [
+        3067.3176696416613,
+        1065.0324856375964
+      ]
+    },
+    "H5": {
+      "definition": "unweighted squared Euclidean grid-coordinate cotangent norm, not seismic energy or continuum Hessian",
+      "full_cross_talk_norm": 0.28218813858687564,
+      "guard650_fraction": 0.052478879881267294,
+      "guard_over_target_norm": 0.34389017818613293,
+      "guard_over_target_squared_norm": 0.11826045465289033,
+      "labels": [
+        "BROAD BUT TARGET-CENTERED",
+        "STRONG SIDELOBES / NONLOCAL RESPONSE"
+      ],
+      "outside_over_target_norm": 1.119592175394772,
+      "partitions": {
+        "bottom_cpml": 0.00001053500685916412,
+        "deep": 0.7646756262386567,
+        "first_solid": 0.008804386728259417,
+        "guard550": 0.029695286606949985,
+        "guard650": 0.052478879881267294,
+        "guard750": 0.07785107653674517,
+        "lateral_cpml": 1.955790352360392e-7,
+        "shallow": 0.0820184036376763,
+        "water": 0.10081655523554059
+      },
+      "peak_offset_m": 0,
+      "peak_x_z_m": [
+        5000,
+        1560
+      ],
+      "r50_m": 313.04951684997053,
+      "r90_m": 2674.023186137323,
+      "sampled_diagonal": 3.1254280628880424e-14,
+      "strongest_fixed_sidelobe_abs": 6.567592283766953e-15,
+      "strongest_sidelobe_x_z_m": [
+        5840,
+        40
+      ],
+      "summed_Jz_energy": 3.125427966363578e-14,
+      "target_cross_talk_norm": 0.3714309172890431,
+      "target_fraction": 0.443756791188564,
+      "width_2sigma_x_z_m": [
+        2565.3715921626494,
+        950.1010226636815
+      ]
+    },
+    "H5_over_H15": {
+      "full_cross_talk_norm": 1.3996456679979905,
+      "guard650_fraction": 0.7727723693386263,
+      "outside_over_target_norm": 0.7491556479462462,
+      "r50_m": 0.3436993146642498,
+      "r90_m": 0.9264941211592317,
+      "sampled_diagonal": 0.0001323496694500145,
+      "summed_Jz_energy": 0.000132349669839499,
+      "target_cross_talk_norm": 1.0829222521063195,
+      "target_fraction": 1.4348639329610124
+    },
+    "deep_response_cosine": 0.7656261245941338,
+    "distinct_operators": [
+      "H_15",
+      "H_5"
+    ],
+    "full_response_cosine": 0.7956455141266818,
+    "guard_fraction_difference": -0.015431001428517506,
+    "interpretation_scope": "bandwidth/discretization sensitivity of the measured operator; not a dispersion-only attribution",
+    "target_fraction_difference": 0.13448928435757196
+  },
+  "vp_c2960": {
+    "H15": {
+      "definition": "unweighted squared Euclidean grid-coordinate cotangent norm, not seismic energy or continuum Hessian",
+      "full_cross_talk_norm": 0.41498846160520064,
+      "guard650_fraction": 0.0009293637823101488,
+      "guard_over_target_norm": 0.031542157137718636,
+      "guard_over_target_squared_norm": 0.0009949076769005347,
+      "labels": [
+        "WELL LOCALIZED"
+      ],
+      "outside_over_target_norm": 0.2655664754775243,
+      "partitions": {
+        "bottom_cpml": 0.00022116876242342002,
+        "deep": 0.9893724361520583,
+        "first_solid": 0.00012391088882398387,
+        "guard550": 0.0005987314321887111,
+        "guard650": 0.0009293637823101488,
+        "guard750": 0.0012773328376285361,
+        "lateral_cpml": 0.000004780425941973597,
+        "shallow": 0.001463303230528827,
+        "water": 0.008013728072679159
+      },
+      "peak_offset_m": 0,
+      "peak_x_z_m": [
+        5000,
+        2960
+      ],
+      "r50_m": 60,
+      "r90_m": 160,
+      "sampled_diagonal": 3.270849290964542e-11,
+      "strongest_fixed_sidelobe_abs": 2.8948494329856796e-12,
+      "strongest_sidelobe_x_z_m": [
+        4980,
+        2760
+      ],
+      "summed_Jz_energy": 3.27084944508736e-11,
+      "target_cross_talk_norm": 0.4143765882306618,
+      "target_fraction": 0.9341206263534154,
+      "width_2sigma_x_z_m": [
+        708.9981883309806,
+        603.5666950815095
+      ]
+    },
+    "H5": {
+      "definition": "unweighted squared Euclidean grid-coordinate cotangent norm, not seismic energy or continuum Hessian",
+      "full_cross_talk_norm": 0.4081129038637844,
+      "guard650_fraction": 0.005174836498710696,
+      "guard_over_target_norm": 0.08553151536697257,
+      "guard_over_target_squared_norm": 0.007315640120970662,
+      "labels": [
+        "BROAD BUT TARGET-CENTERED"
+      ],
+      "outside_over_target_norm": 0.6431912078367724,
+      "partitions": {
+        "bottom_cpml": 0.015201597346232396,
+        "deep": 0.956007387656188,
+        "first_solid": 0.0011148290852164677,
+        "guard550": 0.0029629033476388654,
+        "guard650": 0.005174836498710696,
+        "guard750": 0.007061504679193746,
+        "lateral_cpml": 3.0644679646071013e-7,
+        "shallow": 0.007184853648678189,
+        "water": 0.016431324850190943
+      },
+      "peak_offset_m": 0,
+      "peak_x_z_m": [
+        5000,
+        2960
+      ],
+      "r50_m": 121.6552506059644,
+      "r90_m": 488.2622246293481,
+      "sampled_diagonal": 4.894118926654014e-15,
+      "strongest_fixed_sidelobe_abs": 1.999689268062335e-15,
+      "strongest_sidelobe_x_z_m": [
+        4980,
+        2760
+      ],
+      "summed_Jz_energy": 4.89411914525847e-15,
+      "target_cross_talk_norm": 0.38622079579689733,
+      "target_fraction": 0.7073661925874072,
+      "width_2sigma_x_z_m": [
+        1221.6182265669404,
+        1003.9227303531242
+      ]
+    },
+    "H5_over_H15": {
+      "full_cross_talk_norm": 0.9834319303365179,
+      "guard650_fraction": 5.568149520360523,
+      "outside_over_target_norm": 2.421959348145235,
+      "r50_m": 2.0275875100994067,
+      "r90_m": 3.0516389039334255,
+      "sampled_diagonal": 0.0001496283836792366,
+      "summed_Jz_energy": 0.00014962838331214462,
+      "target_cross_talk_norm": 0.9320526467144625,
+      "target_fraction": 0.7572535844206721
+    },
+    "deep_response_cosine": 0.2560523362373101,
+    "distinct_operators": [
+      "H_15",
+      "H_5"
+    ],
+    "full_response_cosine": 0.24890334351687807,
+    "guard_fraction_difference": 0.0042454727164005475,
+    "interpretation_scope": "bandwidth/discretization sensitivity of the measured operator; not a dispersion-only attribution",
+    "target_fraction_difference": -0.22675443376600823
+  }
+}
