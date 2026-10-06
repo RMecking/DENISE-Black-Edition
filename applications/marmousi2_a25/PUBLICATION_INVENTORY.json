@@ -180,15 +180,15 @@
     },
     {
       "path": "tools/denise_case/image_conditioning.py",
-      "bytes": 11049,
-      "sha256": "bcb25270116bf941fb59aa055e56f9810b9515663176b9ca5ed6410b1e91bd03",
+      "bytes": 11065,
+      "sha256": "640d47f6973e9ab378004f10bac15fc0a48319608a550bb7f1dff52179b736dd",
       "class": "reusable Application source",
       "why_in_git": "Accepted coordinate/derivative/filter/gain/display branches, unchanged numerical arithmetic."
     },
     {
       "path": "tools/denise_case/image_diagnostics.py",
-      "bytes": 17113,
-      "sha256": "c29c1fae57495679c5347e9162c75569888e65f3cef83014aaec59eff36fe1b1",
+      "bytes": 17127,
+      "sha256": "01bb390a002218d28a91e89c803ffe54ef1609bf8dc0887242d0a4551d371c06",
       "class": "reusable Application source",
       "why_in_git": "Accepted topology, robust raw norm/depth statistics, shot ordering/coherence and controls."
     },
@@ -201,8 +201,8 @@
     },
     {
       "path": "tools/denise_case/image_reference.py",
-      "bytes": 11950,
-      "sha256": "c148fe4e88636b486ecaa129c9262d607bc85d81b1a2dc44db8f8d9dff76056a",
+      "bytes": 11957,
+      "sha256": "daae7782abcf6797637502fbadff048f098733b284fe89a4f97374421cbf23fd",
       "class": "reusable Application source",
       "why_in_git": "Accepted predeclared evaluation-only reference windows and structural diagnostics."
     },

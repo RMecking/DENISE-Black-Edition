@@ -101,7 +101,7 @@ def define_reference(reference: dict, background: dict, dh=20., *, windows=None)
         domain |= _window_mask(w, shape, dh)
     domain &= (smooth['vs'] > 0) & np.isfinite(arrays['edge_vp'])
     values = arrays['edge_vp'][domain]
-    threshold = float(np.percentile(values, 90, method='linear')) if values.size else None
+    threshold = float(np.percentile(values, 90, interpolation='linear')) if values.size else None
     target = domain & (arrays['edge_vp'] > 0)
     if threshold is not None:
         target &= arrays['edge_vp'] >= threshold

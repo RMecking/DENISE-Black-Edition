@@ -186,7 +186,7 @@ def depth_gain(a, z, z0=650, p=1, cap=3):
 def display_scale(a, percentile=99, mask=None):
     """Symmetric percentile limits ±q; no numerical amplitude modification.
 
-    q uses NumPy percentile(method='linear') on abs(source[scale domain]).
+    q uses NumPy percentile with linear interpolation on abs(source[scale domain]).
     Saturation is measured over the complete source, not only the scale domain.
     """
     a = _image(a)
@@ -201,7 +201,7 @@ def display_scale(a, percentile=99, mask=None):
             raise ValueError('display scale mask must be boolean with matching shape')
     if not np.any(mask):
         raise ValueError('display scale domain must be nonempty')
-    q = float(np.percentile(np.abs(a[mask]), percentile, method='linear'))
+    q = float(np.percentile(np.abs(a[mask]), percentile, interpolation='linear'))
     return {'q': q, 'limits': [-q, q], 'percentile': percentile, 'method': 'linear',
             'saturated_fraction': float(np.count_nonzero(np.abs(a) > q) / a.size),
             'saturated_count': int(np.count_nonzero(np.abs(a) > q)),

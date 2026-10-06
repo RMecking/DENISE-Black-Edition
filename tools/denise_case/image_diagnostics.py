@@ -98,7 +98,7 @@ def stats(a):
     result['norm'] = _safe_product(scale, math.sqrt(ss))
     result['rms'] = _safe_product(scale, math.sqrt(ss/v.size))
     result['l1'] = _safe_product(scale, float(np.sum(np.abs(v/scale)))) if scale else 0.
-    p = np.quantile(np.abs(v), [.5,.9,.99], method='linear')
+    p = np.quantile(np.abs(v), [.5,.9,.99], interpolation='linear')
     result.update(abs_p50=float(p[0]), abs_p90=float(p[1]), abs_p99=float(p[2]), max_abs=scale)
     return result
 
@@ -353,7 +353,7 @@ def lateral_shift_control(a,b,mask,realizations=1999,seed=250501):
             'seed': seed, 'generator': 'PCG64', 'child_seeds': [int(v) for v in children],
             'cyclic_wrap_control_only': True, 'nonzero_independent_shifts': True,
             'control_median': float(np.median(valid)) if valid else None,
-            'control_p95': float(np.quantile(valid,.95,method='linear')) if valid else None,
+            'control_p95': float(np.quantile(valid,.95,interpolation='linear')) if valid else None,
             'empirical_absolute_exceedance': ((1+sum(abs(v)>=abs(observed) for v in valid))/(1+len(valid)))
                 if valid and observed is not None else None,
             'caveat': 'Investigative nonstationary correlated-shot control, not a confirmatory p-value or geological oracle.'}
