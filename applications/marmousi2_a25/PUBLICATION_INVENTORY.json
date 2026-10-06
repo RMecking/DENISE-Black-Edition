@@ -1,0 +1,239 @@
+{
+  "schema": 1,
+  "publication_base": "6c348d490862277d6c2c5d017bf2e4029ce54169",
+  "candidate_commit": "UNCOMMITTED",
+  "scientific_core": "f5ae2f3506f4ea8024b96d28bcbc3fc2470bb31d",
+  "files": [
+    {
+      "path": "applications/marmousi2_a25/claims.json",
+      "bytes": 3278,
+      "sha256": "b5128fe646fb1e388fc06360c08e78bf916c874d1a488173ab43451b574bf775",
+      "class": "configuration/schema",
+      "why_in_git": "Machine-readable conservative scientific claims/nonclaims used by generated reports."
+    },
+    {
+      "path": "applications/marmousi2_a25/evidence.json",
+      "bytes": 3251,
+      "sha256": "e031c816c6bcae7fc60f031fb0fcb149124a54b997a8c97dacbdca7b365f6427",
+      "class": "configuration/schema",
+      "why_in_git": "Lightweight logical-root/external receipt hash/completeness contract, no large evidence."
+    },
+    {
+      "path": "applications/marmousi2_a25/frequency_comparison.json",
+      "bytes": 7598,
+      "sha256": "0f275c33b320c314899a95a413e503d706ab111a2d2806d53b4560cedba01b7c",
+      "class": "small frozen fixture",
+      "why_in_git": "Small exact accepted two-probe comparison fixture/summary for reproduction equality."
+    },
+    {
+      "path": "applications/marmousi2_a25/h15_inventory.json",
+      "bytes": 319067,
+      "sha256": "78367b6aedfef2674e59f8e4e62c40768130c935dd79b310b67d32b83fe825d1",
+      "class": "configuration/schema",
+      "why_in_git": "2129 portable historical file identities from the sealed preparation; binds original execution metadata without copying it."
+    },
+    {
+      "path": "applications/marmousi2_a25/normal_operator_contract.json",
+      "bytes": 6800,
+      "sha256": "c8a6a95f5ce49f037bbaab872d82547ed22df3ec37145c573bbb0d9e7b5b4111",
+      "class": "configuration/schema",
+      "why_in_git": "Accepted predeclaration, exact probes, windows, physics/coordinate/inner-product/reuse semantics."
+    },
+    {
+      "path": "applications/marmousi2_a25/PUBLICATION_CANDIDATE.md",
+      "bytes": 7896,
+      "sha256": "d77cba2504155300ddd936a3c90506badc5cc126de1f44b4f456234b845c0ffc",
+      "class": "documentation",
+      "why_in_git": "New closure/amendment record and required 32-point review handover, not historical rewrite."
+    },
+    {
+      "path": "applications/marmousi2_a25/PUBLICATION_INVENTORY.json",
+      "class": "configuration/schema",
+      "why_in_git": "Exact publication path/class/reason inventory. Its own byte count/hash are bound externally to avoid circular self-hashing.",
+      "identity": "recorded in external final audit"
+    },
+    {
+      "path": "applications/marmousi2_a25/README.md",
+      "bytes": 6122,
+      "sha256": "d5ccfa38e378967dfb87ca8c8ec1a42fd4089fe127307cdb3a731dfabd418b91",
+      "class": "documentation",
+      "why_in_git": "Architecture, offline commands, logical layout, excluded evidence and short A3 handover."
+    },
+    {
+      "path": "applications/marmousi2_a25/runtime_history.json",
+      "bytes": 3016,
+      "sha256": "07e91cc8b7264ec51f7d4a1aa889f525793234e2338804649f247a19e95ea057",
+      "class": "configuration/schema",
+      "why_in_git": "Compact external interruption/STOP/diagnostic/serial-closure artifact references; no process dumps."
+    },
+    {
+      "path": "applications/marmousi2_a25/SCIENTIFIC_REPORT.md",
+      "bytes": 6552,
+      "sha256": "bf12182e28a3968893f955d00c052506133cd8f1c2f00c57ffab9deea0a081c7",
+      "class": "documentation",
+      "why_in_git": "Repository-readable frozen interpretation, negative controls, operator semantics and caveats."
+    },
+    {
+      "path": "applications/marmousi2_a25/source_genealogy.json",
+      "bytes": 1837,
+      "sha256": "de6af767a6ce9c4f2b4e54f06e5e613e896fcf7ea95b3569bacab28f436899c0",
+      "class": "configuration/schema",
+      "why_in_git": "Original accepted source hashes and explicit new-tooling/old-evidence identity distinction."
+    },
+    {
+      "path": "applications/marmousi2_a25a/case.json",
+      "bytes": 1716,
+      "sha256": "351c0048cd9b204c62fca371355ea5acc531a404fe37b3f4e2397d6a4680d048",
+      "class": "configuration/schema",
+      "why_in_git": "Frozen grid/raw/model/reference/shot identities and relative default layout."
+    },
+    {
+      "path": "applications/marmousi2_a25a/README.md",
+      "bytes": 4773,
+      "sha256": "bf4e86545940a0102a6edb6b8e43c81dff9451537b302591579d6ccbfdedd127",
+      "class": "documentation",
+      "why_in_git": "Image workflow, limitations and pointer to completed operator characterization."
+    },
+    {
+      "path": "applications/README.md",
+      "bytes": 13557,
+      "sha256": "07928800dd96c46af73aa92212bc7d6dce4c4161ea86877e537b0c00e0254c54",
+      "class": "documentation",
+      "why_in_git": "Discoverable link to the new A2.5 package; historical A0/A1/A2 records retained."
+    },
+    {
+      "path": "experiments/marmousi2_a25b/README.md",
+      "bytes": 1351,
+      "sha256": "f73d09c8a6f162e8dc68c32a43a9258b55e84e7054d5a9d8853fd93cfdf578f5",
+      "class": "documentation",
+      "why_in_git": "Document why sealed execution/runtime machinery remains external and cannot enter Applications analysis."
+    },
+    {
+      "path": "tests/applications/test_a25_publication.py",
+      "bytes": 5695,
+      "sha256": "616d41a7ee41b0b55b3e8458c2459abecef4f4dd8a7c3568d2c3ae8387740211",
+      "class": "test",
+      "why_in_git": "Solver-free focused regression coverage of the accepted a25 publication contract; no numerical kernels."
+    },
+    {
+      "path": "tests/applications/test_image_conditioning_report.py",
+      "bytes": 6323,
+      "sha256": "fa771157a8518c9f3c086b4ee906f0921d819998eb358303af5ff9828437b826",
+      "class": "test",
+      "why_in_git": "Solver-free focused regression coverage of the accepted image conditioning report contract; no numerical kernels."
+    },
+    {
+      "path": "tests/applications/test_image_conditioning.py",
+      "bytes": 11974,
+      "sha256": "4bfcdd673007bdbd8b6a5de4386c4704d3f0bbccbb1ea70603032119b525848b",
+      "class": "test",
+      "why_in_git": "Solver-free focused regression coverage of the accepted image conditioning contract; no numerical kernels."
+    },
+    {
+      "path": "tests/applications/test_image_diagnostics.py",
+      "bytes": 7493,
+      "sha256": "7811d7c6c2d35b03f8d712238febefc645165d3acd4616312ce1ce872dd0251e",
+      "class": "test",
+      "why_in_git": "Solver-free focused regression coverage of the accepted image diagnostics contract; no numerical kernels."
+    },
+    {
+      "path": "tests/applications/test_image_products.py",
+      "bytes": 4566,
+      "sha256": "e31569ec767dd5df79caa06cca3d1251f6e7a9ddbbc9bcdd927d1dac7a684b17",
+      "class": "test",
+      "why_in_git": "Solver-free focused regression coverage of the accepted image products contract; no numerical kernels."
+    },
+    {
+      "path": "tests/applications/test_image_reference.py",
+      "bytes": 6757,
+      "sha256": "77b193587829ab73ab7b016bcf8b3ae738df567464ec6641dc0113899d2809e3",
+      "class": "test",
+      "why_in_git": "Solver-free focused regression coverage of the accepted image reference contract; no numerical kernels."
+    },
+    {
+      "path": "tests/applications/test_normal_operator.py",
+      "bytes": 5622,
+      "sha256": "f4364374c6e74238097f7784230a9c70d6f9cd6401844edaa83f49fb3a306436",
+      "class": "test",
+      "why_in_git": "Solver-free focused regression coverage of the accepted normal operator contract; no numerical kernels."
+    },
+    {
+      "path": "tools/denise_case/a25_publication.py",
+      "bytes": 16469,
+      "sha256": "df4a4edaaf07f209955b982e4a0aeba6edf9c6d412c38a5a545b9e48bf913793",
+      "class": "experiment-specific source",
+      "why_in_git": "Case-specific authentication/reconstruction/report adapter; no historical execution-driver dependency."
+    },
+    {
+      "path": "tools/denise_case/cli.py",
+      "bytes": 9525,
+      "sha256": "75acbbb35214e0456f46bc74c71073e102563fcc291e4fa9197fc42413024df2",
+      "class": "reusable Application source",
+      "why_in_git": "Add isolated offline commands and explicit evidence roots; existing numerical routes unchanged."
+    },
+    {
+      "path": "tools/denise_case/image_conditioning_report.py",
+      "bytes": 27648,
+      "sha256": "6c8c4c3fea8f3facb75ead33d13b7bbea433456bd2a7454b79eb9515a19fb87f",
+      "class": "reusable Application source",
+      "why_in_git": "Accepted image/report orchestration and product classes with updated separate A2.5B reference."
+    },
+    {
+      "path": "tools/denise_case/image_conditioning.py",
+      "bytes": 11049,
+      "sha256": "bcb25270116bf941fb59aa055e56f9810b9515663176b9ca5ed6410b1e91bd03",
+      "class": "reusable Application source",
+      "why_in_git": "Accepted coordinate/derivative/filter/gain/display branches, unchanged numerical arithmetic."
+    },
+    {
+      "path": "tools/denise_case/image_diagnostics.py",
+      "bytes": 17113,
+      "sha256": "c29c1fae57495679c5347e9162c75569888e65f3cef83014aaec59eff36fe1b1",
+      "class": "reusable Application source",
+      "why_in_git": "Accepted topology, robust raw norm/depth statistics, shot ordering/coherence and controls."
+    },
+    {
+      "path": "tools/denise_case/image_products.py",
+      "bytes": 8776,
+      "sha256": "55c8603c2a3b102ee2d92665a878541ff9c69915203f7fd8423ae969dc665572",
+      "class": "reusable Application source",
+      "why_in_git": "Immutable authenticated raw/model loader, historical metadata validation, safe outputs and logical root overrides."
+    },
+    {
+      "path": "tools/denise_case/image_reference.py",
+      "bytes": 11950,
+      "sha256": "c148fe4e88636b486ecaa129c9262d607bc85d81b1a2dc44db8f8d9dff76056a",
+      "class": "reusable Application source",
+      "why_in_git": "Accepted predeclared evaluation-only reference windows and structural diagnostics."
+    },
+    {
+      "path": "tools/denise_case/normal_operator_analysis.py",
+      "bytes": 5130,
+      "sha256": "55e3571d69160f92eeedc8c9175d3046853c245e9cff5d7197e0bee7c9d97839",
+      "class": "reusable Application source",
+      "why_in_git": "Preserved ascending saved-array reductions, apertures, discrete cosines and distinct-operator comparison."
+    },
+    {
+      "path": "tools/denise_case/normal_operator.py",
+      "bytes": 8865,
+      "sha256": "3355d505844de57d5568f9b12d31ba7e715934b3a4da03daddc69363e35a535e",
+      "class": "reusable Application source",
+      "why_in_git": "Preserved pure basis/tangent/transpose and frozen Marmousi PSF profile, shared canonical encoder."
+    }
+  ],
+  "excluded": [
+    "100-shot raw JT campaign and aggregates",
+    "900 H15 and 200 H5 saved numerical applications",
+    "full H columns and retained Jz/source/data arrays",
+    "large plot sets and reproducibility reruns",
+    "solver/library binaries and build artifacts",
+    "process dumps and historical time-bearing execution receipts"
+  ],
+  "git_actions": {
+    "stage": 0,
+    "commit": 0,
+    "push": 0,
+    "PR": 0,
+    "merge": 0
+  }
+}

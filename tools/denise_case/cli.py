@@ -66,12 +66,37 @@ def parser() -> argparse.ArgumentParser:
     qc_rtm = commands.add_parser("qc-rtm", help="scientific-coordinate raw RTM and background QC")
     qc_rtm.add_argument("--run-name", default="full_rtm")
     commands.add_parser("report-rtm", help="consolidated matched-FD4 portable HTML report")
+    conditioning = commands.add_parser("image-condition", help="solver-free A2.5A diagnostics")
+    conditioning.add_argument("--case", type=Path, required=True)
+    conditioning.add_argument("--output", type=Path, required=True)
+    conditioning.add_argument("--runs", type=Path)
+    conditioning.add_argument("--models", type=Path)
+    publication = commands.add_parser("a25-publication", help="validate saved evidence and regenerate A2.5 reports; no solver")
+    publication.add_argument("--evidence", type=Path, required=True)
+    publication.add_argument("--a25a-evidence", type=Path, required=True)
+    publication.add_argument("--core", type=Path, required=True)
+    publication.add_argument("--runs", type=Path, required=True)
+    publication.add_argument("--models", type=Path, required=True)
+    publication.add_argument("--output", type=Path, required=True)
     return result
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
+        if args.command == "a25-publication":
+            from .a25_publication import reproduce
+            result = reproduce(args.evidence, args.a25a_evidence, args.core, args.runs, args.models, args.output)
+            print(json.dumps(result, sort_keys=True))
+            return 0
+        if args.command == "image-condition":
+            from .image_conditioning_report import run_conditioning
+            if bool(args.runs) != bool(args.models):
+                raise ValueError('both logical roots --runs and --models required')
+            roots = {'runs': args.runs, 'models': args.models} if args.runs else None
+            receipt = run_conditioning(args.case, args.output) if roots is None else run_conditioning(args.case, args.output, roots_override=roots)
+            print(json.dumps({'content_id': receipt['content_id'], 'solver_executions': 0, 'builds': 0}))
+            return 0
         if args.command == "init":
             target = args.directory / "case.yaml"
             if target.exists():

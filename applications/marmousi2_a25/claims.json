@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "claims_and_limits": [
+    "The accepted A2 RTM is a mathematically consistent raw adjoint migration. Extreme interface sensitivity, nonuniform/nonlocal response, aperture dependence, parameter coupling and historical bandwidth/discretization limit interpretation.",
+    "Useful nonzero deep sensitivity exists; odd/even coherence does not validate geological reflectors. A2.5A geological interpretation remains INDETERMINATE / CONFOUNDED.",
+    "The first-solid-row contribution is preserved; shot 68 remains a norm/QC observation, not a rejected shot. Neither is muted, rescaled independently or repaired.",
+    "The spatial-bandpass interface-stripe negative control produces apparently deep coherent response. Bandpassed panels require their leakage controls; derivatives and depth gain are diagnostic, not information recovery.",
+    "Fixed-density Vp/Vs/log cotangent transforms change coordinates, not information, reflectivity or model updates. Original smooth2 background only; off-diagonal coupling preserved.",
+    "Physical water remains exactly Vs=0 and mu=0. lnVs tangent is frozen there; no physical log(Vs) is claimed inside water, no floor, epsilon substitution or repair mask.",
+    "H15=J15^T J15 is the accepted A2 operator. H5=J5^T J5 has a different source and is a controlled comparison, never a redisplay or replacement of H15.",
+    "PSF norms and sampled diagonal values belong to the unweighted discrete grid-coordinate operator. No added DT, DH, cell area, source or receiver weights; no continuum Hessian, physical energy density, universal reflectivity resolution or full illumination map claim.",
+    "H15 localization is strongly position-dependent: deep inputs are not universally remapped to the interface; sparse sampled diagonals are not a full diagonal map. Aperture dependence, parameter cross-talk and nonlocal columns are substantial.",
+    "For vp_c1560 H5 is more target-concentrated but still strongly nonlocal; for vp_c2960 H5 is less localized. These mixed differences do not identify a dispersion-only cause or invalidate H15.",
+    "Historical 15 Hz exceeds the conservative Taylor-FD4 advisory approximately 5.50625 Hz. H5 lies near/below it but is not automatically dispersion-free. Source amplitude, filtering and phase are part of J; this is not an amplitude-normalized causal comparison.",
+    "A simple scalar diagonal correction is not justified as a universal RTM correction. Randomized diag(H) could only be a separately authorized future diagnostic; no correction is validated here.",
+    "Historical ProcessPool interruptions and H5 exit195 remain ROOT CAUSE UNRESOLVED. The failed exact-single-probe identity gate, successful shot33 two-probe diagnostic and clean serial continuation are separate records, not retrospective cause identification.",
+    "No deterministic shot33/Core numerical defect was demonstrated. Serial fresh-process execution completed cleanly without changing the accepted H15/H5 numerical identities; this does not prove ProcessPool stability.",
+    "No final broadband migration accuracy, validated deep Marmousi reflectors, FWI acceptance, FLUID-3/4 or CUDA physical-water acceptance is implied. Publication readiness is not final user acceptance or merge authority."
+  ]
+}

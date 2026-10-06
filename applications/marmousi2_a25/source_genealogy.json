@@ -1,0 +1,19 @@
+{
+  "a25a_original_sources": {
+    "applications/marmousi2_a25a/README.md": "fc0bb6c1067a3368e8ed129a5731fb2def2dd19280ca5248d76efce818dc8c43",
+    "applications/marmousi2_a25a/case.json": "351c0048cd9b204c62fca371355ea5acc531a404fe37b3f4e2397d6a4680d048",
+    "tests/applications/test_image_conditioning.py": "4bfcdd673007bdbd8b6a5de4386c4704d3f0bbccbb1ea70603032119b525848b",
+    "tests/applications/test_image_conditioning_report.py": "fa771157a8518c9f3c086b4ee906f0921d819998eb358303af5ff9828437b826",
+    "tests/applications/test_image_diagnostics.py": "7811d7c6c2d35b03f8d712238febefc645165d3acd4616312ce1ce872dd0251e",
+    "tests/applications/test_image_products.py": "e31569ec767dd5df79caa06cca3d1251f6e7a9ddbbc9bcdd927d1dac7a684b17",
+    "tests/applications/test_image_reference.py": "77b193587829ab73ab7b016bcf8b3ae738df567464ec6641dc0113899d2809e3",
+    "tools/denise_case/cli.py": "9299b917b32fa2d3349e1e0db86cfedb260b5245c9cf58190f95d5b29d1e5720",
+    "tools/denise_case/image_conditioning.py": "bcb25270116bf941fb59aa055e56f9810b9515663176b9ca5ed6410b1e91bd03",
+    "tools/denise_case/image_conditioning_report.py": "6b13d3af46c7e54949bb4b7a414c959cc6731d9066b1fc4f7d758451f8fa3a3b",
+    "tools/denise_case/image_diagnostics.py": "c29c1fae57495679c5347e9162c75569888e65f3cef83014aaec59eff36fe1b1",
+    "tools/denise_case/image_products.py": "193581fcdb50efa32617c8eba6f496ae4315663744d2d5b60fc510a1eb572923",
+    "tools/denise_case/image_reference.py": "c148fe4e88636b486ecaa129c9262d607bc85d81b1a2dc44db8f8d9dff76056a"
+  },
+  "a25b_original_psf_sha256": "2bdd49b465cb9caa71554720c4c0dc12f54027ae9a1c54ded91cc0c66fac1ef3",
+  "policy": "Source relocation/new provenance changes tooling content identities, not accepted evidence identities. A25A and A25B preserve their respective accepted floating-point operation order."
+}
