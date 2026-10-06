@@ -29,8 +29,9 @@ packets.
 - `DENISE — DOCS-AUDIT` maintains durable scientific, provenance, milestone,
   and context documentation when requested.
 - `DENISE — REPO-OPS` performs mechanical Git/GitHub publication operations
-  only after content acceptance and explicit authorization; it does not make
-  scientific or product changes.
+  only after scientific/content acceptance and an explicit Content Lock /
+  publication authorization; it does not make scientific/product decisions or
+  changes.
 
 There is no permanent Codex orchestrator. Keep each worker on a stable role and
 configuration through a task. Delegate a hard bounded numerical question to
@@ -52,14 +53,17 @@ it is meant to check.
 
 - Never modify `modernization` directly for feature work.
 - Use dedicated feature branches.
-- Do not force-push unless explicitly authorized for an exceptional reason.
-- Do not merge to `modernization` without explicit approval.
+- Never force-push.
+- Merge to `modernization` only under explicit publication authority after the
+  locked candidate passes its required gates.
 - Do not silently rebase or amend already locked commits.
 - Preserve exact published SHAs.
+- Normal GitHub merge commit is the default; do not rebase, amend, force-push,
+  or squash locked/published work.
 
-## Review gates
+## Review lifecycle
 
-The default implementation/performance loop is:
+The default lifecycle is:
 
 1. Define the work package with exact base, scope, exclusions, frozen
    scientific behavior, and current publication authority.
@@ -76,15 +80,57 @@ The default implementation/performance loop is:
    `TEST-ORACLES` only when independent evidence is actually missing, a new
    scientific behavior needs a frozen target, or verification identifies a
    concrete oracle/coverage gap.
-7. After scientific/content acceptance, `REPO-OPS` may perform only the exact
-   commit/push/PR/CI/merge step explicitly authorized at that point.
-8. Published state is independently checked for the expected SHA, parent,
-   message, exact file list/statistics, relevant modes/blobs, remote branch
-   head, and applicable CI evidence before a publication lock is declared.
-9. Only then is the checkpoint **LOCKED**.
+7. Apply bounded hardening when needed. If it is test-, harness-, tooling-, or
+   CI-only, a narrow independent review is sufficient when Production and the
+   previously verified numerical candidate are byte-identical, scientific
+   assertions/oracles and tolerances are unchanged, no skip/XFAIL hides a
+   failure, and independent narrow delta verification passes.
+8. After independent scientific/content acceptance, freeze a **Content Lock**
+   for the exact candidate. Record, as applicable, exact BASE SHA, candidate
+   identity, authorized paths, expected commit structure/message policy,
+   relevant frozen blobs/hashes, required Hosted-CI evidence, merge method, and
+   fail-closed conditions. Local test success or worker completion alone does
+   not create this lock.
+9. An explicit publication authorization may cover one operation or **Full
+   Conditional Publication**: deterministic stage/review/commit/verification,
+   push/remote verification, PR creation/update and verification, required
+   Hosted CI, conditional normal merge, and post-merge identity verification.
+   These remain distinct Git/GitHub operations but require no separate
+   conversational approvals while all frozen conditions hold. `REPO-OPS` is
+   mechanical only and cannot change the locked content or repair scientific
+   failures.
+10. Obtain the default single risk-appropriate Hosted verification on the final
+    locked PR candidate before merge. A real content failure reopens its
+    relevant scientific/content gate; an infrastructure-only failure may have
+    a bounded retry or separately authorized infrastructure-only hardening if
+    the frozen candidate is unchanged and the cause is demonstrated.
+11. If all conditions remain satisfied, merge using the normal GitHub merge
+    commit method, then verify PR state, merge SHA and ordered parents, tested
+    tree identity, live `modernization`, exact changed paths, and applicable CI
+    evidence. Only then declare the checkpoint **CLOSED/CANONICAL**.
 
-Local test success alone does not lock a checkpoint. Worker completion does not
-authorize the next publication step by itself.
+Do not routinely spend Hosted-CI runs after every implementation/hardening
+iteration, merely because a branch was pushed, repeatedly on identical locked
+content, on extra platforms without material platform-specific risk, or
+post-merge when the normal merge tree is exactly the already-tested tree.
+Additional runs require a concrete reason (for example a Hosted-only failure,
+compiler/toolchain portability, workflow-specific or materially
+platform-specific behavior, or release-critical validation). Test-suite
+partitioning may remove duplicate execution only when exact collection-set
+equivalence proves coverage is preserved. Never remove required node IDs, hide
+empty-selection failures with `|| true`, weaken markers/assertions, or change
+scientific acceptance semantics to save runtime.
+
+On any unexpected base move, candidate/scope/commit/remote mismatch,
+conflict/non-mergeability, real Hosted-CI failure, numerical/scientific
+discrepancy, oracle/tolerance/acceptance mismatch, tested-candidate/merge-tree
+mismatch, a final PR head different from the tested PR head, synthetic
+parent/tree mismatch, or post-merge identity/scope mismatch, `REPO-OPS` stops
+and reports the concrete HOLD. It does not rebase, amend, force-push, weaken
+tests, or autonomously repair scientific/product content.
+ChatGPT/Product Owner re-enters before closure only for a defined HOLD, genuinely
+new scientific/product evidence, or a required change to locked scope. A
+dependent milestone does not start before the current milestone closes.
 
 ## Uncommitted review artifacts
 

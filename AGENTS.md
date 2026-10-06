@@ -16,6 +16,11 @@ are authoritative; chat history is not.
   or an oracle by themselves.
 - Model names are intentionally not frozen here. Keep worker responsibilities
   stable even when available models change.
+- Governance must survive individual Codex sessions and ChatGPT chats. At start
+  or resume, obtain operating policy from the current repository state, this
+  `AGENTS.md`, applicable canonical project/review documents, frozen
+  task/scientific contracts, and the explicit current task packet. Chat history
+  is supplementary context, not governance authority.
 
 ## Scientific correctness
 
@@ -53,8 +58,8 @@ are authoritative; chat history is not.
 - `DENISE — DOCS-AUDIT`: durable verification/provenance/milestone records and
   context synchronization when explicitly requested.
 - `DENISE — REPO-OPS`: mechanical commit/push/remote/PR/CI/merge work after
-  content acceptance, with each publication step explicitly authorized; no
-  scientific/product changes.
+  scientific/content acceptance and explicit Content Lock / publication
+  authorization; no scientific or product decisions or changes.
 
 ## Worker continuity
 
@@ -99,7 +104,8 @@ Unspecified private implementation details are not missing requirements.
 3. `NUMERICS` integrates the in-scope approach and produces evidence.
 4. `SCIENTIFIC-VERIFICATION` independently reviews the exact candidate.
 5. Failure returns to `NUMERICS` (or specialist research); success proceeds to
-   acceptance/publication as authorized.
+   scientific/content acceptance and a candidate-specific Content Lock before
+   publication authorization.
 6. Call `TEST-ORACLES` only when existing independent evidence is inadequate or
    verification identifies a real coverage gap.
 
@@ -120,6 +126,72 @@ At resume, verify repository state first and load only relevant source/tests/doc
 Chat history may explain intent but does not override repository evidence,
 scientific contracts, or the current task packet.
 
+## Content lock and conditional publication
+
+Scientific/content acceptance authorizes only the exact candidate that was
+reviewed. It does not authorize later, arbitrary modifications. Before
+publication, an explicit Content Lock / publication packet records, as
+applicable: exact BASE SHA; candidate/content identity; authorized paths;
+expected commit structure and message policy; relevant frozen blobs/hashes;
+required Hosted-CI evidence; merge method; and fail-closed conditions. Passing
+local tests or worker completion alone does not create a Content Lock or grant
+publication authority.
+
+Publication authority may cover one named operation or, under **Full Conditional
+Publication**, the complete declared deterministic chain:
+
+`stage -> verify staged content -> commit -> verify commit -> push -> verify remote -> create/update PR -> verify PR -> required Hosted CI -> conditional normal GitHub merge -> post-merge verification`
+
+The operations remain distinct Git/GitHub actions, but do not require separate
+conversational approval round-trips while the frozen conditions remain true.
+`REPO-OPS` executes mechanics only; it does not decide scientific acceptance,
+change product content, or repair a scientific/content failure. Normal GitHub
+merge commit is the default. Full Conditional Publication never permits force
+push, hidden history rewriting, unauthorized scope, rebase/amend of locked
+work, or a different merge method unless that method was explicitly frozen.
+
+`REPO-OPS` fails closed and stops on an unexpected BASE/`modernization` move,
+candidate identity mismatch, unauthorized path/diff, unexpected commit, remote
+branch change, conflict/non-mergeability, real Hosted-CI failure, scientific or
+numerical discrepancy, oracle/tolerance/acceptance mismatch, tested candidate
+or merge-tree mismatch, a final PR head different from the tested PR head,
+synthetic merge/tree/parent mismatch, or post-merge tree/parent/scope mismatch.
+On HOLD it does not rebase, amend, force-push, weaken tests, or autonomously
+change scientific/product content; it reports the concrete blocker.
+
+## Test hardening and Hosted-CI economy
+
+GitHub-hosted CI is a scarce publication resource even if a runner currently
+appears unmetered. Prefer focused local tests, worker self-verification,
+independent local scientific verification, local portability reproduction, and
+targeted external harnesses during development. Default to one risk-appropriate
+Hosted verification on the final locked PR candidate before merge. Do not run
+Hosted CI after every iteration or hardening edit, merely because a branch was
+pushed, repeatedly for identical locked content, on extra platforms without a
+material platform-specific risk, or post-merge when the normal merge tree is
+exactly the already-tested tree. Additional Hosted runs require a concrete
+reason such as closing a Hosted-only failure, compiler/toolchain portability,
+workflow-specific or materially platform-specific behavior, or release-critical
+validation.
+
+An infrastructure-only failure (for example runner cancellation, transient
+service failure, external timeout, or download/package infrastructure failure)
+may receive a bounded retry or separately authorized infrastructure-only
+hardening without reopening scientific acceptance, provided candidate identity
+remains frozen and the infrastructure cause is demonstrated. A real numerical,
+scientific, assertion, oracle, build-content, or unexplained behavioral failure
+reopens the relevant content/hardening gate; `REPO-OPS` does not repair it.
+
+A bounded test-, harness-, tooling-, or CI-only hardening delta need not repeat
+full scientific verification when Production is byte-identical, the verified
+numerical candidate and scientific assertions/oracles are unchanged, tolerances
+are not widened, no skip/XFAIL hides a failure, and independent narrow delta
+verification passes. The existing Content Lock may then be extended to include
+that verified delta. Test-suite partitioning should avoid duplicate execution
+when exact collection-set equivalence proves coverage is preserved; CI savings
+must not remove required node IDs, hide empty-selection failures (including with
+`|| true`), weaken markers/assertions, or alter scientific acceptance semantics.
+
 ## Safety and publication boundaries
 
 - Ask before root/Administrator/`sudo` commands, including WSL.
@@ -127,9 +199,14 @@ scientific contracts, or the current task packet.
   explicit authorization and exact target validation.
 - Preserve dirty worktrees and unrelated user files.
 - Stage only intended paths; never use `git add .` or `git add -A`.
-- Do not commit, push, merge, create/close a PR, delete a branch, cancel/rerun
-  hosted CI, amend, rebase, force-push, reset away user work, or otherwise
-  publish/rewrite history unless that exact step is explicitly authorized.
+- No publication or history-changing operation is allowed unless covered by
+  explicit publication authority. Authority may be narrow single-step authority
+  or Full Conditional Publication covering the complete declared mechanical
+  chain. It never authorizes force-push, hidden history rewriting, unauthorized
+  scope, or autonomous scientific repairs. Do not amend/rebase locked or
+  published work, reset away user work, or alter frozen candidate content.
+- Normal GitHub merge commit is the default. A dependent milestone does not
+  start until the current milestone is closed.
 
 ## Device handoff
 
