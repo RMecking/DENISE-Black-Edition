@@ -130,7 +130,8 @@ def metrics(response, spec, models, dh=20, target_radius=200):
     same=answer['channels'][spec['parameter']]; other=answer['channels']['lnvs' if spec['parameter']=='lnvp' else 'lnvp']
     answer['cross_talk']={'full_other_over_same_norm':ratio(other['norm'],same['norm']),
         'target_other_over_same_norm':ratio(other['regions']['target']['norm'],same['regions']['target']['norm'])}
-    answer['sampled_diagonal']=float(a[spec['channel'],*spec['row_col']])
+    row, col = spec['row_col']
+    answer['sampled_diagonal']=float(a[spec['channel'],row,col])
     labels=[]
     if same['norm']:
         if same['r90_m']<=200 and same['peak_offset_m']<=40:labels.append('WELL LOCALIZED')

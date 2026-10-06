@@ -53,7 +53,8 @@ def test_unit_basis_and_exact_grid_no_repair():
 def test_predeclared_radius_tie_shell_zero_cross_talk_and_cuts():
     m = model(); z, _, _, spec = probe(m)
     response = 3*z
-    response[1, *spec['row_col']] = 1
+    row, col = spec['row_col']
+    response[1, row, col] = 1
     ms = metrics(response, spec, m)
     same = ms['channels']['lnvp']
     assert same['r50_m'] == same['r90_m'] == 0

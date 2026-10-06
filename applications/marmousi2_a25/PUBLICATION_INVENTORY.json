@@ -152,8 +152,8 @@
     },
     {
       "path": "tests/applications/test_normal_operator.py",
-      "bytes": 5622,
-      "sha256": "f4364374c6e74238097f7784230a9c70d6f9cd6401844edaa83f49fb3a306436",
+      "bytes": 5645,
+      "sha256": "9b3a61d4f6a9311a4985d0ccdc1262299e5c19d2fddaa33d83b9bc46e3856eb8",
       "class": "test",
       "why_in_git": "Solver-free focused regression coverage of the accepted normal operator contract; no numerical kernels."
     },
@@ -215,8 +215,8 @@
     },
     {
       "path": "tools/denise_case/normal_operator.py",
-      "bytes": 8865,
-      "sha256": "3355d505844de57d5568f9b12d31ba7e715934b3a4da03daddc69363e35a535e",
+      "bytes": 8887,
+      "sha256": "a62410bf5aac91ee569fc5c6e2011c562080ecaf039b8eb341c275fb1c3e6919",
       "class": "reusable Application source",
       "why_in_git": "Preserved pure basis/tangent/transpose and frozen Marmousi PSF profile, shared canonical encoder."
     }
