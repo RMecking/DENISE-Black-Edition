@@ -505,6 +505,37 @@ design. This lower-priority milestone will reassess the RTM formulation,
 including imaging-condition and wave-mode handling, before broad
 implementation work.
 
+#### Restricted CPU-fluid verification checkpoints
+
+FLUID-3D is **CLOSED / VERIFICATION-ONLY @
+`76622edd1eaee918ca509c1114de8fa3fbdb80b4`**: 124 focused pytest PASS
+plus three signed-zero probes; no Production delta required. The restricted
+CPU M9 interface transpose is closed for its verified envelope, not reopened.
+
+FLUID-3E is a test-only multishot/replay integration checkpoint verified against
+the same BASE. Independent scientific verification passed: 20 new focused
+tests and seven existing All-Solid regressions, with no skips or XFAIL.
+The durable gate is
+`tests/physics/test_m9_fluid_multishot_replay.py`: three distinct physical shots,
+ascending float64 raw `sum_s J_s^T d_s`, independent restricted FP64 reference,
+bitwise one-shot decomposition and FULL/SEGMENTED replay equivalence, and
+fresh-run determinism. Both FS0/FW0 and FS1/FW3 exercise actual MODE=2 on
+1x1, 2x1, 1x2 and 2x2 MPI topologies, including late-input rejection, removal
+of the final/temporary image pair, and bitwise corrected-run recovery.
+
+The Production-selected uneven replay schedule has 32 segments, 31 checkpoints
+and maximum length four for NT=120; retained replay storage is smaller than
+FULL. Maximum serial/reference combined relative error is `2.987742e-7`;
+maximum serial/MPI combined relative difference is `3.758947e-16`, within the
+unchanged published `6e-5` reference and `1e-12` MPI ceilings. Final fluid
+`gMu` has exact positive-zero bits, while fluid `gLambda` and solid `gMu`
+remain active. Production and existing scientific oracles are unchanged.
+
+This checkpoint verifies bounded CPU raw migration images, not FWI gradients,
+independent shot groups or CUDA fluid support. Canonical publication closure
+requires the locked candidate's Hosted gate and normal-merge identity checks.
+The next CPU-fluid frontier is **FLUID-3F**, not started or closed here.
+
 ### M10 — Reflection FWI / RWI
 
 This future research/development milestone is expected to build on verified
