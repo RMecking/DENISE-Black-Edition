@@ -16,8 +16,9 @@ void checkfd_ssg_elastic(FILE *fp, float ** prho, float ** ppi, float ** pu, flo
 
 	/* local variables */
 
-	float  c, cmax_p=0.0, cmin_p=1e9, cmax_s=0.0, cmin_s=1e9, fmax, gamma;
-	float  cmax=0.0, cmin=1e9, dtstab, dhstab, cmax_r, cmin_r;
+	float  c, c_diag, cmax_p=0.0, cmin_p=INFINITY, cmax_s=0.0, cmin_s=INFINITY, fmax, gamma;
+	float  cmax=0.0, cmin=INFINITY, dtstab, dhstab, cmax_r, cmin_r, cmin_s_r;
+	int found[2]={0,0}, found_r[2];
 	int nfw=iround(FW/DH);
 	int i, j, ny1=1, nx, ny, nx_min, ny_min;
 
@@ -41,7 +42,16 @@ void checkfd_ssg_elastic(FILE *fp, float ** prho, float ** ppi, float ** pu, flo
 				c=pu[j][i];}
 				
 				if (cmax_s<c) cmax_s=c;
-				if (cmin_s>c) cmin_s=c;
+				c_diag=c;
+				/* Reconstruct only the diagnostic minimum when the legacy
+				   FP32 quotient underflows; keep BASE maxima/CFL unchanged. */
+				if (INVMAT1==3 && pu[j][i]>0.0f && c==0.0f)
+					c_diag=sqrt((double)pu[j][i]/(double)prho[j][i]);
+				/* Exact zero shear is an absent propagation branch. */
+				if (c_diag>0.0f) {
+					found[1]=1;
+					if (cmin_s>c_diag) cmin_s=c_diag;
+				}
 			}
 		}
 
@@ -60,6 +70,7 @@ void checkfd_ssg_elastic(FILE *fp, float ** prho, float ** ppi, float ** pu, flo
 				
 				if (cmax_p<c) cmax_p=c;
 				if (cmin_p>c) cmin_p=c;
+				if (c>0.0f) found[0]=1;
 			}
 		}
 
@@ -67,19 +78,26 @@ void checkfd_ssg_elastic(FILE *fp, float ** prho, float ** ppi, float ** pu, flo
 	if (MYID==0){
 		fprintf(fp,"\n\n\n **Message from checkfd (printed by PE %d):\n",MYID);
 		fprintf(fp," Minimum and maximum P-wave and S-wave velocities within subvolumes: \n ");
-		fprintf(fp," MYID\t Vp_min(f=fc) \t Vp_max(f=inf) \t Vs_min(f=fc) \t Vsmax(f=inf) \n");
+		fprintf(fp," MYID\t Vp_min \t Vp_max \t Vs_min_positive(dispersion) \t Vs_max(BASE/CFL) \n");
 	}
 	MPI_Barrier(MPI_COMM_WORLD);
-	fprintf(fp," %d \t %e \t %e \t %e \t %e \n", MYID, cmin_p, cmax_p, cmin_s, cmax_s);
+	if (found[1])
+		fprintf(fp," %d \t %e \t %e \t %e \t %e \n", MYID, cmin_p, cmax_p, cmin_s, cmax_s);
+	else
+		fprintf(fp," %d \t %e \t %e \t none \t %e \n", MYID, cmin_p, cmax_p, cmax_s);
 
 	if (cmax_s>cmax_p) cmax=cmax_s; 
 	else cmax=cmax_p;
 	if (cmin_s<cmin_p) cmin=cmin_s; 
 	else cmin=cmin_p;
 
-	/* find global maximum for Vp and global minimum for Vs*/
+	/* Preserve the maximum/CFL reduction; reduce positive branch minima. */
 	MPI_Allreduce(&cmax,&cmax_r,1,MPI_FLOAT,MPI_MAX,MPI_COMM_WORLD);
 	MPI_Allreduce(&cmin,&cmin_r,1,MPI_FLOAT,MPI_MIN,MPI_COMM_WORLD);
+	MPI_Allreduce(&cmin_s,&cmin_s_r,1,MPI_FLOAT,MPI_MIN,MPI_COMM_WORLD);
+	MPI_Allreduce(found,found_r,2,MPI_INT,MPI_MAX,MPI_COMM_WORLD);
+	if (!found_r[0] && !found_r[1])
+		err(" No positive propagating phase velocity exists for elastic dispersion diagnostics. ");
 	cmax=cmax_r;
 	cmin=cmin_r;	
 
@@ -97,15 +115,19 @@ void checkfd_ssg_elastic(FILE *fp, float ** prho, float ** ppi, float ** pu, flo
 	if (MYID == 0) {
 
 	fprintf(fp," Global values for entire model: \n");
-	fprintf(fp," Vp_max= %e m/s \t Vs_min=%e m/s \n\n", cmax,cmin);
+	fprintf(fp," Maximum phase velocity (CFL)= %e m/s\n", cmax);
+	fprintf(fp," Minimum positive propagating phase velocity (dispersion)= %e m/s\n", cmin);
+	if (found_r[1])
+		fprintf(fp," Minimum positive S-wave phase velocity= %e m/s\n\n", cmin_s_r);
+	else
+		fprintf(fp," No positive S-wave branch exists globally (physical fluid).\n\n");
 	fprintf(fp,"\n\n ------------------ CHECK FOR GRID DISPERSION --------------------\n");
 	fprintf(fp," To satisfactorily limit grid dispersion the number of gridpoints \n");
-	fprintf(fp," per minimum wavelength (of S-waves) should be 6 (better more).\n");
-	fprintf(fp," Here the minimum wavelength is assumed to be minimum model phase velocity \n");
-	fprintf(fp," (of S-waves) at maximum frequency of the source\n");
-	fprintf(fp," devided by maximum frequency of the source.\n");
+	fprintf(fp," per minimum propagating wavelength should be 6 (better more).\n");
+	fprintf(fp," Here the minimum wavelength is the minimum positive propagating phase velocity\n");
+	fprintf(fp," (over P and active S branches) divided by the maximum source frequency.\n");
 	fprintf(fp," Maximum frequency of the source is approximately %8.2f Hz\n",2.0/TS);
-	fprintf(fp," The minimum wavelength (of S-waves) in the following simulation will\n");
+	fprintf(fp," The minimum propagating wavelength in the following simulation will\n");
 	fprintf(fp," be %e meter.\n", cmin/fmax);
 	fprintf(fp," Thus, the recommended value for DH is %e meter.\n", dhstab);
 	fprintf(fp," You have specified DH= %e meter.\n\n", DH);

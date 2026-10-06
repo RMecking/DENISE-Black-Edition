@@ -32,8 +32,8 @@ jobs:
         id: build_denise
         run: make -C src denise
 
-      - name: Run pure-Python harness tests
-        run: python3 -m pytest tests -m 'not integration' -q
+      - name: Run non-physics harness tests
+        run: python3 -m pytest tests --ignore=tests/physics -m 'not integration' -q
 
       - name: Run mandatory DENISE physics verification
         if: ${{ !cancelled() && steps.build_libcseife.outcome == 'success' && steps.build_denise.outcome == 'success' }}
