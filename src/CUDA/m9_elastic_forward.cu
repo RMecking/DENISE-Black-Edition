@@ -461,6 +461,9 @@ static int create(const denise_elastic_psv_born_config *q,
         c->jt->d=rd;
     }
     if(!c->host && m9_host_create(q,&c->host)) { error("M9 canonical preparation: %s",m9_host_error());goto failure; }
+    if(adjoint && m9_host_has_fluid(c->host)) {
+        error("M9 CUDA fluid migration requires FLUID-4D");goto failure;
+    }
     if(!CUDA(cudaMalloc(&c->arena,total)))goto failure;
     c->d.owned_bytes=total;device_owned+=total;
     {
@@ -517,8 +520,9 @@ extern "C" int denise_cuda_m9_prepare(denise_cuda_m9 *c) {
 extern "C" int denise_cuda_m9_nonlinear(denise_cuda_m9 *c,const float *l,const float *m) {
     if(c && c->replay){begin();return error("M9 replay nonlinear evaluation unsupported");}
     begin();if(!c || !l || !m)return finish_failure(c);
-    for(size_t p=0;p<c->v.cells;p++)if(m[p]==0.0f)
-        return error("fluid CUDA requires FLUID-4 before GPU numerical execution");
+    const float *background=m9_host_config(c->host)->mu;
+    for(size_t p=0;p<c->v.cells;p++)if((m[p]==0.0f)!=(background[p]==0.0f))
+        return error("M9 CUDA nonlinear fluid/solid classification change at cell %zu",p);
     invalidate(c);
     denise_elastic_psv_born_config q=*m9_host_config(c->host);q.lambda=l;q.mu=m;
     m9_host *h=NULL;
@@ -528,6 +532,7 @@ extern "C" int denise_cuda_m9_nonlinear(denise_cuda_m9 *c,const float *l,const f
 static bool copy_out(void *out,const void *in,size_t bytes) {return CUDA(cudaMemcpy(out,in,bytes,cudaMemcpyDeviceToHost));}
 extern "C" int denise_cuda_m9_apply_j(denise_cuda_m9 *c,const float *dl,const float *dm,size_t cells) {
     begin();
+    if(c && m9_host_has_fluid(c->host))return error("M9 CUDA fluid J requires FLUID-4C");
     if(c && c->replay)return error("M9 replay apply_j unsupported; use the FULL constructor");
     if(!c || !c->full || !c->d.prepared || !c->valid || !dl || !dm || cells!=c->v.cells) {
         error("M9 CUDA J requires FULL prepared context and exact direction pointers/count");return finish_failure(c);
@@ -601,7 +606,9 @@ extern "C" int denise_cuda_m9_test_step(denise_cuda_m9 *c,const float *state,con
 extern "C" int denise_cuda_m9_test_evolve(denise_cuda_m9 *c,const float *state) {return initial_run(c,state,NULL,c?c->v.nt:0);}
 extern "C" int denise_cuda_m9_test_surface(denise_cuda_m9 *c,int mode,float *padded,
     const float *q,const float *bg,const float *dl,const float *dm) {
-    begin();if(!c || !c->full || !c->v.surface || !padded || !q || mode<0 || mode>2 || (bg && (!dl || !dm))) {
+    begin();
+    if(c && bg && m9_host_has_fluid(c->host))return error("M9 CUDA fluid surface tangent requires FLUID-4C");
+    if(!c || !c->full || !c->v.surface || !padded || !q || mode<0 || mode>2 || (bg && (!dl || !dm))) {
         error("M9 CUDA surface block arguments invalid");return finish_failure(c);
     }
     invalidate(c);View v=c->v;FullJ *j=c->full;

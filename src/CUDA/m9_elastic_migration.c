@@ -20,6 +20,9 @@ int denise_cuda_m9_migrate_request(const struct denise_elastic_psv_migration_req
  if(m9_host_validate_migration(q,&cells,&trajectory,&images,&data)){
   snprintf(request_error,sizeof(request_error),"M9 CUDA request: %s",m9_host_migration_error());return -1;
  }
+ for(k=0;k<cells;k++)if(q->mu[k]==0.0f) {
+  snprintf(request_error,sizeof(request_error),"M9 CUDA fluid migration request requires FLUID-4E");return -1;
+ }
  sum=m9_host_calloc(images,1);work=m9_host_calloc(images,1);
  if(!sum || !work){snprintf(request_error,sizeof(request_error),"M9 CUDA shot %d: %s",q->shots[0].physical_shot_index,denise_cuda_m9_last_error());goto failure;}
  for(shot=0;shot<q->shot_count;shot++) {
