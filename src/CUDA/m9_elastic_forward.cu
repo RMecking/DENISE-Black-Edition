@@ -277,7 +277,11 @@ __global__ static void corner_j(View v,const float *dm,float *out) {
     int i=k%v.nx,j=k/v.nx,i1=(i+1)%v.nx,j1=(j+1)%v.ny;
     size_t p=(size_t)(j+2)*v.w+i+2,p10=(size_t)(j+2)*v.w+i1+2;
     size_t p01=(size_t)(j1+2)*v.w+i+2,p11=(size_t)(j1+2)*v.w+i1+2;
-    const float *m=v.map+v.padded;double h=v.map[4*v.padded+p];
+    const float *m=v.map+v.padded;
+    if(m[p]==0.0f || m[p10]==0.0f || m[p01]==0.0f || m[p11]==0.0f) {
+        out[k]=0.0f;return;
+    }
+    double h=v.map[4*v.padded+p];
     out[k]=(float)(0.25*h*h*(dm[k]/((double)m[p]*m[p])+
         dm[(size_t)j*v.nx+i1]/((double)m[p10]*m[p10])+
         dm[(size_t)j1*v.nx+i]/((double)m[p01]*m[p01])+
@@ -530,17 +534,26 @@ extern "C" int denise_cuda_m9_nonlinear(denise_cuda_m9 *c,const float *l,const f
     int rc=run(c,h,0);m9_host_destroy(&h);return rc;
 }
 static bool copy_out(void *out,const void *in,size_t bytes) {return CUDA(cudaMemcpy(out,in,bytes,cudaMemcpyDeviceToHost));}
+static bool restricted_direction(const denise_cuda_m9 *c,const float *dl,const float *dm) {
+    const float *mu=m9_host_config(c->host)->mu;
+    for(size_t k=0;k<c->v.cells;k++) {
+        if(!std::isfinite(dl[k]) || !std::isfinite(dm[k])) {
+            error("M9 CUDA nonfinite Born direction");return false;
+        }
+        if(mu[k]==0.0f && dm[k]!=0.0f) {
+            error("M9 CUDA restricted Born direction requires dMu=0 at fluid cell %zu",k);return false;
+        }
+    }
+    return true;
+}
 extern "C" int denise_cuda_m9_apply_j(denise_cuda_m9 *c,const float *dl,const float *dm,size_t cells) {
     begin();
-    if(c && m9_host_has_fluid(c->host))return error("M9 CUDA fluid J requires FLUID-4C");
     if(c && c->replay)return error("M9 replay apply_j unsupported; use the FULL constructor");
     if(!c || !c->full || !c->d.prepared || !c->valid || !dl || !dm || cells!=c->v.cells) {
         error("M9 CUDA J requires FULL prepared context and exact direction pointers/count");return finish_failure(c);
     }
+    if(!restricted_direction(c,dl,dm))return finish_failure(c);
     FullJ *j=c->full;j->d.valid=0;
-    for(size_t k=0;k<cells;k++)if(!std::isfinite(dl[k]) || !std::isfinite(dm[k])) {
-        error("M9 CUDA nonfinite Born direction");return finish_failure(c);
-    }
     View v=j->v;
     if(!select(c) || !CUDA(cudaMemset(v.field,0,j->d.physical_bytes+j->d.cpml_bytes)) ||
        !CUDA(cudaMemset(v.strain,0,j->d.operand_bytes)) || !CUDA(cudaMemset(v.data,0,j->d.data_bytes)) ||
@@ -607,10 +620,10 @@ extern "C" int denise_cuda_m9_test_evolve(denise_cuda_m9 *c,const float *state) 
 extern "C" int denise_cuda_m9_test_surface(denise_cuda_m9 *c,int mode,float *padded,
     const float *q,const float *bg,const float *dl,const float *dm) {
     begin();
-    if(c && bg && m9_host_has_fluid(c->host))return error("M9 CUDA fluid surface tangent requires FLUID-4C");
     if(!c || !c->full || !c->v.surface || !padded || !q || mode<0 || mode>2 || (bg && (!dl || !dm))) {
         error("M9 CUDA surface block arguments invalid");return finish_failure(c);
     }
+    if(bg && !restricted_direction(c,dl,dm))return finish_failure(c);
     invalidate(c);View v=c->v;FullJ *j=c->full;
     float *tmp=(float *)m9_host_calloc(c->d.wavefield_bytes,1);
     bool ok=tmp && select(c) && CUDA(cudaMemcpy(v.field,padded,c->d.wavefield_bytes,cudaMemcpyHostToDevice)) &&

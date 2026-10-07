@@ -183,13 +183,10 @@ def test_copied_ownership_and_subnormal_solid(fluid_cuda, mode):
             identical(original, e1.download(lib, c, cfg))
             zeros = np.zeros((cfg.ny, cfg.nx), np.float32)
             rc = lib.denise_cuda_m9_apply_j(c, fp(zeros), fp(zeros), zeros.size)
-            if pattern == 'homogeneous':
-                assert rc != 0 and 'FLUID-4C' in lib.denise_cuda_m9_last_error().decode()
-            else:
-                check(lib, rc)
-                born = e2.born_outputs(cfg)
-                check(lib, lib.denise_cuda_m9_born_download(c, *map(fp, born)))
-                assert all(np.isfinite(x).all() and np.count_nonzero(x) == 0 for x in born)
+            check(lib, rc)
+            born = e2.born_outputs(cfg)
+            check(lib, lib.denise_cuda_m9_born_download(c, *map(fp, born)))
+            assert all(np.isfinite(x).all() and np.count_nonzero(x) == 0 for x in born)
         finally:
             check(lib, lib.denise_cuda_m9_destroy(C.byref(c)))
         # Positive subnormal must also pass the migration/replay capability policy.
@@ -220,8 +217,6 @@ def test_later_capabilities_fail_before_mutation(fluid_cuda, mode):
         state = np.full((13, cfg.ny, cfg.nx), 761., np.float32)
         sentinels = [v.tobytes() for v in (padded, q, state)]
         operations = [
-            ('FLUID-4C', lambda: lib.denise_cuda_m9_apply_j(c, fp(zeros), fp(zeros), zeros.size)),
-            ('FLUID-4C', lambda: lib.denise_cuda_m9_test_surface(c, 1, fp(padded), fp(q), fp(q), fp(zeros), fp(zeros))),
             ('FLUID-4E', lambda: lib.denise_cuda_m9_test_replay_probe(c, 0, 0, fp(state), fp(q)))]
         for marker, operation in operations:
             before = bytes(diagnostics(lib, c))
@@ -261,7 +256,13 @@ def test_later_capabilities_fail_before_mutation(fluid_cuda, mode):
             assert np.isfinite(padded).all()
         check(lib, lib.denise_cuda_m9_prepare(c))
         identical(bg, e1.download(lib, c, cfg))
-        RECORDS.append({'staged_capabilities': mode, 'J_surface_replay_probe_GPU_operations': 0,
+        # FLUID-4C now opens legal restricted J and the tangent surface probe.
+        check(lib, lib.denise_cuda_m9_apply_j(c, fp(zeros), fp(zeros), zeros.size))
+        born = e2.born_outputs(cfg)
+        check(lib, lib.denise_cuda_m9_born_download(c, *map(fp, born)))
+        assert all(np.isfinite(x).all() and np.count_nonzero(x) == 0 for x in born)
+        check(lib, lib.denise_cuda_m9_test_surface(c, 1, fp(padded), fp(q), fp(q), fp(zeros), fp(zeros)))
+        RECORDS.append({'staged_capabilities': mode, 'replay_probe_GPU_operations': 0,
                         'migration_request_GPU_operations': 0, 'later_constructor_leaks': 0})
     finally:
         check(lib, lib.denise_cuda_m9_destroy(C.byref(c)))
