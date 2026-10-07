@@ -6,6 +6,9 @@ extern "C" int denise_cuda_m9_create_replay(const denise_elastic_psv_born_config
  if(!q || segments<1 || (automatic!=0 && automatic!=1))return error("M9 replay configuration invalid");
  m9_host *h=NULL;M9Replay *p=NULL;size_t active[8];struct denise_cuda_m9_replay_diagnostics d={};
  if(m9_host_create(q,&h))return error("M9 replay canonical preparation: %s",m9_host_error());
+ if(m9_host_has_fluid(h)) {
+  m9_host_destroy(&h);return error("M9 CUDA fluid replay requires FLUID-4E");
+ }
  m9_host_active_counts(h,active);
  int rc=denise_cuda_m9_estimate_replay(q->nx,q->ny,q->nt,segments,active,&d);
  if(rc)goto done;
@@ -116,6 +119,7 @@ extern "C" int denise_cuda_m9_test_checkpoints(denise_cuda_m9 *c,float *out,size
 extern "C" int denise_cuda_m9_test_replay_probe(denise_cuda_m9 *c,int segment,int time,float *state,float *q) {
  begin();if(!c || !c->full || !c->d.prepared || !c->valid || !state || time< -1 || time>=c->v.nt)
   return error("M9 replay probe invalid");
+ if(m9_host_has_fluid(c->host))return error("M9 CUDA fluid replay probe requires FLUID-4E");
  View v=c->full->v;int start=0,end=c->v.nt;bool ok=select(c);
  if(c->replay) {
   if(segment<0 || segment>=c->replay->d.effective_segments)return error("M9 probe segment invalid");
