@@ -512,7 +512,9 @@ FLUID-3D is **CLOSED / VERIFICATION-ONLY @
 plus three signed-zero probes; no Production delta required. The restricted
 CPU M9 interface transpose is closed for its verified envelope, not reopened.
 
-FLUID-3E is a test-only multishot/replay integration checkpoint verified against
+FLUID-3E POST-MERGE PASS — CLOSED / CANONICAL @
+`5263bf1b257ab8b9c8ca77a2514cb27be0db61c5`.
+It is a test-only multishot/replay integration checkpoint verified against
 the same BASE. Independent scientific verification passed: 20 new focused
 tests and seven existing All-Solid regressions, with no skips or XFAIL.
 The durable gate is
@@ -532,9 +534,45 @@ unchanged published `6e-5` reference and `1e-12` MPI ceilings. Final fluid
 remain active. Production and existing scientific oracles are unchanged.
 
 This checkpoint verifies bounded CPU raw migration images, not FWI gradients,
-independent shot groups or CUDA fluid support. Canonical publication closure
-requires the locked candidate's Hosted gate and normal-merge identity checks.
-The next CPU-fluid frontier is **FLUID-3F**, not started or closed here.
+independent shot groups or CUDA fluid support. The required Hosted gate and
+normal-merge identity checks completed canonical publication closure.
+
+#### FLUID-3F — final CPU-fluid scientific acceptance
+
+FLUID-3F SCIENTIFIC ACCEPTANCE PASS — CLOSED / VERIFICATION-ONLY @
+`5263bf1b257ab8b9c8ca77a2514cb27be0db61c5`.
+Final current-state integration/acceptance of the complete verified CPU-fluid
+stack required no Production delta: fresh CPU libcseife + DENISE build PASS;
+602 focused tests PASS, with 0 failures, 0 errors, 0 skips, and 0 XFAIL/XPASS.
+Production/test/oracle content identities were authenticated before and after;
+there was no durable acceptance-evidence gap and no repository modification
+during scientific verification.
+
+The accepted modern CPU M9 isotropic elastic P/SV path supports exact zero-shear
+physical fluid within its verified restricted lambda/mu/rho configuration:
+nonlinear forward propagation; restricted fixed-density J/JT; fluid/solid
+interfaces; representative free surface and non-overlapping CPML; serial and
+tested Cartesian MPI topologies 1x1/2x1/1x2/2x2; deterministic FULL/SEGMENTED
+checkpoint/replay; multishot raw migration; the tested CPU MODE=2 executable/file
+workflow; transactional failure/recovery; and all-solid invariance.
+
+The migration parameter space is restricted and fixed-density: fluid
+classification uses copied FP32 `mu == 0.0f`, the fluid tangent requires
+`dMu == 0`, and the final fluid transpose requires `gMu == +0`. Fluid `gLambda`
+and solid `gMu` remain active. Density is not differentiated: no `dRho`/`gRho`
+claim is made.
+
+Explicit exclusions remain: blanket classical legacy MODE=0 fluid certification;
+legacy MODE=1 fluid-FWI gradient certification; an active fluid FWI objective;
+gradient-to-model update; a fluid-preserving optimizer/line-search/model-update
+workflow; fluid parameter-transform certification; FWI persistence/reload;
+CUDA fluid numerics; independent shot groups / `NCOLORS > 1`; arbitrary FD
+orders or MPI topologies; opposing same-axis CPML overlap; anisotropic or
+viscoelastic fluid; Reflection-FWI/RWI; multi-GPU fluid; and M9e-5 completion.
+
+**Next frontier: FLUID-4 — CUDA/GPU zero-shear fluid support — NOT STARTED.**
+FLUID-3F claims no CUDA-fluid capability. FLUID-4 implementation may begin only
+after the FLUID-3F ledger's canonical publication closure.
 
 ### M10 — Reflection FWI / RWI
 
