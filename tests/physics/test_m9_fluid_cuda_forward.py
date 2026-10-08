@@ -202,7 +202,7 @@ def test_copied_ownership_and_subnormal_solid(fluid_cuda, mode):
 
 
 @pytest.mark.parametrize('mode', ['nofma', 'fma'])
-def test_later_capabilities_fail_before_mutation(fluid_cuda, mode):
+def test_staged_capabilities_and_recovery(fluid_cuda, mode):
     _, libs = fluid_cuda
     lib = libs[mode]
     cfg, a, exp = fixture('horizontal', fs=1, nt=12)
@@ -215,17 +215,11 @@ def test_later_capabilities_fail_before_mutation(fluid_cuda, mode):
         padded = np.full((5, cfg.ny+4, cfg.nx+4), 731., np.float32)
         q = np.full((4, cfg.ny, cfg.nx), 751., np.float32)
         state = np.full((13, cfg.ny, cfg.nx), 761., np.float32)
-        sentinels = [v.tobytes() for v in (padded, q, state)]
-        operations = [
-            ('FLUID-4E', lambda: lib.denise_cuda_m9_test_replay_probe(c, 0, 0, fp(state), fp(q)))]
-        for marker, operation in operations:
-            before = bytes(diagnostics(lib, c))
-            lib.denise_cuda_m9_fault(0)
-            assert operation() != 0 and marker in lib.denise_cuda_m9_last_error().decode()
-            assert e1.ledger(lib) == (*owned, 0)
-            assert bytes(diagnostics(lib, c)) == before
-            assert [v.tobytes() for v in (padded, q, state)] == sentinels
-            identical(bg, e1.download(lib, c, cfg))
+        lib.denise_cuda_m9_fault(0)
+        check(lib, lib.denise_cuda_m9_test_replay_probe(c, 0, 0, fp(state), fp(q)))
+        assert np.isfinite(state).all() and np.isfinite(q).all()
+        assert e1.ledger(lib)[:3] == owned and e1.ledger(lib)[3] > 0
+        identical(bg, e1.download(lib, c, cfg))
         born = e2.born_outputs(cfg)
         for x in born: x.fill(771.)
         before = [x.tobytes() for x in born]
@@ -239,18 +233,20 @@ def test_later_capabilities_fail_before_mutation(fluid_cuda, mode):
             assert e1.ledger(lib)[:3] == owned
             for automatic in (0, 1):
                 # S=1 is otherwise automatic FULL, not SEGMENTED.
-                assert lib.denise_cuda_m9_create_replay(C.byref(cfg), C.byref(e1.Options()), 1, automatic, C.byref(other)) != 0
-                assert not other and 'FLUID-4E' in lib.denise_cuda_m9_last_error().decode()
+                check(lib, lib.denise_cuda_m9_create_replay(C.byref(cfg), C.byref(e1.Options()), 1, automatic, C.byref(other)))
+                check(lib, lib.denise_cuda_m9_destroy(C.byref(other)))
+                assert not other
                 assert e1.ledger(lib)[:3] == owned
         data = np.ones((cfg.nt, cfg.receiver_count, 2), np.float32)
         owner = driver.RequestOwner(exp, [data]); owner.request.free_surface = 1
         result = driver.MigrationResult()
         C.memset(C.byref(result), 0x7F, C.sizeof(result))
         lib.denise_cuda_m9_fault(0)
-        assert lib.denise_cuda_m9_migrate_request(C.byref(owner.request), C.byref(result)) != 0
-        assert 'FLUID-4E' in lib.denise_cuda_m9_migration_last_error().decode()
-        assert bytes(result) == bytes(C.sizeof(result))
-        assert e1.ledger(lib) == (*owned, 0)
+        check(lib, lib.denise_cuda_m9_migrate_request(C.byref(owner.request), C.byref(result)))
+        assert result.shots_completed == 1 and result.cell_count == cfg.nx*cfg.ny
+        lib.denise_cuda_m9_migration_result_destroy(C.byref(result))
+        assert not result.image_lambda_raw and not result.image_mu_raw
+        assert e1.ledger(lib)[:3] == owned and e1.ledger(lib)[3] > 0
         # Forward-only surface blocks remain available.
         for block in (0, 1, 2):
             check(lib, lib.denise_cuda_m9_test_surface(c, block, fp(padded), fp(q), F(), F(), F()))
@@ -263,8 +259,8 @@ def test_later_capabilities_fail_before_mutation(fluid_cuda, mode):
         check(lib, lib.denise_cuda_m9_born_download(c, *map(fp, born)))
         assert all(np.isfinite(x).all() and np.count_nonzero(x) == 0 for x in born)
         check(lib, lib.denise_cuda_m9_test_surface(c, 1, fp(padded), fp(q), fp(q), fp(zeros), fp(zeros)))
-        RECORDS.append({'staged_capabilities': mode, 'replay_probe_GPU_operations': 0,
-                        'migration_request_GPU_operations': 0, 'later_constructor_leaks': 0})
+        RECORDS.append({'staged_capabilities': mode, 'replay_probe': 'open',
+                        'migration_request': 'open', 'later_constructor_leaks': 0})
     finally:
         check(lib, lib.denise_cuda_m9_destroy(C.byref(c)))
     assert e1.ledger(lib)[:3] == (0, 0, 0)
@@ -302,9 +298,21 @@ def test_private_fluid_query_host_sanitizers(tmp_path, repository_root):
                         '-o', str(obj)], check=True)
         objects.append(str(obj))
     executable = tmp_path / 'fluid-host-sanitizers'
+    harness = (repository_root / 'tests/utilities/m9_fluid_cuda_host_harness.cpp').read_text()
+    harness = harness.replace(
+        '#include "../../src/CUDA/m9_elastic_forward.cu"',
+        f'#include "{repository_root / "src/CUDA/m9_elastic_forward.cu"}"')
+    harness = harness.replace(
+        '!strstr(denise_cuda_m9_migration_last_error(),"FLUID-4E")',
+        '!strstr(denise_cuda_m9_migration_last_error(),"unexpected replay")')
+    harness = harness.replace(
+        'if(calls || device_owned || host_owned || events_owned)return 10;',
+        'if(!calls || device_owned || host_owned || events_owned)return 10;')
+    harness_path = tmp_path / 'm9_fluid_cuda_host_harness.cpp'
+    harness_path.write_text(harness)
     subprocess.run(['g++', '-std=c++14', '-O1', '-g', '-fsanitize=address,undefined',
                     '-fno-omit-frame-pointer', '-I' + str(repository_root / 'include'),
-                    str(repository_root / 'tests/utilities/m9_fluid_cuda_host_harness.cpp'),
+                    str(harness_path),
                     *objects, '-lm', '-o', str(executable)], check=True)
     env = os.environ.copy()
     env.update(ASAN_OPTIONS='detect_leaks=1:halt_on_error=1', UBSAN_OPTIONS='halt_on_error=1')
@@ -315,14 +323,19 @@ def test_private_fluid_query_host_sanitizers(tmp_path, repository_root):
 
 @pytest.mark.integration
 @pytest.mark.optional_prerequisite
-def test_fluid_mode2_remains_closed(tmp_path, denise_binary, mpiexec, cuda_mode2_binary):
-    _, _, exp = fixture('horizontal', fs=1, nt=12)
+def test_fluid_mode2_is_open(tmp_path, denise_binary, mpiexec, cuda_mode2_binary):
+    _, a, exp = fixture('horizontal', fs=1, nt=12)
     data = [np.ones((exp.nt, len(exp.receivers), 2), np.float32)]
     paths = driver._write_mode2_case(tmp_path, exp, data)
     inp = tmp_path / 'denise.inp'
     inp.write_text(inp.read_text().replace('FREE_SURF =0', 'FREE_SURF =1'))
+    cpu = driver._run_denise(tmp_path, denise_binary, mpiexec)
+    assert cpu.returncode == 0 and 'M9 MODE=2 backend: CPU-M9' in cpu.stdout, cpu.stdout
+    expected = np.stack([np.fromfile(paths[name], np.float64) for name in ('lambda', 'mu')])
     result = driver._run_denise(tmp_path, cuda_mode2_binary, mpiexec)
-    assert result.returncode != 0 and 'FLUID-4E' in result.stdout, result.stdout
-    assert 'CPU-M9' not in result.stdout
-    assert not paths['lambda'].exists() and not paths['mu'].exists()
-    RECORDS.append({'MODE2_fluid': 'FLUID-4E rejection', 'log': result.stdout})
+    assert result.returncode == 0 and 'M9 MODE=2 backend: CUDA-M9e-4' in result.stdout, result.stdout
+    assert 'CPU-M9\n' not in result.stdout
+    got = np.stack([np.fromfile(paths[name], np.float64) for name in ('lambda', 'mu')])
+    assert all(e1.metrics(got[k], expected[k])['rel_l2'] <= 6e-5 for k in (0, 1))
+    assert np.all(got[1].reshape(a['m'].shape)[a['m'] == 0].view(np.uint64) == 0)
+    RECORDS.append({'MODE2_fluid': 'open', 'log': result.stdout})
