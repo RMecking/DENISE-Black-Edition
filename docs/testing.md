@@ -150,8 +150,45 @@ Status words refer only to evidence in the current repository:
 | RTM | NOT COVERED | NOT COVERED | NOT COVERED | NOT COVERED | NOT COVERED | NOT COVERED | NOT COVERED | **UNVERIFIED**; no black-box RTM acceptance test |
 | PSV `INVMAT1=1` (Vp/Vs/rho) | VERIFIED | VERIFIED in elastic PSV tests | VERIFIED | Forward viscoelastic VERIFIED | VERIFIED | VERIFIED | PARTIALLY VERIFIED | **VERIFIED for elastic physical gradients and listed forward paths** |
 | PSV `INVMAT1=2` (Zp/Zs/rho) | Rejected | n/a | Rejection VERIFIED at 1 and 2 ranks | Rejected | NOT COVERED | NOT COVERED | NOT COVERED | **QUARANTINED**: legacy file/input contract is undefined |
-| PSV `INVMAT1=3` (lambda/mu/rho) | VERIFIED by deterministic forward smoke only | NOT COVERED | NOT COVERED | NOT COVERED | UNVERIFIED | NOT COVERED | NOT COVERED | **FORWARD VERIFIED ONLY**; no gradient claim |
+| Legacy PSV `INVMAT1=3` (lambda/mu/rho) | VERIFIED by deterministic forward smoke only | NOT COVERED | NOT COVERED | NOT COVERED | UNVERIFIED | NOT COVERED | NOT COVERED | **FORWARD VERIFIED ONLY** for the generic legacy category; modern restricted M9 is separate below |
 | Q / attenuation inversion | Forward Q-to-GSLS initialization VERIFIED | NOT COVERED | NOT COVERED | Forward rheology VERIFIED | UNVERIFIED | NOT COVERED | UNVERIFIED and apparently incomplete | **UNVERIFIED legacy capability**; no Q-to-tau chain rule |
+
+### Modern M9 restricted exact-zero-shear fluid (not generic legacy acoustic/RTM/FWI)
+
+| Execution path | Verified bounded capability | Boundaries / compute | Not certified |
+|---|---|---|---|
+| CPU M9, physical lambda/mu/rho, fixed density | Nonlinear Forward; restricted J/JT; FULL/SEGMENTED replay; ordered multishot raw migration; actual CPU MODE=2 | Representative flat FREE_SURF and non-overlapping CPML; tested 1x1/2x1/1x2/2x2 MPI; FLUID-3F 602 PASS at `5263bf1b257ab8b9c8ca77a2514cb27be0db61c5` | Generic legacy MODE=0/1, active fluid FWI/update/optimizer, arbitrary MPI/FD/geometry or independent shot groups |
+| Single-GPU CUDA M9, same restricted material space | Nonlinear Forward; restricted Born J/JT; direct FULL raw migration; FULL/SEGMENTED replay/checkpoints; ordered multishot; actual CUDA MODE=2 raw files | FD4, one MPI rank, one NVIDIA GPU; representative flat FREE_SURF and non-overlapping CPML; published 4B–4E | Multi-rank CUDA/multi-GPU/M9e-5, active MODE=1 fluid FWI/objective/update, density derivative, changing topology or general RTM certification |
+
+Copied FP32 `mu == 0.0f` defines fluid, including both signed zeros; positive
+FP32 subnormal is solid. Only lambda everywhere and mu in solid are tangent
+parameters: nonzero fluid dMu rejects, internal fluid raw gMu is exact FP64
+positive zero. Raw images are not automatically FWI gradients. CPU MPI
+acceptance is not GPU MPI acceptance. Generic legacy rows above are not widened.
+
+Focused modules under `tests/physics/`:
+
+- FLUID-4B: `test_m9_fluid_cuda_forward.py` (Forward/nonlinear, ownership,
+  classification, interface/surface/CPML, lifecycle).
+- FLUID-4C: `test_m9_fluid_cuda_j.py` (16 corner occupancies, restricted J,
+  centered restricted FD, surface tangent and nofma equality).
+- FLUID-4D: `test_m9_fluid_cuda_jt.py` (mixed-corner VJP, restricted transpose,
+  internal fluid gMu projection and direct raw migration).
+- FLUID-4E: `test_m9_fluid_cuda_replay_mode2.py` (checkpoint/replay,
+  multishot/MODE=2 and transactional failures).
+- Inherited all-solid regression modules: `test_m9e1_cuda_elastic_psv_forward.py`,
+  `test_m9e2_cuda_free_surface_born.py`, `test_m9e3_cuda_jt_migration.py`,
+  `test_m9e4_cuda_replay_mode2.py`.
+
+The independent real-GPU stages passed 220/314/365/387 tests sequentially;
+counts overlap and must not be summed. Latest eight-module scope: 387 PASS,
+zero failures/errors/skips/XFAIL, CUDA 12.8 fma/nofma sm_86 on RTX 3070 Laptop.
+Hosted verification lacks CUDA hardware/toolchain and skips those scientific
+tests; a Hosted PASS is not a GPU physics rerun. The
+[CUDA acceptance ledger](m9_fluid_4_cuda_scientific_acceptance.md) records exact
+published SHAs, report identities, numerical ceilings, reproduction commands,
+supplemental evidence and exclusions. FLUID-4F remains an unpublished
+documentation candidate pending independent review.
 
 CPML tests cover SH and elastic PSV incidence, negative controls, and selected
 MPI decompositions. Elastic-interface tests remain PSV-only. Free-surface
