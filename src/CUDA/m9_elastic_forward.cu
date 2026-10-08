@@ -465,9 +465,6 @@ static int create(const denise_elastic_psv_born_config *q,
         c->jt->d=rd;
     }
     if(!c->host && m9_host_create(q,&c->host)) { error("M9 canonical preparation: %s",m9_host_error());goto failure; }
-    if(adjoint && m9_host_has_fluid(c->host)) {
-        error("M9 CUDA fluid migration requires FLUID-4D");goto failure;
-    }
     if(!CUDA(cudaMalloc(&c->arena,total)))goto failure;
     c->d.owned_bytes=total;device_owned+=total;
     {
