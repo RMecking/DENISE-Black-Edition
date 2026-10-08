@@ -233,8 +233,9 @@ def test_later_capabilities_fail_before_mutation(fluid_cuda, mode):
         assert [x.tobytes() for x in born] == before
         for _ in range(3):
             other = P()
-            assert lib.denise_cuda_m9_create_migration(C.byref(cfg), C.byref(e1.Options()), C.byref(other)) != 0
-            assert not other and 'FLUID-4D' in lib.denise_cuda_m9_last_error().decode()
+            check(lib, lib.denise_cuda_m9_create_migration(C.byref(cfg), C.byref(e1.Options()), C.byref(other)))
+            check(lib, lib.denise_cuda_m9_destroy(C.byref(other)))
+            assert not other
             assert e1.ledger(lib)[:3] == owned
             for automatic in (0, 1):
                 # S=1 is otherwise automatic FULL, not SEGMENTED.

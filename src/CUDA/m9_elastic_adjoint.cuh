@@ -99,10 +99,20 @@ __global__ static void rharmonic(View v,FullJT r) {
  for(int b=1;b<4;b++){size_t z=a[b];int k=b;while(k && a[k-1]>z){a[k]=a[k-1];k--;}a[k]=z;}
  double mu=v.map[v.padded+rp(v,j,i)];
  for(int k=0;k<4;k++) {
-  size_t p=rp(v,a[k]/v.nx,a[k]%v.nx);double h=v.map[4*v.padded+p];
+  int cj=a[k]/v.nx,ci=a[k]%v.nx,cj1=(cj+1)%v.ny,ci1=(ci+1)%v.nx;
+  size_t p=rp(v,cj,ci);
+  const float *m=v.map+v.padded;
+  if(m[p]==0.0f || m[rp(v,cj,ci1)]==0.0f ||
+     m[rp(v,cj1,ci)]==0.0f || m[rp(v,cj1,ci1)]==0.0f)continue;
+  double h=v.map[4*v.padded+p];
   double common=0.25*h*h*r.q[3*v.cells+a[k]];
   r.images[v.cells+t]+=common/(mu*mu);
  }
+}
+__global__ static void restrict_fluid_mu(View v,FullJT r) {
+ size_t t=(size_t)blockIdx.x*blockDim.x+threadIdx.x;if(t>=v.cells)return;
+ size_t p=rp(v,t/v.nx,t%v.nx);
+ if(v.map[v.padded+p]==0.0f)r.images[v.cells+t]=0.0;
 }
 __global__ static void rclosure(View v,FullJT r) {
  int i=blockIdx.x*blockDim.x+threadIdx.x;if(i>=v.nx)return;
@@ -188,6 +198,11 @@ extern "C" int denise_cuda_m9_apply_jt(denise_cuda_m9 *c,const float *data,size_
   }
  } else for(int t=c->v.nt-1;t>=0;t--)
   if(!reverse_step(c->v,r,c->v.strain+(size_t)t*4*c->v.cells,t))return finish_failure(c);
+ if(m9_host_has_fluid(c->host)) {
+  if(!gate("restrict_fluid_mu reverse launch"))return finish_failure(c);
+  restrict_fluid_mu<<<blocks(c->v.cells),128>>>(c->v,r);
+  if(!launch_check())return finish_failure(c);
+ }
  if(!CUDA(cudaEventRecord(c->end)) || !CUDA(cudaEventSynchronize(c->end)) ||
     !CUDA(cudaEventElapsedTime(&r.d.elapsed_ms,c->start,c->end)))return finish_failure(c);
  r.d.valid=1;return 0;
