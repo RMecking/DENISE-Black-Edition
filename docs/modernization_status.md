@@ -566,13 +566,53 @@ Explicit exclusions remain: blanket classical legacy MODE=0 fluid certification;
 legacy MODE=1 fluid-FWI gradient certification; an active fluid FWI objective;
 gradient-to-model update; a fluid-preserving optimizer/line-search/model-update
 workflow; fluid parameter-transform certification; FWI persistence/reload;
-CUDA fluid numerics; independent shot groups / `NCOLORS > 1`; arbitrary FD
+CUDA fluid numerics at this CPU-only 3F checkpoint (not a statement about
+current repository CUDA capability); independent shot groups / `NCOLORS > 1`; arbitrary FD
 orders or MPI topologies; opposing same-axis CPML overlap; anisotropic or
 viscoelastic fluid; Reflection-FWI/RWI; multi-GPU fluid; and M9e-5 completion.
 
-**Next frontier: FLUID-4 — CUDA/GPU zero-shear fluid support — NOT STARTED.**
-FLUID-3F claims no CUDA-fluid capability. FLUID-4 implementation may begin only
-after the FLUID-3F ledger's canonical publication closure.
+#### FLUID-4 — bounded single-GPU CUDA-fluid capability
+
+FLUID-4A is the **frozen implementation-contract audit**, not a separate
+Production capability. The following slices are **CLOSED / CANONICAL**:
+
+| Slice | Published capability | Canonical merge |
+|---|---|---|
+| 4B / [PR #97](https://github.com/RMecking/DENISE-Black-Edition/pull/97) | Forward and classification-preserving nonlinear | `e0ae634f368f41d3d7954227bd2485906da5bc12` |
+| 4C / [PR #98](https://github.com/RMecking/DENISE-Black-Edition/pull/98) | Restricted Born J | `97798b883def24de12a4c022ed4f0deaf67ad311` |
+| 4D / [PR #99](https://github.com/RMecking/DENISE-Black-Edition/pull/99) | Restricted JT and direct FULL raw migration | `8787fe25088727785ecfd46b5d62c92e7ee3f47c` |
+| 4E / [PR #100](https://github.com/RMecking/DENISE-Black-Edition/pull/100) | FULL/SEGMENTED replay, ordered multishot and actual MODE=2 raw files | `c582623111468cd6b4bee3a7aa4e4df5355ee00c` |
+
+The accepted modern M9 isotropic elastic P/SV CUDA path uses physical exact
+zero shear, fixed-density restricted lambda/mu directions, FD4, one MPI rank
+and one NVIDIA GPU. Copied FP32 `mu == 0.0f` defines fluid (both zero signs;
+positive subnormal is solid); `dMu[fluid] == 0` and internal raw
+`gMu[fluid] == FP64 +0` are exact requirements. Fluid lambda and adjacent
+solid mu remain active. Representative flat free surface and non-overlapping
+CPML, immutable five-field/eight-memory checkpoints, deterministic same-backend
+FULL/SEGMENTED replay and all-solid preservation are verified.
+
+Independent real-GPU fma/nofma CUDA 12.8 / sm_86 / RTX 3070 Laptop runs passed
+220, 314, 365 and 387 focused tests in successive slices. These overlapping
+regression totals are **not additive**. Hosted CI skipped CUDA under its
+existing hardware/toolchain policy; it did not rerun GPU physics.
+
+This is raw migration, not general RTM or active fluid FWI acceptance. Multi-rank
+CUDA, multi-GPU/M9e-5, unrestricted geometry/FD/CPML/acquisition, changing
+classification, fluid dMu, density derivatives, viscoelastic/anisotropic fluid,
+legacy MODE=0 blanket support, MODE=1 fluid objective/gradient, optimizer,
+line search, model update, parameter transforms, FWI persistence/restart and
+Reflection-FWI/RWI remain outside this claim. CPU FLUID-3F's tested Cartesian
+MPI support above is separate and unchanged. Genuinely unrecoverable CUDA
+cleanup failure may retain resource handles; recoverable fault tests do not
+remove that inherited limitation.
+
+**FLUID-4F: final-acceptance documentation candidate; NOT CLOSED / NOT
+PUBLISHED.** Its BASE is the 4E merge above. See the
+[cross-slice CUDA scientific acceptance ledger](m9_fluid_4_cuda_scientific_acceptance.md)
+for metrics, exact invariants, source identities, envelope and exclusions.
+Independent SCIENTIFIC-VERIFICATION review and external acceptance/Content
+Lock/publication authorization are still required; no 4F merge is claimed.
 
 ### M10 — Reflection FWI / RWI
 
