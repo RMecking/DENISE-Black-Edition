@@ -26,11 +26,16 @@ history.
 - M7 scientific closeout head:
   `043ef44b2a5b45dfd45014566f6a982f610ad668`
 - M7 was merged through PR #44 by a normal GitHub merge commit.
-- Current `modernization` frontier:
-  `043ef44b2a5b45dfd45014566f6a982f610ad668`
+- Recorded FLUID-4F canonical milestone head (PR #101):
+  `4eded044e370461644b359039662ca6c1bd4477f`
+- These are historical milestone identities, not a dynamically current branch
+  HEAD. Reauthenticate live `origin/modernization` at each task kickoff.
 - M6.3 and M7 status: **SCIENTIFICALLY COMPLETE and merged into
   `modernization`**
-- Active next milestone: **M8 — Performance / Compute**
+- Next proposed scientific roadmap: **M9L — Modern Elastic FD8 Extension &
+  Legacy Replacement**; implementation not started or authorized. Additional
+  performance/features and M10 remain downstream of correct Forward, exact
+  FWI and scientifically valid RTM in declared configurations.
 
 ## Locked M6.3 checkpoints
 
@@ -493,17 +498,20 @@ checkpoint/recompute scalability in M8c, blocking-MPI characterization, and
 region-safe stress kernels. Experimental nonblocking V overlap was
 scientifically correct but a performance **NO-GO on the tested OpenMPI/WSL
 runtime**; it is not merged or enabled. S overlap is deferred, not failed.
-The next performance/compute milestone is **M8e — GPU / accelerator
-feasibility and design**. See
+The recorded next performance/compute milestone is **M8e — GPU / accelerator
+feasibility and design — PLANNED / DEFERRED**, not completed by this roadmap.
+Already published compute/scientific checkpoints retain their accepted evidence;
+the new scientific priority does not invalidate them. See
 [`docs/m8d_mpi_overlap_evaluation.md`](m8d_mpi_overlap_evaluation.md) for the
 bounded evidence and revisit conditions.
 
 ### M9 — RTM Scientific Redesign / Modernization
 
-The current simple RTM implementation is not the desired final scientific
-design. This lower-priority milestone will reassess the RTM formulation,
-including imaging-condition and wave-mode handling, before broad
-implementation work.
+The generic legacy RTM implementation is not certified by the modern M9
+restricted raw-migration evidence. Scientific RTM formulation, imaging-condition
+and wave-mode acceptance remain necessary; bounded published M9/FLUID evidence
+retains its original scope. Correct Forward, exact FWI and scientifically valid
+RTM now take priority over additional performance/features and M10.
 
 #### Restricted CPU-fluid verification checkpoints
 
@@ -607,12 +615,63 @@ MPI support above is separate and unchanged. Genuinely unrecoverable CUDA
 cleanup failure may retain resource handles; recoverable fault tests do not
 remove that inherited limitation.
 
-**FLUID-4F: final-acceptance documentation candidate; NOT CLOSED / NOT
-PUBLISHED.** Its BASE is the 4E merge above. See the
+**FLUID-4F POST-MERGE PASS — CLOSED / CANONICAL @
+`4eded044e370461644b359039662ca6c1bd4477f`**, through
+[PR #101](https://github.com/RMecking/DENISE-Black-Edition/pull/101).
+This is the recorded canonical closeout, not a permanent live-HEAD field.
+Its scientific candidate BASE was the 4E merge above. See the
 [cross-slice CUDA scientific acceptance ledger](m9_fluid_4_cuda_scientific_acceptance.md)
 for metrics, exact invariants, source identities, envelope and exclusions.
-Independent SCIENTIFIC-VERIFICATION review and external acceptance/Content
-Lock/publication authorization are still required; no 4F merge is claimed.
+This ledger reconciliation records the independently verified publication state
+specified by the task; it does not derive broader scientific acceptance merely
+from a merge or rewrite the earlier acceptance document's historical snapshot.
+
+### M9L — Modern Elastic FD8 Extension & Legacy Replacement
+
+**ROADMAP PROPOSED / IMPLEMENTATION NOT STARTED.** Strategy **A2**: extend the
+modern M9 P/SV operator to FD8/Holberg, preserving FD4 contracts; do not establish
+a second long-lived exact-adjoint implementation in legacy FD8. This is a
+documentation proposal, not authorization to begin numerical work or M9L-0.
+Finish current in-flight work and its acceptance/publication gates first.
+
+| Slice | Planned role |
+|---|---|
+| M9L-0 | Read-only architecture, source comparison and independent verification contract |
+| M9L-1 | Modern FD8 nonlinear forward |
+| M9L-2 | Exact augmented-state FD8 tangent and transpose |
+| M9L-3 | Physical material derivatives, gradients and zero-shear water |
+| M9L-4 | Active FWI objective, line search, update and lifecycle |
+| M9L-5 | Scientific RTM integration and imaging-condition acceptance |
+| M9L-6 | MPI, free-surface and supported-envelope expansion |
+| M9L-7 | Controlled legacy deprecation and immutable archival |
+
+M9L-4 and M9L-5 may be separately developed after common prerequisites are
+accepted. M9L-6 prerequisites may be advanced only for specifically required
+configurations. M10 Reflection-FWI/RWI remains downstream; no new implementation
+or benchmark campaign is authorized here.
+
+Transferred A3.0 benchmark evidence, **pending source/artifact authentication
+in M9L-0**: Gate A isolated legacy CPML coefficient repair PASS; Gate B bounded
+corrected Forward PASS, absorption/reflection quality UNRESOLVED; Gate C legacy
+FD8 reverse-path consistency BLOCKED; CPML-only adjoint repair insufficient.
+Historical Check 7 remains FAIL/BLOCKED/STOP; Checks 8–9/A3.0b not executed.
+Gate C does not conclusively explain Check 7, and corrected Forward does not
+independently certify reflection suppression. No benchmark rerun or mutation.
+
+Preserve original and corrected legacy FD8 source, frozen binaries, inputs,
+manifests and evidence for reproducible historical execution. No source/old
+numerical-path removal. Deprecation and immutable archival only after accepted
+replacement for declared workflows.
+
+The proposed independent gates include FD8/Holberg coefficient identity,
+discrete symbol/dispersion; FD4/FD8 mesh/time convergence; analytical homogeneous
+wave/interface comparisons; manufactured solutions; optional matched-assumption
+external cross-code; isolated CPML reflection/absorption; full augmented-state
+and parameter J/JT identities; finite differences/physical gradients;
+multi-iteration FWI reconstruction; independent point-scatterer/planar-reflector
+RTM. Freeze criteria before Production results; no post-hoc threshold fitting.
+Adding this roadmap accepts no new oracle/reference. See the complete
+[M9L roadmap and transferred provenance](m9l_modern_elastic_fd8_roadmap.md).
 
 ### M10 — Reflection FWI / RWI
 
