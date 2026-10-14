@@ -33,10 +33,61 @@ jobs:
         run: make -C src denise
 
       - name: Run non-physics harness tests
+        id: non_physics
         run: python3 -m pytest tests --ignore=tests/physics -m 'not integration' -q
 
       - name: Run mandatory DENISE physics verification
+        id: physics
         if: ${{ !cancelled() && steps.build_libcseife.outcome == 'success' && steps.build_denise.outcome == 'success' }}
         env:
           MPIEXEC_FLAGS: --oversubscribe
-        run: python3 -m pytest tests/physics -m 'not extended' -v --require-denise
+        # Only the sealed external-artifact suite is excluded. Public FD8 smoke
+        # remains in this mandatory selection; its outcomes are in the JUnit log.
+        run: python3 -m pytest tests/physics -m 'not extended' -v --require-denise --ignore=tests/physics/test_m9l1a_fd8_forward_foundation.py --junitxml="$RUNNER_TEMP/denise-physics.xml"
+
+      - name: Run artifact-free Taylor8 moment check
+        id: taylor8_moments
+        run: python3 -m pytest tests/physics/test_m9l1a_fd8_forward_foundation.py::test_a1_rational_moments_and_stored_bits -v
+
+      - name: Report CI integration and scientific-evidence boundaries
+        if: always()
+        env:
+          LIBCSEIFE_OUTCOME: ${{ steps.build_libcseife.outcome }}
+          DENISE_OUTCOME: ${{ steps.build_denise.outcome }}
+          NON_PHYSICS_OUTCOME: ${{ steps.non_physics.outcome }}
+          PHYSICS_OUTCOME: ${{ steps.physics.outcome }}
+          MOMENT_OUTCOME: ${{ steps.taylor8_moments.outcome }}
+          PHYSICS_JUNIT: ${{ runner.temp }}/denise-physics.xml
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          outcomes = {name: os.environ[name + "_OUTCOME"] for name in
+                      ("LIBCSEIFE", "DENISE", "NON_PHYSICS", "PHYSICS")}
+          expected = {"test_public_fd8_ci_smoke[" + mode + "]" for mode in
+                      ("zero_state", "prepared_source", "capacity", "bad_abi")}
+          xml = Path(os.environ["PHYSICS_JUNIT"])
+          cases = []
+          if xml.is_file():
+              cases = [case for case in ET.parse(xml).iter("testcase")
+                       if case.get("classname", "").endswith("test_m9l1a_fd8_ci_smoke")]
+          names = [case.get("name") for case in cases]
+          failed = any(case.find(tag) is not None for case in cases
+                       for tag in ("error", "failure", "skipped"))
+          smoke_pass = len(names) == 4 and set(names) == expected and not failed
+          ordinary = "EXECUTED — PASS" if all(value == "success" for value in outcomes.values()) else repr(outcomes)
+          smoke = "EXECUTED — PASS (4/4)" if smoke_pass else "NOT PASS (observed %d/4 cases)" % len(cases)
+          moment = os.environ["MOMENT_OUTCOME"]
+          moment = "EXECUTED — PASS" if moment == "success" else moment.upper()
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as summary:
+              summary.write("## CI integration scope\n\n")
+              summary.write("- Ordinary repository verification: " + ordinary + "\n")
+              summary.write("- FD8 public API smoke: " + smoke + "\n")
+              summary.write("- Artifact-free Taylor8 moment check: " + moment + "\n")
+              summary.write("- Sealed scientific Foundation suite: **NOT RUN in Hosted CI**.\n")
+              summary.write("- Original independent scientific PASS and Owner acceptance: retained as separately authenticated evidence; not newly executed CI checks.\n")
+          if outcomes["PHYSICS"] == "success" and not smoke_pass:
+              raise SystemExit("Mandatory physics step did not report all four successful FD8 smoke cases")
+          PY
