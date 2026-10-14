@@ -1,6 +1,11 @@
 #include "denise_elastic_psv_born.h"
 
 #include <limits.h>
+#include <float.h>
+#include <fenv.h>
+#if defined(__SSE__)
+#include <xmmintrin.h>
+#endif
 #include <math.h>
 #include <stdint.h>
 #include <stdarg.h>
@@ -10,6 +15,14 @@
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
+#endif
+
+/* Private test-build hooks, absent from the installed/native public ABI. */
+#ifndef DENISE_M9L1A_INITIALIZE
+#define DENISE_M9L1A_INITIALIZE(c,f) ((void)0)
+#endif
+#ifndef DENISE_M9L1A_SNAPSHOT
+#define DENISE_M9L1A_SNAPSHOT(c,f,q,t,stage) ((void)0)
 #endif
 
 enum { VX, VY, SXX, SYY, SXY, FIELD_COUNT };
@@ -63,6 +76,9 @@ struct denise_elastic_psv_born {
     size_t replayed_forward_steps_last;
     float cpml_memory_peak;
     int prepared;
+    /* Private selector; no public FD4 ABI/checkpoint change. */
+    int fd8;
+    int *fd8_fault;
 };
 
 static char born_error[384];
@@ -110,8 +126,62 @@ static void copy_floats(float *destination, const float *source, size_t count) {
     memcpy(destination, source, count * sizeof(*destination));
 }
 
+
+/* Each volatile destination is an FD8-local unfused native rounding barrier.
+ * The old FD4 expressions below remain exactly their canonical expression graph.
+ */
+static float fd8_add(const struct denise_elastic_psv_born *c,float a,float b) {
+    volatile float r=a+b; if(!isfinite(r))*c->fd8_fault=1; return r;
+}
+static float fd8_sub(const struct denise_elastic_psv_born *c,float a,float b) {
+    volatile float r=a-b; if(!isfinite(r))*c->fd8_fault=1; return r;
+}
+static float fd8_mul(const struct denise_elastic_psv_born *c,float a,float b) {
+    volatile float r=a*b; if(!isfinite(r))*c->fd8_fault=1; return r;
+}
+static float fd8_div(const struct denise_elastic_psv_born *c,float a,float b) {
+    volatile float r=a/b; if(!isfinite(r))*c->fd8_fault=1; return r;
+}
+static double fd8_dadd(double a,double b) { volatile double r=a+b; return r; }
+static double fd8_dmul(double a,double b) { volatile double r=a*b; return r; }
+static double fd8_ddiv(double a,double b) { volatile double r=a/b; return r; }
+static float fd8_cast(double a) { volatile float r=(float)a; return r; }
+static const float fd8_coefficients[4]={
+    0x1.324p+0f,-0x1.46aaaap-4f,0x1.39999ap-7f,-0x1.6db6dcp-11f
+};
+static int fd8_material_index(int i,int n) {return i<0?0:(i>=n?n-1:i);}
+static float fd8_field(const struct denise_elastic_psv_born *c,
+                       const float *f,int j,int i) {
+    return i<0||j<0||i>=c->nx||j>=c->ny?0.0f:f[cell(c,j,i)];
+}
+static float fd8_derivative(const struct denise_elastic_psv_born *c,
+                           const float *f,int j,int i,int kind) {
+    int m;float result=0.0f;
+    for(m=1;m<=4;m++) {
+        int plus=(kind==DX_FWD||kind==DY_FWD)?m:m-1;
+        int minus=(kind==DX_FWD||kind==DY_FWD)?1-m:-m;
+        float x,y,term;
+        if(kind==DX_BACK||kind==DX_FWD) {
+            x=fd8_field(c,f,j,i+plus);y=fd8_field(c,f,j,i+minus);
+        } else {x=fd8_field(c,f,j+plus,i);y=fd8_field(c,f,j+minus,i);}
+        term=fd8_mul(c,fd8_coefficients[m-1],fd8_sub(c,x,y));
+        result=m==1?term:fd8_add(c,result,term);
+    }
+    return result;
+}
+static float fd8_corner(const struct denise_elastic_psv_born *c,
+                        const float *mu,int j,int i) {
+    int ip=fd8_material_index(i+1,c->nx),jp=fd8_material_index(j+1,c->ny);
+    double z=fd8_dadd(fd8_ddiv(1.0,mu[cell(c,j,i)]),
+                     fd8_ddiv(1.0,mu[cell(c,j,ip)]));
+    z=fd8_dadd(z,fd8_ddiv(1.0,mu[cell(c,jp,i)]));
+    z=fd8_dadd(z,fd8_ddiv(1.0,mu[cell(c,jp,ip)]));
+    return fd8_cast(fd8_ddiv(4.0,z));
+}
+
 static float derivative_at(const struct denise_elastic_psv_born *c,
                            const float *field, int j, int i, int kind) {
+    if(c->fd8)return fd8_derivative(c,field,j,i,kind);
     const float a = 9.0f / 8.0f;
     const float b = -1.0f / 24.0f;
     int im2 = wrap(i - 2, c->nx), im1 = wrap(i - 1, c->nx);
@@ -180,6 +250,12 @@ static float pml_forward(const struct denise_elastic_psv_born *c, int psi_kind,
                          int j, int i, float q, float *memory) {
     const struct pml_profile *profile = profile_for(c, psi_kind);
     int k = profile_index(psi_kind, j, i);
+    if(c->fd8) {
+        float u=fd8_mul(c,profile->b[k],*memory);
+        float w=fd8_mul(c,profile->a[k],q);
+        float next8=fd8_add(c,u,w),z=fd8_div(c,q,profile->kappa[k]);
+        *memory=next8;return fd8_add(c,z,next8);
+    }
     float next = profile->b[k] * *memory + profile->a[k] * q;
     *memory = next;
     return q / profile->kappa[k] + next;
@@ -315,10 +391,17 @@ static int allocate_context_arrays(struct denise_elastic_psv_born *c) {
 static void build_material_maps(struct denise_elastic_psv_born *c) {
     int i, j;
     for (j = 0; j < c->ny; ++j) for (i = 0; i < c->nx; ++i) {
-        int ip = wrap(i + 1, c->nx), jp = wrap(j + 1, c->ny);
+        int ip = c->fd8?fd8_material_index(i+1,c->nx):wrap(i + 1, c->nx);
+        int jp = c->fd8?fd8_material_index(j+1,c->ny):wrap(j + 1, c->ny);
         size_t p = cell(c,j,i);
         double m00 = c->mu[p], m10 = c->mu[cell(c,j,ip)];
         double m01 = c->mu[cell(c,jp,i)], m11 = c->mu[cell(c,jp,ip)];
+        if(c->fd8) {
+            c->invrho_x[p]=fd8_cast(fd8_ddiv(2.0,fd8_dadd(c->rho[p],c->rho[cell(c,j,ip)])));
+            c->invrho_y[p]=fd8_cast(fd8_ddiv(2.0,fd8_dadd(c->rho[p],c->rho[cell(c,jp,i)])));
+            c->mu_corner[p]=fd8_corner(c,c->mu,j,i);
+            continue;
+        }
         c->invrho_x[p] = (float)(2.0 / ((double)c->rho[p] + c->rho[cell(c,j,ip)]));
         c->invrho_y[p] = (float)(2.0 / ((double)c->rho[p] + c->rho[cell(c,jp,i)]));
         c->mu_corner[p] = (m00 == 0.0 || m10 == 0.0 || m01 == 0.0 || m11 == 0.0)
@@ -810,14 +893,19 @@ static void update_velocity(struct denise_elastic_psv_born *c, float **f, float 
     int i,j;
     for(j=0;j<c->ny;j++) for(i=0;i<c->nx;i++) {
         size_t p=cell(c,j,i);
-        float qxx=c->coefficient*derivative_at(c,f[SXX],j,i,DX_FWD);
-        float qxyy=c->coefficient*(c->free_surface?surface_derivative_y(c,f[SXY],j,i,DY_BACK,SXY,NULL,NULL,NULL,NULL,NULL,NULL):derivative_at(c,f[SXY],j,i,DY_BACK));
-        float qxyx=c->coefficient*derivative_at(c,f[SXY],j,i,DX_BACK);
-        float qyy=c->coefficient*(c->free_surface?surface_derivative_y(c,f[SYY],j,i,DY_FWD,SYY,NULL,NULL,NULL,NULL,NULL,NULL):derivative_at(c,f[SYY],j,i,DY_FWD));
+        float qxx=c->fd8?fd8_mul(c,c->coefficient,derivative_at(c,f[SXX],j,i,DX_FWD)):c->coefficient*derivative_at(c,f[SXX],j,i,DX_FWD);
+        float qxyy=c->fd8?fd8_mul(c,c->coefficient,derivative_at(c,f[SXY],j,i,DY_BACK)):c->coefficient*(c->free_surface?surface_derivative_y(c,f[SXY],j,i,DY_BACK,SXY,NULL,NULL,NULL,NULL,NULL,NULL):derivative_at(c,f[SXY],j,i,DY_BACK));
+        float qxyx=c->fd8?fd8_mul(c,c->coefficient,derivative_at(c,f[SXY],j,i,DX_BACK)):c->coefficient*derivative_at(c,f[SXY],j,i,DX_BACK);
+        float qyy=c->fd8?fd8_mul(c,c->coefficient,derivative_at(c,f[SYY],j,i,DY_FWD)):c->coefficient*(c->free_surface?surface_derivative_y(c,f[SYY],j,i,DY_FWD,SYY,NULL,NULL,NULL,NULL,NULL,NULL):derivative_at(c,f[SYY],j,i,DY_FWD));
         qxx=pml_forward(c,PSXX,j,i,qxx,&psi[PSXX][p]);
         qxyy=pml_forward(c,PSXYY,j,i,qxyy,&psi[PSXYY][p]);
         qxyx=pml_forward(c,PSXYX,j,i,qxyx,&psi[PSXYX][p]);
         qyy=pml_forward(c,PSYY,j,i,qyy,&psi[PSYY][p]);
+        if(c->fd8) {
+            f[VX][p]=fd8_add(c,f[VX][p],fd8_mul(c,c->invrho_x[p],fd8_add(c,qxx,qxyy)));
+            f[VY][p]=fd8_add(c,f[VY][p],fd8_mul(c,c->invrho_y[p],fd8_add(c,qxyx,qyy)));
+            continue;
+        }
         f[VX][p]+=c->invrho_x[p]*(qxx+qxyy);
         f[VY][p]+=c->invrho_y[p]*(qxyx+qyy);
     }
@@ -828,10 +916,10 @@ static void corrected_strains(struct denise_elastic_psv_born *c, float **f,
     int i,j;
     for(j=0;j<c->ny;j++) for(i=0;i<c->nx;i++) {
         size_t p=cell(c,j,i);
-        q[0][p]=pml_forward(c,PVXX,j,i,c->coefficient*derivative_at(c,f[VX],j,i,DX_BACK),&psi[PVXX][p]);
-        q[1][p]=pml_forward(c,PVYX,j,i,c->coefficient*derivative_at(c,f[VY],j,i,DX_FWD),&psi[PVYX][p]);
-        q[2][p]=pml_forward(c,PVXY,j,i,c->coefficient*derivative_at(c,f[VX],j,i,DY_FWD),&psi[PVXY][p]);
-        q[3][p]=pml_forward(c,PVYY,j,i,c->coefficient*derivative_at(c,f[VY],j,i,DY_BACK),&psi[PVYY][p]);
+        q[0][p]=pml_forward(c,PVXX,j,i,(c->fd8?fd8_mul(c,c->coefficient,derivative_at(c,f[VX],j,i,DX_BACK)):c->coefficient*derivative_at(c,f[VX],j,i,DX_BACK)),&psi[PVXX][p]);
+        q[1][p]=pml_forward(c,PVYX,j,i,(c->fd8?fd8_mul(c,c->coefficient,derivative_at(c,f[VY],j,i,DX_FWD)):c->coefficient*derivative_at(c,f[VY],j,i,DX_FWD)),&psi[PVYX][p]);
+        q[2][p]=pml_forward(c,PVXY,j,i,(c->fd8?fd8_mul(c,c->coefficient,derivative_at(c,f[VX],j,i,DY_FWD)):c->coefficient*derivative_at(c,f[VX],j,i,DY_FWD)),&psi[PVXY][p]);
+        q[3][p]=pml_forward(c,PVYY,j,i,(c->fd8?fd8_mul(c,c->coefficient,derivative_at(c,f[VY],j,i,DY_BACK)):c->coefficient*derivative_at(c,f[VY],j,i,DY_BACK)),&psi[PVYY][p]);
     }
 }
 
@@ -840,6 +928,17 @@ static void update_stress(const struct denise_elastic_psv_born *c, float **f,
                           const float *corner) {
     size_t p;
     for(p=0;p<c->cells;p++) {
+        if(c->fd8) {
+            float div8=fd8_add(c,q[0][p],q[3][p]);
+            float two=fd8_mul(c,2.0f,mu[p]),lt=fd8_mul(c,lambda[p],div8);
+            float sx=fd8_add(c,lt,fd8_mul(c,two,q[0][p]));
+            float sy=fd8_add(c,lt,fd8_mul(c,two,q[3][p]));
+            float xy=fd8_mul(c,corner[p],fd8_add(c,q[1][p],q[2][p]));
+            f[SXX][p]=fd8_add(c,f[SXX][p],sx);
+            f[SYY][p]=fd8_add(c,f[SYY][p],sy);
+            f[SXY][p]=fd8_add(c,f[SXY][p],xy);
+            continue;
+        }
         float div=q[0][p]+q[3][p];
         f[SXX][p]+=lambda[p]*div+2.0f*mu[p]*q[0][p];
         f[SYY][p]+=lambda[p]*div+2.0f*mu[p]*q[3][p];
@@ -865,6 +964,7 @@ static void forward_timestep(struct denise_elastic_psv_born *c,
     size_t p;
     if(c->free_surface)surface_project(c,f[SYY]);
     update_velocity(c,f,psi);
+    DENISE_M9L1A_SNAPSHOT(c,f,q,timestep,0);
     if (data) for(receiver=0;receiver<c->receiver_count;receiver++) {
         p=cell(c,c->receiver_j[receiver],c->receiver_i[receiver]);
         data[((size_t)timestep*c->receiver_count+receiver)*2]=f[VX][p];
@@ -872,13 +972,21 @@ static void forward_timestep(struct denise_elastic_psv_born *c,
     }
     if(c->free_surface)surface_strains(c,f,psi,q,lambda,mu,NULL,NULL,NULL);
     else corrected_strains(c,f,psi,q);
+    DENISE_M9L1A_SNAPSHOT(c,f,q,timestep,1);
     if(strain) for(component=0;component<4;component++)
         copy_floats(strain+(size_t)component*c->cells,q[component],c->cells);
     if(c->free_surface)surface_stress(c,f,q,lambda,mu,corner);
     else update_stress(c,f,q,lambda,mu,corner);
+    DENISE_M9L1A_SNAPSHOT(c,f,q,timestep,2);
     p=cell(c,c->source_j,c->source_i);
-    f[SXX][p]+=c->source_samples[timestep];
-    f[SYY][p]+=c->source_samples[timestep];
+    if(c->fd8) {
+        f[SXX][p]=fd8_add(c,f[SXX][p],c->source_samples[timestep]);
+        f[SYY][p]=fd8_add(c,f[SYY][p],c->source_samples[timestep]);
+    } else {
+        f[SXX][p]+=c->source_samples[timestep];
+        f[SYY][p]+=c->source_samples[timestep];
+    }
+    DENISE_M9L1A_SNAPSHOT(c,f,q,timestep,3);
     if(retain_metrics) {
         float peak=memory_peak(c,psi);
         if(peak>c->cpml_memory_peak)c->cpml_memory_peak=peak;
@@ -897,16 +1005,26 @@ static int run_nonlinear(struct denise_elastic_psv_born *c, const float *lambda,
     if(!corner) { free_forward(f,psi,q); return fail("out of memory allocating elastic shear map"); }
     for(k=0;k<c->ny;k++) for(r=0;r<c->nx;r++) {
         int ip=wrap(r+1,c->nx),jp=wrap(k+1,c->ny); p=cell(c,k,r);
+        if(c->fd8) {corner[p]=fd8_corner(c,mu,k,r);continue;}
         corner[p]=(mu[p]==0.0f || mu[cell(c,k,ip)]==0.0f
                     || mu[cell(c,jp,r)]==0.0f || mu[cell(c,jp,ip)]==0.0f)
                     ? 0.0f : (float)(4.0/(1.0/mu[p]+1.0/mu[cell(c,k,ip)]
                     +1.0/mu[cell(c,jp,r)]+1.0/mu[cell(c,jp,ip)]));
+    }
+    DENISE_M9L1A_INITIALIZE(c,f);
+    if(c->fd8 && *c->fd8_fault) {
+        free(corner);free_forward(f,psi,q);
+        return fail("FD8 invalid private initial state");
     }
     if(data) memset(data,0,c->data_count*sizeof(float));
     if(retain_metrics)c->cpml_memory_peak=0.0f;
     for(k=0;k<c->nt;k++) {
         float *slot = strain ? strain + (size_t)k*4*c->cells : NULL;
         forward_timestep(c,f,psi,q,lambda,mu,corner,k,data,slot,retain_metrics);
+        if(c->fd8 && *c->fd8_fault) {
+            free(corner);free_forward(f,psi,q);
+            return fail("FD8 nonfinite intermediate or final state");
+        }
         if(capture_checkpoints && next_checkpoint<c->checkpoint_count
            && k==c->segment_end[next_checkpoint]-1) {
             if(checkpoint_capture(c,&c->checkpoint[next_checkpoint],k,f,psi)!=0) {
@@ -1398,4 +1516,157 @@ void denise_elastic_psv_born_destroy(struct denise_elastic_psv_born **pointer) {
     free_replay_storage(c,1);
     for(k=0;k<PROFILE_COUNT;k++)free_profile(&c->profile[k]);
     free(c);*pointer=NULL;
+}
+
+
+/* Forward-only v1 lifecycle; no FD8 trajectory, reverse or checkpoint entry. */
+struct denise_elastic_psv_forward_fd8 {struct denise_elastic_psv_born *core;int fault;};
+static char fd8_error[384];
+static int fd8_fail(const char *message) {
+    snprintf(fd8_error,sizeof(fd8_error),"%s",message);return -1;
+}
+const char *denise_elastic_psv_forward_fd8_last_error_v1(void) {
+    return fd8_error[0]?fd8_error:"no FD8 Forward error";
+}
+static int fd8_environment(void) {
+#if defined(__FAST_MATH__) || FLT_EVAL_METHOD != 0
+    return 0;
+#else
+    uint32_t bits;float tiny;volatile float one=1.0f,half=0.5f;
+    volatile float normal=FLT_MIN,result;uint64_t dbits;double dtiny;
+    volatile double done=1.0,dhalf=0.5,dnormal=DBL_MIN,dresult;
+    if(sizeof(float)!=4||sizeof(double)!=8||FLT_RADIX!=2||FLT_MANT_DIG!=24
+       ||DBL_MANT_DIG!=53||FLT_MAX_EXP!=128||DBL_MAX_EXP!=1024
+       ||fegetround()!=FE_TONEAREST)return 0;
+#if defined(__SSE__)
+    if(_mm_getcsr()&0xe040u)return 0; /* FTZ, DAZ and SSE rounding control. */
+#endif
+    bits=1;memcpy(&tiny,&bits,sizeof(tiny));result=tiny*one;
+    {float x=result;memcpy(&bits,&x,sizeof(x));}if(bits!=1)return 0;
+    result=normal*half;{float x=result;memcpy(&bits,&x,sizeof(x));}
+    if(bits!=0x00400000u)return 0;
+    dbits=1;memcpy(&dtiny,&dbits,sizeof(dtiny));dresult=dtiny*done;
+    {double x=dresult;memcpy(&dbits,&x,sizeof(x));}if(dbits!=1)return 0;
+    dresult=dnormal*dhalf;{double x=dresult;memcpy(&dbits,&x,sizeof(x));}
+    return dbits==UINT64_C(0x0008000000000000);
+#endif
+}
+static int fd8_material_ok(const float *lambda,const float *mu,const float *rho,size_t n) {
+    size_t p;float two;
+    if(!lambda||!mu||!rho)return 0;
+    if(!isfinite(lambda[0])||!isfinite(mu[0])||!isfinite(rho[0])
+       ||mu[0]<=0||rho[0]<=0||(lambda[0]<0 && mu[0]<=-lambda[0]))return 0;
+    two=fd8_cast(fd8_dmul(2.0,mu[0]));if(!isfinite(two)||two<=0)return 0;
+    for(p=0;p<n;p++)if(lambda[p]!=lambda[0]||mu[p]!=mu[0]||rho[p]!=rho[0])return 0;
+    return 1;
+}
+static int fd8_admission(const struct denise_elastic_psv_born *c,
+                         const float *lambda,const float *mu) {
+    size_t p;double smax=0,r,g2,s2,t1,t2,t3,qu;float h;
+    uint32_t mx,my;
+    if(!fd8_material_ok(lambda,mu,c->rho,c->cells)||!isfinite(c->coefficient)||c->coefficient<=0)return 0;
+    for(p=0;p<c->cells;p++) {
+        h=fd8_corner(c,mu,(int)(p/(size_t)c->nx),(int)(p%(size_t)c->nx));
+        if(!isfinite(h)||h<=0||h!=mu[p]||!isfinite(c->invrho_x[p])
+           ||c->invrho_x[p]<=0||!isfinite(c->invrho_y[p])||c->invrho_y[p]<=0)return 0;
+        memcpy(&mx,&c->invrho_x[p],sizeof(mx));memcpy(&my,&c->invrho_y[p],sizeof(my));
+        if(mx!=my||c->invrho_x[p]!=c->invrho_x[0])return 0;
+    }
+    for(p=0;p<4;p++)smax=fd8_dadd(smax,fabs((double)fd8_coefficients[p]));
+    smax=fd8_dmul(2.0,smax);
+    r=nextafter(fd8_dadd(lambda[0],fd8_dmul(2.0,mu[0])),INFINITY);
+    g2=nextafter(fd8_dmul(c->coefficient,c->coefficient),INFINITY);
+    s2=nextafter(fd8_dmul(smax,smax),INFINITY);
+    t1=nextafter(fd8_dmul(g2,c->invrho_x[0]),INFINITY);
+    t2=nextafter(fd8_dmul(t1,r),INFINITY);
+    t3=nextafter(fd8_dmul(t2,s2),INFINITY);
+    qu=nextafter(fd8_ddiv(t3,2.0),INFINITY);
+    return isfinite(r)&&r>0&&isfinite(g2)&&g2>0&&isfinite(s2)&&s2>0
+        &&isfinite(t1)&&t1>0&&isfinite(t2)&&t2>0&&isfinite(t3)&&t3>0
+        &&isfinite(qu)&&qu>0&&qu<=0x1.47ae147ae147ap-1;
+}
+void denise_elastic_psv_forward_fd8_destroy_v1(struct denise_elastic_psv_forward_fd8 **pointer) {
+    if(!pointer||!*pointer)return;
+    denise_elastic_psv_born_destroy(&(*pointer)->core);free(*pointer);*pointer=NULL;
+}
+int denise_elastic_psv_forward_fd8_create_v1(
+        const struct denise_elastic_psv_forward_fd8_config_v1 *config,
+        struct denise_elastic_psv_forward_fd8 **output) {
+    const struct denise_elastic_psv_born_config *q;
+    struct denise_elastic_psv_forward_fd8 *handle=NULL;
+    struct denise_elastic_psv_born *c;size_t cells,data,bytes,sourcebytes,coordsbytes;
+    int k;
+    fd8_error[0]='\0';
+    if(!output)return fd8_fail("FD8 output handle is null");
+    *output=NULL;
+    if(!config)return fd8_fail("FD8 config is null");
+    if(config->struct_size!=sizeof(*config))return fd8_fail("FD8 config size mismatch");
+    if(config->abi_version!=1||config->coefficient_family!=DENISE_ELASTIC_PSV_FD8_TAYLOR8_V1
+       ||config->field_boundary_policy!=DENISE_ELASTIC_PSV_FD8_ZERO_FIELD_V1
+       ||config->material_boundary_policy!=DENISE_ELASTIC_PSV_FD8_REPLICATED_MATERIAL_V1)
+        return fd8_fail("FD8 version/operator/boundary identity mismatch");
+    q=&config->base;
+    if(!fd8_environment())return fd8_fail("FD8 requires RNE IEEE gradual-underflow environment");
+    if(q->nx<9||q->ny<9||q->nt<1||q->receiver_count<1||q->l!=0||q->invmat1!=3
+       ||q->fdorder!=8||q->ndt!=1||q->dtinv!=1||q->free_surface!=0||q->boundary!=0
+       ||q->mpi_size!=1||q->receiver_components!=2||q->fw!=0||q->cpml_enabled!=0
+       ||!isfinite(q->dt)||q->dt<=0||!isfinite(q->dh)||q->dh<=0)
+        return fd8_fail("FD8 unsupported configuration");
+    if(checked_product((size_t)q->nx,(size_t)q->ny,&cells)||cells>INT_MAX
+       ||checked_product(cells,sizeof(float),&bytes)
+       ||checked_product((size_t)q->nt,(size_t)q->receiver_count,&data)
+       ||checked_product(data,2,&data)||checked_product(data,sizeof(float),&bytes)
+       ||checked_product((size_t)q->nt,sizeof(float),&sourcebytes)
+       ||checked_product((size_t)q->receiver_count,sizeof(int),&coordsbytes))
+        return fd8_fail("FD8 count/byte overflow");
+    if(!q->source_samples||!q->receiver_i||!q->receiver_j||!q->lambda||!q->mu||!q->rho
+       ||q->source_i<0||q->source_i>=q->nx||q->source_j<0||q->source_j>=q->ny)
+        return fd8_fail("FD8 missing input or invalid source");
+    if(!fd8_material_ok(q->lambda,q->mu,q->rho,cells))return fd8_fail("FD8 invalid homogeneous solid material");
+    for(k=0;k<q->nt;k++)if(!isfinite(q->source_samples[k]))return fd8_fail("FD8 nonfinite source");
+    for(k=0;k<q->receiver_count;k++)if(q->receiver_i[k]<0||q->receiver_i[k]>=q->nx
+       ||q->receiver_j[k]<0||q->receiver_j[k]>=q->ny)return fd8_fail("FD8 receiver out of owned domain");
+    handle=checked_calloc(1,sizeof(*handle));
+    if(!handle)return fd8_fail("FD8 handle allocation failed");
+    c=checked_calloc(1,sizeof(*c));handle->core=c;
+    if(!c)goto oom;
+    c->fd8=1;c->fd8_fault=&handle->fault;
+    c->nx=q->nx;c->ny=q->ny;c->nt=q->nt;c->cells=cells;c->data_count=data;
+    c->dh=q->dh;c->dt=q->dt;c->coefficient=fd8_div(c,q->dt,q->dh);
+    c->receiver_count=q->receiver_count;c->source_i=q->source_i;c->source_j=q->source_j;
+    if(handle->fault||c->coefficient<=0)goto invalid;
+    if(allocate_context_arrays(c))goto oom;
+    copy_floats(c->lambda,q->lambda,cells);copy_floats(c->mu,q->mu,cells);copy_floats(c->rho,q->rho,cells);
+    copy_floats(c->source_samples,q->source_samples,(size_t)c->nt);
+    memcpy(c->receiver_i,q->receiver_i,coordsbytes);memcpy(c->receiver_j,q->receiver_j,coordsbytes);
+    build_material_maps(c);
+    if(!fd8_admission(c,c->lambda,c->mu))goto invalid;
+    for(k=0;k<PROFILE_COUNT;k++)if(build_profile(&c->profile[k],k<2?c->nx:c->ny,
+       c->dh,c->dt,0,k&1,0,0,0,0,0))goto oom;
+    *output=handle;return 0;
+invalid:
+    denise_elastic_psv_forward_fd8_destroy_v1(&handle);return fd8_fail("FD8 stored-map representation/CFL rejected");
+oom:
+    denise_elastic_psv_forward_fd8_destroy_v1(&handle);return fd8_fail("FD8 allocation failed");
+}
+int denise_elastic_psv_forward_fd8_nonlinear_v1(
+        struct denise_elastic_psv_forward_fd8 *handle,const float *lambda,
+        const float *mu,float *data,size_t capacity) {
+    struct denise_elastic_psv_born *c;float *temporary;int result;
+    char old_error[sizeof(born_error)];
+    fd8_error[0]='\0';
+    if(!handle||!lambda||!mu||!data)return fd8_fail("FD8 null nonlinear argument");
+    c=handle->core;
+    if(!fd8_environment())return fd8_fail("FD8 unsupported runtime environment");
+    if(capacity<c->data_count)return fd8_fail("FD8 receiver capacity too small");
+    handle->fault=0;
+    if(!fd8_admission(c,lambda,mu))return fd8_fail("FD8 trial stored-map representation/CFL rejected");
+    temporary=checked_calloc(c->data_count,sizeof(float));
+    if(!temporary)return fd8_fail("FD8 atomic trace allocation failed");
+    memcpy(old_error,born_error,sizeof(old_error));
+    result=run_nonlinear(c,lambda,mu,temporary,NULL,0,0);
+    if(result)fd8_fail(born_error);
+    memcpy(born_error,old_error,sizeof(old_error));
+    if(!result)memcpy(data,temporary,c->data_count*sizeof(float));
+    free(temporary);return result;
 }

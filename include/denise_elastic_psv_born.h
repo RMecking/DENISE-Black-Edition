@@ -156,6 +156,46 @@ float denise_elastic_psv_born_cpml_memory_peak(
 void denise_elastic_psv_born_destroy(
     struct denise_elastic_psv_born **context);
 
+
+/* Additive CPU, one-rank homogeneous-solid Taylor8 Forward only.
+ * Native ABI v1: exact sizeof/version/identity checks; arrays have the same
+ * row-major and direct time-major vx/vy layout as above. boundary=0 in base
+ * is neutral here: the explicit policy below selects zero FIELD extension.
+ * The old Born API remains periodic FD4. No casts between opaque handles.
+ * Create copies model/source/receiver inputs; nonlinear holds copied rho fixed.
+ * Calls are externally serialized. Readable lengths and nonoverlapping writable
+ * outputs are caller obligations. Publish K=NT*R*2 floats only on full success;
+ * capacity is in floats, the tail is untouched and errors preserve outputs.
+ */
+enum denise_elastic_psv_fd8_family_v1 {
+    DENISE_ELASTIC_PSV_FD8_TAYLOR8_V1 = 1
+};
+enum denise_elastic_psv_fd8_field_boundary_v1 {
+    DENISE_ELASTIC_PSV_FD8_ZERO_FIELD_V1 = 1
+};
+enum denise_elastic_psv_fd8_material_boundary_v1 {
+    DENISE_ELASTIC_PSV_FD8_REPLICATED_MATERIAL_V1 = 1
+};
+struct denise_elastic_psv_forward_fd8_config_v1 {
+    size_t struct_size;
+    unsigned int abi_version;
+    struct denise_elastic_psv_born_config base;
+    int coefficient_family;
+    int field_boundary_policy;
+    int material_boundary_policy;
+};
+struct denise_elastic_psv_forward_fd8;
+int denise_elastic_psv_forward_fd8_create_v1(
+    const struct denise_elastic_psv_forward_fd8_config_v1 *config,
+    struct denise_elastic_psv_forward_fd8 **context);
+int denise_elastic_psv_forward_fd8_nonlinear_v1(
+    struct denise_elastic_psv_forward_fd8 *context,
+    const float *lambda, const float *mu,
+    float *receiver_data, size_t receiver_capacity_floats);
+const char *denise_elastic_psv_forward_fd8_last_error_v1(void);
+void denise_elastic_psv_forward_fd8_destroy_v1(
+    struct denise_elastic_psv_forward_fd8 **context);
+
 #ifdef __cplusplus
 }
 #endif
