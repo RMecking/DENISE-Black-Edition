@@ -94,6 +94,16 @@ Escalate only when a decision materially affects:
 
 Unspecified private implementation details are not missing requirements.
 
+### Work-package size and internal checkpoints
+
+Prefer one outcome-oriented, scientifically coherent work package over separate requests for design notes, implementation, compilation, small corrections, focused tests, and routine hardening. Scope may include connected production/test/harness/documentation changes where one verified capability is the intended outcome. Split only for a genuine scientific dependency, an independent pre-output oracle gate, separate resource/authorization boundary, materially independent workstream, or an unreviewably large change—not for model or quota convenience.
+
+A task packet defines **what** is authorized: scope and files/categories, technical tests/builds/reference or Forward runs permitted, time/memory/call ceilings, scientific invariants, stopping conditions, Git authority, and final deliverables. **An authorization to implement never silently authorizes numerical runs, reference generation, or Git publication.** Where intended, a single task packet may explicitly and conditionally authorize multiple sequential stages. Each stage starts only after its stated evidence and independent conditions are met; a worker cannot self-certify an independent gate.
+
+`NUMERICS` handles ordinary in-scope compiler errors, fixture-index mistakes, private helper revisions, test faults, local refactors and routine fixes without a new Owner round-trip. Such corrections remain documented in the package's final diff/evidence; they are not independent milestones. A demonstrated change to discrete physics, frozen oracles/tolerances, public contracts, hard budgets, scope, base, or publication rights requires a stop and the appropriate Owner/scientific gate. Correcting a *wrong implementation of an unchanged approved contract* is not, by itself, approval to rewrite that contract.
+
+Use brief durable internal progress checkpoints (`task state`, exact worktree/HEAD, done/next, test evidence, unresolved issues, no invented PASS), particularly before context/quota/device changes. A checkpoint is neither a scientific acceptance report nor a Git publication/commit permit. Preserve existing worktrees and recovery rules. Reserve full sealed evidence packages for scientific reference freezes/qualifications, substantive independent reviews, Content Locks and publication closures, or another contractually required event; do not generate a fresh nested manifest-and-seal archive for every local typo or ordinary intermediate checkpoint.
+
 ## Scientific workflow
 
 ### Performance / implementation optimization
