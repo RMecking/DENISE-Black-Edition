@@ -32,8 +32,11 @@ history.
   HEAD. Reauthenticate live `origin/modernization` at each task kickoff.
 - M6.3 and M7 status: **SCIENTIFICALLY COMPLETE and merged into
   `modernization`**
-- Next proposed scientific roadmap: **M9L — Modern Elastic FD8 Extension &
-  Legacy Replacement**; implementation not started or authorized. Additional
+- Current scientific roadmap: **M9L — Modern Elastic FD8 Extension &
+  Legacy Replacement**; bounded Taylor8 Forward Foundation published in PR #103,
+  with subsequent independently reviewed private R&D, not a complete integrated
+  FD8 FWI/RTM workflow. See the [2026-10-20 R&D status](m9l_rd_progress.md).
+  This status update authorizes no numerical execution or publication. Additional
   performance/features and M10 remain downstream of correct Forward, exact
   FWI and scientifically valid RTM in declared configurations.
 
@@ -628,11 +631,38 @@ from a merge or rewrite the earlier acceptance document's historical snapshot.
 
 ### M9L — Modern Elastic FD8 Extension & Legacy Replacement
 
-**ROADMAP PROPOSED / IMPLEMENTATION NOT STARTED.** Strategy **A2**: extend the
-modern M9 P/SV operator to FD8/Holberg, preserving FD4 contracts; do not establish
-a second long-lived exact-adjoint implementation in legacy FD8. This is a
-documentation proposal, not authorization to begin numerical work or M9L-0.
-Finish current in-flight work and its acceptance/publication gates first.
+**2026-10-20: FORWARD FOUNDATION PUBLISHED / PRIVATE R&D PARTLY QUALIFIED /
+FULL WORKFLOW OPEN.** The live integration baseline inspected for DOCS-REAL-01
+is `02f4b96c813e1fe0e333d9257488eb0efa5e1164`. PR #103 merged the additive
+CPU/one-rank homogeneous-solid **Taylor8 Forward-only** API at
+`02b46e8fe5528054ac4643f836b9261d5dd27832`; it is not an integrated FD8
+J/JT/FWI/RTM path. Existing FD4 contracts remain unchanged.
+
+The [R&D overview and exact review sources](m9l_rd_progress.md) distinguish
+private state/material adjoints, restricted functional FWI, adaptive GN and
+raw migration from physical qualification and product integration. REAL-02A
+has a four-small-configuration SI PASS; REAL-02B has a restricted storage PASS;
+REAL-02C-S0 has a corrected adapter-composition PASS, not CPML-active FWI.
+REAL-02D is INCOMPLETE/HOLD after its exhausted recovery. DOCS-REAL-01-D1
+(2026-10-21): REAL-03A has independent **SCOPED PREFLIGHT PASS** (four shots,
+F4/J16/JT4, 24 declared sweeps, both original sensitivity pairs; approximately
+131.414 native seconds, observed VmPeak maximum 360058880 bytes). No GN/FWI
+or general R1 operator/long-time/dispersion/reconstruction qualification.
+REAL-03B has independent **SCOPED DESIGN/PRECISION REVIEW PASS**, not a runtime
+certificate: retain the GN system/metric; implement and independently qualify
+the residual/uncertainty layer separately, without changing S/alpha/stopping.
+REAL-04A/B are **PLANNED/AUTHORIZED BY TASK PACKET**, with no authenticated
+execution result/PASS included here. Separate LEGACY-CPML-01 addresses proven
+float-abs guards and investigates SH top staggering; no completed new repair
+or physical qualification, no automatic transfer to modern Taylor8. Historical
+A3.0/legacy Check-7 HOLDs remain. Exact new sources are in the R&D overview.
+The original M9L-4G trajectory HOLD and M9L-5P-P3 amplitude HOLD remain.
+Large R1–R3 FWI, complete CPML-FWI and final physical RTM qualification are open.
+Private PASS results add no support to the published repository by implication.
+
+The table below retains the **2026-10-08 historical A2/Holberg plan**, not a
+current all-slices-complete claim. Taylor8 evidence has its own genealogy and
+does not qualify Holberg. This documentation task grants no execution authority.
 
 | Slice | Planned role |
 |---|---|

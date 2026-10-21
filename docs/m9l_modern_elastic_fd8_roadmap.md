@@ -1,13 +1,22 @@
 # DENISE — M9L: Modern Elastic FD8 Extension & Legacy Replacement
 
-**Status:** ROADMAP PROPOSED / IMPLEMENTATION NOT STARTED.
-Uncommitted documentation candidate; no numerical work, publication or new oracle acceptance authorized.
+**Current status (2026-10-20):** bounded Taylor8 Forward Foundation published;
+private R&D partly independently qualified; full FD8 workflow not integrated.
+See the [current R&D status and evidence](m9l_rd_progress.md).
+No numerical work, publication or new oracle acceptance is authorized here.
+The original planning text below is retained as the **2026-10-08 historical
+A2/Holberg proposal**, including its then-current kickoff/publication wording;
+it is not the execution status of later Taylor8 work.
 **Prepared:** 2026-10-08.
 **Repository authority inspected:** `RMecking/DENISE-Black-Edition`, `modernization@4eded044e370461644b359039662ca6c1bd4477f`.
 **Roadmap source:** `docs/modernization_status.md`, Git blob `ce8269d273e8d76a56c375b20f615b046ce34eb3`.
 **Precedence:** Complete current in-flight Modernization work and existing acceptance/publication gates before implementing M9L. Existing merged scientific claims retain only their original tested envelopes.
 
 ## Strategic decision
+
+This and the subsequent original planning sections describe the dated plan,
+not a retrospective qualification of Holberg by Taylor8 results. The current
+reconciliation and dependencies follow at the end of this document.
 
 Choose **A2**, extension of the verified **modern M9 CPU elastic P/SV operator** to the FD8/Holberg family, not a long-lived second exact-adjoint implementation inside the legacy FD8 reverse-time path. Preserve M9 FD4 behavior; the modern FD4 P/SV J/JT/CPML/MPI/Free-Surface/checkpointing infrastructure and documented contracts are reusable *architectural* assets, not automatic evidence of FD8 correctness. CUDA/accelerator extension is not a prerequisite for FD8 science. Plan the modern FD8 path as an explicitly selected operator with unsupported configurations failing closed.
 
@@ -119,3 +128,51 @@ in the benchmark project; M9L-0 must resolve them. Historical Check 7's reported
 Taylor R1=2.6192195948155774 exceeds its fixed 2.5 ceiling: FAIL/BLOCKED/STOP.
 Checks 8–9/A3.0b were not executed. These reported numerical observations are
 not a newly accepted oracle or a causal explanation of Check 7.
+
+## Current Taylor8 research path — reconciled 2026-10-20
+
+The historical A2 architecture direction remains distinct from coefficient
+qualification. The published additive Taylor8 homogeneous-solid Forward
+Foundation is PR #103, merge `02b46e8fe5528054ac4643f836b9261d5dd27832`;
+the inspected integration HEAD is `02f4b96c813e1fe0e333d9257488eb0efa5e1164`.
+The subsequent private research lineage is state/source adjoint (M9L-2A),
+fixed-profile augmented CPML transpose (2B), fixed-density lambda/mu material
+J/JT (3), restricted functional FWI (4), corrective sidecar controls (4S2),
+GN diagnosis and corrected adaptive controller (4G/4G-D3/4G.1), and raw
+migration/physical diagnostics (5/5P/5P1). These are separate frozen candidates
+with restricted review verdicts, not one released end-to-end product.
+The [R&D overview](m9l_rd_progress.md) binds their original independent reports
+and keeps the failed frozen 4G trajectory and 5P-P3 amplitude gate visible.
+
+REAL-01 preparation/design is not native qualification. REAL-02A adds four
+small SI/toy material configurations; 02B qualifies limited private basis
+storage, not material-tape streaming or large SI FWI. Corrected 02C-S0 binds
+the CPML adapter and controller but has no controller-run/GN/FWI qualification.
+02D's partial three-shot diagnosis stopped after its sole shot-2 recovery also
+failed before execution; no complete cross-image diagnosis or P3 closure exists.
+
+### Next dependencies and decision points (not execution permission)
+
+| Workstream | Current status / required next evidence |
+|---|---|
+| REAL-03A — R1 SI sensitivity preflight | D1, 2026-10-21: independent **SCOPED PREFLIGHT PASS**, four shots F4/J16/JT4, 24 sweeps, both original pairs PASS; approximately 131.414 native seconds, observed VmPeak maximum 360058880 bytes. No GN/FWI or general operator/long-time/dispersion/reconstruction qualification; call allowances consumed. |
+| REAL-03B — GN SI precision/scaling contract | Independent **SCOPED DESIGN/PRECISION REVIEW PASS**; retain GN system and regularization metric. Proposed residual/uncertainty contract needs private implementation and qualification; no changed S/alpha/stopping or native GN execution. |
+| REAL-04A — material-tape storage / SI-GN integration | **PLANNED/AUTHORIZED BY TASK PACKET**, no authenticated execution result/PASS included. Qualify history ownership/order/replay and resource bounds with small fixtures; 02B basis storage alone does not supply this capability. |
+| REAL-04B — same-system GN precision diagnostics | **PLANNED/AUTHORIZED BY TASK PACKET**, no authenticated execution result/PASS included. Implement separate diagnostics/conditional certification, preserving system/metric/solver rules; no native campaign authorized. |
+| CPML-S1, then CPML-active FWI | Proposed beyond accepted S0. Separate execution authority, fixed-profile scientific/resource gates and actual controller-run evidence are required. S0 PASS is not S1 permission. |
+| RTM diagnosis | 02D INCOMPLETE/HOLD; recovery authority exhausted. Resolve remaining diagnosis through a separately authorized bounded package; keep 5P-P3 HOLD and 5P1 resource NONCOMPLIANCE. |
+| Controlled R1 IC0/DN1 FWI, then broader physical references/R2/R3 | Only after relevant preflight, precision, storage, boundary/reference and independent application gates. No large-FWI or reference-generation permission follows from this plan. |
+
+REAL-03A's scoped native PASS and REAL-03B's design PASS are different gates,
+not full workflow qualification or authority to orchestrate another worker.
+LEGACY-CPML-01 is separate: proven float-abs guards in both legacy profile
+generators and suspected viscoelastic SH top-staggering investigation, without
+a completed new repair/physical qualification. Historical A3.0/Check-7 HOLDs
+remain, and no legacy finding automatically qualifies or indicts modern
+Taylor8. Exact D1 source identities are in the R&D overview.
+Source reviews, frozen criteria,
+resource limits and explicit packets govern each dependent step. No fresh
+attempt is authorized by unused time after a consumed permit. Full CPML-FWI,
+final RTM qualification, MPI/free-surface/fluid/density expansion and accepted
+legacy replacement remain open. M10 stays downstream. No historical HOLD,
+oracle, acceptance threshold or legacy archive is rewritten by this update.
