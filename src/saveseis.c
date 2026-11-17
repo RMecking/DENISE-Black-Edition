@@ -10,6 +10,7 @@ float **sectioncurl, float **sectiondiv, int  **recpos, int  **recpos_loc,
 int ntr, float ** srcpos, int ishot, int ns, int iter){ 
 		
 	extern int SEISMO, SEIS_FORMAT, MYID_SHOT, RUN_MULTIPLE_SHOTS;	
+	const char *file_mode = SEIS_FORMAT == 1 ? "wb" : "w";
 	extern char  SEIS_FILE_VX[STRING_SIZE], SEIS_FILE_VY[STRING_SIZE];
 	extern char  SEIS_FILE_CURL[STRING_SIZE], SEIS_FILE_DIV[STRING_SIZE], SEIS_FILE_P[STRING_SIZE];
 
@@ -49,34 +50,34 @@ int ntr, float ** srcpos, int ishot, int ns, int iter){
 	switch (SEISMO){
 	case 1 : /* particle velocities only */
 		fprintf(fp," PE %d is writing %d seismograms (vx) to\n\t %s \n",MYID_SHOT,ntr,vxf);
-		outseis(fp,fopen(vxf,"w"),1,sectionvx,recpos,recpos_loc,ntr,srcpos,nsrc,ns,SEIS_FORMAT,ishot,1);
+		outseis(fp,fopen(vxf,file_mode),1,sectionvx,recpos,recpos_loc,ntr,srcpos,nsrc,ns,SEIS_FORMAT,ishot,1);
 		fprintf(fp," PE %d is writing %d seismograms (vy) to\n\t %s \n",MYID_SHOT,ntr,vyf);
-		outseis(fp,fopen(vyf,"w"),2,sectionvy,recpos,recpos_loc, ntr,srcpos,nsrc,ns,SEIS_FORMAT,ishot,1);
+		outseis(fp,fopen(vyf,file_mode),2,sectionvy,recpos,recpos_loc, ntr,srcpos,nsrc,ns,SEIS_FORMAT,ishot,1);
 		break;
 	case 2 : /* pressure only */
 		fprintf(fp," PE %d is writing %d seismograms of pressure to\n\t %s \n",MYID_SHOT,ntr,SEIS_FILE_P);
-		outseis(fp,fopen(pf,"w"), 0, sectionp,recpos,recpos_loc,ntr,srcpos,nsrc,ns,SEIS_FORMAT,ishot,1);
+		outseis(fp,fopen(pf,file_mode), 0, sectionp,recpos,recpos_loc,ntr,srcpos,nsrc,ns,SEIS_FORMAT,ishot,1);
 		break;
 	case 3 : /* curl and div only */
 		fprintf(fp," PE %d is writing %d seismograms of divergence to\n\t %s \n",MYID_SHOT,ntr,SEIS_FILE_DIV);
-		outseis(fp,fopen(divf,"w"), 0, sectiondiv,recpos,recpos_loc,ntr,srcpos,nsrc,ns,SEIS_FORMAT,ishot,1);
+		outseis(fp,fopen(divf,file_mode), 0, sectiondiv,recpos,recpos_loc,ntr,srcpos,nsrc,ns,SEIS_FORMAT,ishot,1);
 		fprintf(fp," PE %d is writing %d seismograms of curl to\n\t %s \n",MYID_SHOT,ntr,SEIS_FILE_CURL);
-		outseis(fp,fopen(curlf,"w"), 0, sectioncurl,recpos,recpos_loc,ntr,srcpos,nsrc,ns,SEIS_FORMAT,ishot,1);
+		outseis(fp,fopen(curlf,file_mode), 0, sectioncurl,recpos,recpos_loc,ntr,srcpos,nsrc,ns,SEIS_FORMAT,ishot,1);
 	
 		break;	
 	case 4 : /* everything */
 		fprintf(fp," PE %d is writing %d seismograms (vx) to\n\t %s \n",MYID_SHOT,ntr,SEIS_FILE_VX);
-		outseis(fp,fopen(vxf,"w"),1,sectionvx,recpos,recpos_loc,ntr,srcpos,nsrc,ns,SEIS_FORMAT,ishot,1);
+		outseis(fp,fopen(vxf,file_mode),1,sectionvx,recpos,recpos_loc,ntr,srcpos,nsrc,ns,SEIS_FORMAT,ishot,1);
 		fprintf(fp," PE %d is writing %d seismograms (vy) to\n\t %s \n",MYID_SHOT,ntr,SEIS_FILE_VY);
-		outseis(fp,fopen(vyf,"w"),2,sectionvy,recpos,recpos_loc, ntr,srcpos,nsrc,ns,SEIS_FORMAT,ishot,1);
+		outseis(fp,fopen(vyf,file_mode),2,sectionvy,recpos,recpos_loc, ntr,srcpos,nsrc,ns,SEIS_FORMAT,ishot,1);
 		
 		fprintf(fp," PE %d is writing %d seismograms of pressure to\n\t %s \n",MYID_SHOT,ntr,SEIS_FILE_P);
-		outseis(fp,fopen(pf,"w"), 0, sectionp,recpos,recpos_loc,ntr,srcpos,nsrc,ns,SEIS_FORMAT,ishot,1);
+		outseis(fp,fopen(pf,file_mode), 0, sectionp,recpos,recpos_loc,ntr,srcpos,nsrc,ns,SEIS_FORMAT,ishot,1);
 
 		fprintf(fp," PE %d is writing %d seismograms of divergence to\n\t %s \n",MYID_SHOT,ntr,SEIS_FILE_DIV);
-		outseis(fp,fopen(divf,"w"),0, sectiondiv,recpos,recpos_loc,ntr,srcpos,nsrc,ns,SEIS_FORMAT,ishot,1);
+		outseis(fp,fopen(divf,file_mode),0, sectiondiv,recpos,recpos_loc,ntr,srcpos,nsrc,ns,SEIS_FORMAT,ishot,1);
 		fprintf(fp," PE %d is writing %d seismograms of curl to\n\t %s \n",MYID_SHOT,ntr,SEIS_FILE_CURL);
-		outseis(fp,fopen(curlf,"w"),0, sectioncurl,recpos,recpos_loc,ntr,srcpos,nsrc,ns,SEIS_FORMAT,ishot,1);	
+		outseis(fp,fopen(curlf,file_mode),0, sectioncurl,recpos,recpos_loc,ntr,srcpos,nsrc,ns,SEIS_FORMAT,ishot,1);	
 		break;
 		
       }     

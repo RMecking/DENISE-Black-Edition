@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------------
- *   Write seismograms to disk                                  
+ *   Read SU seismograms from disk
  *   last update 19/01/02, T. Bohlen
  *  ----------------------------------------------------------------------*/
 #include "fd.h"
@@ -8,15 +8,20 @@
 void  inseis(int comp, float **section, int ntr, int ns, int sws, int iter){
 
 	/* declaration of extern variables */
-	extern int NDT, MYID_SHOT;
+	extern int MYID_SHOT;
 	extern char DATA_DIR[STRING_SIZE], SEIS_FILE_P[STRING_SIZE], SEIS_FILE_VX[STRING_SIZE];
 	extern char DATA_DIR_T0[STRING_SIZE];
 	extern char SEIS_FILE_VY[STRING_SIZE];
-	extern float  TIME, DH, DT, REFREC[4];
-        char data[STRING_SIZE];
-	const float xshift=800.0, yshift=800.0;
-        FILE *fpdata;
-	
+	char data[STRING_SIZE];
+	FILE *fpdata;
+	segy tr;
+	int r, j;
+
+	if (ns < 1 || ns > SU_NFLTS) {
+		err("Invalid SU sample count");
+		return;
+	}
+
 	if(sws==1){  /* open seismic data vx */
 	   sprintf(data,"%s_x.su.shot%d",DATA_DIR,comp);
 	}
@@ -77,34 +82,34 @@ void  inseis(int comp, float **section, int ntr, int ns, int sws, int iter){
            sprintf(data,"%s_p.su.shot%d",DATA_DIR_T0,comp);
         }
 	
-	/*printf("%s\n",data);*/
-	
-	fpdata = fopen(data,"r");
-        if (fpdata==NULL) err(" Field data file could not be opened !");
-        
-	/* declaration of local variables */
-	int i,j;
-	segy tr;
-	int tracl1 ;
-	float xr, yr, x, y, dump;
+	fpdata = fopen(data, "rb");
+	if (fpdata == NULL) {
+		err(" Field data file could not be opened !");
+		return;
+	}
 
-		for(tracl1=1;tracl1<=ntr;tracl1++){        /* SEGY (without file-header) */
-                        
-			fread(&tr,240,1,fpdata);
-			fread(&tr.data,4,ns,fpdata);
-			
-			section[tracl1][1]=0.0;
-			
-			  
-			  for(j=1;j<=ns;j++){
-			    dump=tr.data[j];
-			    section[tracl1][j+1]=dump;
-			  }
-			  
-			
+	for (r = 1; r <= ntr; ++r) {
+		/* SU trace header and native-endian IEEE float payload. */
+		if (fread(&tr, 1, 240, fpdata) != 240) {
+			fclose(fpdata);
+			err("Incomplete SU trace header");
+			return;
+		}
+		if (tr.ns != ns) {
+			fclose(fpdata);
+			err("SU trace sample count does not match requested count");
+			return;
+		}
+		if (fread(tr.data, sizeof(tr.data[0]), (size_t)ns, fpdata) != (size_t)ns) {
+			fclose(fpdata);
+			err("Incomplete SU trace samples");
+			return;
 		}
 
-
+		/* Disk sample zero is destination sample one. */
+		for (j = 1; j <= ns; ++j)
+			section[r][j] = tr.data[j - 1];
+	}
 
 	fclose(fpdata);
 }

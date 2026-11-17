@@ -2,6 +2,7 @@
 #define FREE_ARG char *
 
 #include "fd.h"
+#include <stdint.h>
 
 
 void err(char err_text[]){
@@ -146,288 +147,268 @@ double *dvector(int nl, int nh){
 	return v-nl+NR_END;
 }
 
-float **fmatrix(int nrl, int nrh, int ncl, int nch){
-	/* allocate a float matrix with subscript range m[nrl..nrh][ncl..nch]
-		   and intializing the matrix, e.g. m[nrl..nrh][ncl..nch]=0.0 */
-	int i,j, nrow=nrh-nrl+1,ncol=nch-ncl+1;
-	float **m;
+/* NR matrices and tensors are flat within each level. Empty dimensions
+   have a first-element anchor for pairing with free and count-zero calls.
+   They have no logical samples. Bounds with a gap larger than one are errors. */
 
-	/* allocate pointers to rows */
-	m=(float **) malloc((size_t) ((nrow+NR_END)*sizeof(float*)));
-	if (!m) err("allocation failure 1 in function fmatrix() ");
-	m += NR_END;
-	m -= nrl;
-
-	/* allocation rows and set pointers to them */
-	m[nrl]=(float *) malloc((size_t)((nrow*ncol+NR_END)*sizeof(float)));
-	if (!m[nrl]) err("allocation failure 2 in function fmatrix() ");
-	m[nrl] += NR_END;
-	m[nrl] -= ncl;
-
-	for (i=nrl+1;i<=nrh;i++) m[i]=m[i-1]+ncol;
-
-	/* initializing matrix */
-	for (i=nrl;i<=nrh;i++)
-		for (j=ncl;j<=nch;j++) m[i][j]=0.0;
-
-	/* return pointer to array of pointer to rows */
-	return m;
+static size_t nr_extent(int low, int high)
+{
+    int64_t count = (int64_t)high - (int64_t)low + 1;
+    if (count < 0 || (uint64_t)count > SIZE_MAX)
+        err("invalid Numerical Recipes array bounds");
+    return (size_t)count;
 }
 
-float **matrix(int nrl, int nrh, int ncl, int nch){
-	/* allocate a float matrix with subscript range m[nrl..nrh][ncl..nch]
-		   and intializing the matrix, e.g. m[nrl..nrh][ncl..nch]=0.0 */
-	int i,j, nrow=nrh-nrl+1,ncol=nch-ncl+1;
-	float **m;
+static size_t nr_product(size_t left, size_t right)
+{
+    if (right != 0 && left > SIZE_MAX / right)
+        err("Numerical Recipes array extent overflow");
+    return left * right;
+}
 
-	/* allocate pointers to rows */
-	m=(float **) malloc((size_t) ((nrow+NR_END)*sizeof(float*)));
-	if (!m) err("allocation failure 1 in function matrix() ");
-	m += NR_END;
-	m -= nrl;
+static size_t nr_first(int low)
+{
+    return low > NR_END ? (size_t)low : NR_END;
+}
 
-	/* allocation rows and set pointers to them */
-	m[nrl]=(float *) malloc((size_t)((nrow*ncol+NR_END)*sizeof(float)));
-	if (!m[nrl]) err("allocation failure 2 in function matrix() ");
-	m[nrl] += NR_END;
-	m[nrl] -= ncl;
+/* The index-zero view and its first logical element must both be inside
+   their allocation, even for a short range far from zero. */
+static size_t nr_zero(int low)
+{
+    if (low < 0)
+        return nr_first(low) + (size_t)(-(int64_t)low);
+    return nr_first(low) - (size_t)low;
+}
 
-	for (i=nrl+1;i<=nrh;i++) m[i]=m[i-1]+ncol;
+static size_t nr_bytes(size_t count, int low, size_t item_size)
+{
+    size_t padding = low < 0 ? nr_zero(low) : nr_first(low);
+    size_t limit = (size_t)PTRDIFF_MAX / item_size;
+    if (count == 0)
+        count = 1;
+    if (padding > limit || count > limit - padding)
+        err("Numerical Recipes array storage overflow");
+    return (padding + count) * item_size;
+}
 
-	/* initializing matrix */
-	for (i=nrl;i<=nrh;i++)
-		for (j=ncl;j<=nch;j++) m[i][j]=0.0;
-
-	/* return pointer to array of pointer to rows */
-	return m;
+static void *nr_allocate(size_t bytes)
+{
+    void *storage = malloc(bytes);
+    if (!storage)
+        err("allocation failure in Numerical Recipes array");
+    return storage;
 }
 
 
-double **dmatrix(int nrl, int nrh, int ncl, int nch){
-	/* allocate a double matrix with subscript range m[nrl..nrh][ncl..nch]
-		   and intializing the matrix, e.g. m[nrl..nrh][ncl..nch]=0.0 */
-	int i,j, nrow=nrh-nrl+1,ncol=nch-ncl+1;
-	double **m;
+float **matrix(int nrl, int nrh, int ncl, int nch)
+{
+    size_t rows = nr_extent(nrl, nrh);
+    size_t cols = nr_extent(ncl, nch);
+    size_t total = nr_product(rows, cols);
+    size_t row_bytes = nr_bytes(rows, nrl, sizeof(float *));
+    size_t data_bytes = nr_bytes(total, ncl, sizeof(float));
+    float **row = nr_allocate(row_bytes);
+    float *data = nr_allocate(data_bytes);
+    size_t row_first = nr_first(nrl);
+    size_t data_first = nr_first(ncl);
+    size_t row_zero = nr_zero(nrl);
+    size_t data_zero = nr_zero(ncl);
+    size_t i;
 
-	/* allocate pointers to rows */
-	m=(double **) malloc((size_t) ((nrow+NR_END)*sizeof(double*)));
-	if (!m) err("allocation failure 1 in function matrix() ");
-	m += NR_END;
-	m -= nrl;
-
-	/* allocation rows and set pointers to them */
-	m[nrl]=(double *) malloc((size_t)((nrow*ncol+NR_END)*sizeof(double)));
-	if (!m[nrl]) err("allocation failure 2 in function dmatrix() ");
-	m[nrl] += NR_END;
-	m[nrl] -= ncl;
-
-	for (i=nrl+1;i<=nrh;i++) m[i]=m[i-1]+ncol;
-
-	/* initializing matrix */
-	for (i=nrl;i<=nrh;i++)
-		for (j=ncl;j<=nch;j++) m[i][j]=0.0;
-
-	/* return pointer to array of pointer to rows */
-	return m;
+    row[row_first] = data + data_zero;
+    for (i = 1; i < rows; ++i)
+        row[row_first + i] = data + data_zero + i * cols;
+    data[data_first] = 0;
+    for (i = 1; i < total; ++i)
+        data[data_first + i] = 0;
+    return row + row_zero;
 }
 
-int **imatrix(int nrl, int nrh, int ncl, int nch){
-	/* allocate an int matrix with subscript range m[nrl..nrh][ncl..nch]
-		   and intializing the matrix, e.g. m[nrl..nrh][ncl..nch]=0.0 */
-	int i,j, nrow=nrh-nrl+1,ncol=nch-ncl+1;
-	int **m;
-
-	/* allocate pointers to rows */
-	m=(int **) malloc((size_t) ((nrow+NR_END)*sizeof(int*)));
-	if (!m) err("allocation failure 1 in function imatrix() ");
-	m += NR_END;
-	m -= nrl;
-
-	/* allocation rows and set pointers to them */
-	m[nrl]=(int *) malloc((size_t)((nrow*ncol+NR_END)*sizeof(int)));
-	if (!m[nrl]) err("allocation failure 2 in function imatrix() ");
-	m[nrl] += NR_END;
-	m[nrl] -= ncl;
-
-	for (i=nrl+1;i<=nrh;i++) m[i]=m[i-1]+ncol;
-
-	/* initializing matrix */
-	for (i=nrl;i<=nrh;i++)
-		for (j=ncl;j<=nch;j++) m[i][j]=0;
-
-	/* return pointer to array of pointer to rows */
-	return m;
+float **fmatrix(int nrl, int nrh, int ncl, int nch)
+{
+    return matrix(nrl, nrh, ncl, nch);
 }
 
-unsigned short int **usmatrix(int nrl, int nrh, int ncl, int nch){
-	/* allocate an int matrix with subscript range m[nrl..nrh][ncl..nch]
-		   and intializing the matrix, e.g. m[nrl..nrh][ncl..nch]=0.0 */
-	int i,j, nrow=nrh-nrl+1,ncol=nch-ncl+1;
-	unsigned short int **m;
+double **dmatrix(int nrl, int nrh, int ncl, int nch)
+{
+    size_t rows = nr_extent(nrl, nrh);
+    size_t cols = nr_extent(ncl, nch);
+    size_t total = nr_product(rows, cols);
+    size_t row_bytes = nr_bytes(rows, nrl, sizeof(double *));
+    size_t data_bytes = nr_bytes(total, ncl, sizeof(double));
+    double **row = nr_allocate(row_bytes);
+    double *data = nr_allocate(data_bytes);
+    size_t row_first = nr_first(nrl);
+    size_t data_first = nr_first(ncl);
+    size_t row_zero = nr_zero(nrl);
+    size_t data_zero = nr_zero(ncl);
+    size_t i;
 
-	/* allocate pointers to rows */
-	m=(unsigned short int **) malloc((size_t) ((nrow+NR_END)*sizeof(unsigned short int*)));
-	if (!m) err("allocation failure 1 in function usmatrix() ");
-	m += NR_END;
-	m -= nrl;
-
-	/* allocation rows and set pointers to them */
-	m[nrl]=(unsigned short int *) malloc((size_t)((nrow*ncol+NR_END)*sizeof(unsigned short int)));
-	if (!m[nrl]) err("allocation failure 2 in function usmatrix() ");
-	m[nrl] += NR_END;
-	m[nrl] -= ncl;
-
-	for (i=nrl+1;i<=nrh;i++) m[i]=m[i-1]+ncol;
-
-	/* initializing matrix */
-	for (i=nrl;i<=nrh;i++)
-		for (j=ncl;j<=nch;j++) m[i][j]=0;
-
-	/* return pointer to array of pointer to rows */
-	return m;
+    row[row_first] = data + data_zero;
+    for (i = 1; i < rows; ++i)
+        row[row_first + i] = data + data_zero + i * cols;
+    data[data_first] = 0;
+    for (i = 1; i < total; ++i)
+        data[data_first + i] = 0;
+    return row + row_zero;
 }
 
-float ***f3tensor(int nrl, int nrh, int ncl, int nch,int ndl, int ndh){
-	/* allocate a float 3tensor with subscript range m[nrl..nrh][ncl..nch][ndl..ndh]
-		   and intializing the matrix, e.g. m[nrl..nrh][ncl..nch][ndl..ndh]=0.0 */
-	int i,j,d, nrow=nrh-nrl+1,ncol=nch-ncl+1,ndep=ndh-ndl+1;
-	float ***t;
+int **imatrix(int nrl, int nrh, int ncl, int nch)
+{
+    size_t rows = nr_extent(nrl, nrh);
+    size_t cols = nr_extent(ncl, nch);
+    size_t total = nr_product(rows, cols);
+    size_t row_bytes = nr_bytes(rows, nrl, sizeof(int *));
+    size_t data_bytes = nr_bytes(total, ncl, sizeof(int));
+    int **row = nr_allocate(row_bytes);
+    int *data = nr_allocate(data_bytes);
+    size_t row_first = nr_first(nrl);
+    size_t data_first = nr_first(ncl);
+    size_t row_zero = nr_zero(nrl);
+    size_t data_zero = nr_zero(ncl);
+    size_t i;
 
-	/* allocate pointers to pointers to rows */
-	t=(float ***) malloc((size_t) ((nrow+NR_END)*sizeof(float**)));
-	if (!t) err("allocation failure 1 in function f3tensor() ");
-	t += NR_END;
-	t -= nrl;
-
-	/* allocate pointers to rows and set pointers to them */
-	t[nrl]=(float **) malloc((size_t)((nrow*ncol+NR_END)*sizeof(float*)));
-	if (!t[nrl]) err("allocation failure 2 in function f3tensor() ");
-	t[nrl] += NR_END;
-	t[nrl] -= ncl;
-
-	/* allocate rows and set pointers to them */
-	t[nrl][ncl]=(float *) malloc((size_t)((nrow*ncol*ndep+NR_END)*sizeof(float)));
-	if (!t[nrl][ncl]) err("allocation failure 3 in function f3tensor() ");
-	t[nrl][ncl] += NR_END;
-	t[nrl][ncl] -= ndl;
-
-	for (j=ncl+1;j<=nch;j++) t[nrl][j]=t[nrl][j-1]+ndep;
-	for (i=nrl+1;i<=nrh;i++){
-		t[i]=t[i-1]+ncol;
-		t[i][ncl]=t[i-1][ncl]+ncol*ndep;
-		for (j=ncl+1;j<=nch;j++) t[i][j]=t[i][j-1]+ndep;
-	}
-
-	/* initializing 3tensor */
-	for (i=nrl;i<=nrh;i++)
-		for (j=ncl;j<=nch;j++)
-			for (d=ndl;d<=ndh;d++) t[i][j][d]=0.0;
-
-	/* return pointer to array of pointer to rows */
-	return t;
+    row[row_first] = data + data_zero;
+    for (i = 1; i < rows; ++i)
+        row[row_first + i] = data + data_zero + i * cols;
+    data[data_first] = 0;
+    for (i = 1; i < total; ++i)
+        data[data_first + i] = 0;
+    return row + row_zero;
 }
 
+unsigned short int **usmatrix(int nrl, int nrh, int ncl, int nch)
+{
+    size_t rows = nr_extent(nrl, nrh);
+    size_t cols = nr_extent(ncl, nch);
+    size_t total = nr_product(rows, cols);
+    size_t row_bytes = nr_bytes(rows, nrl, sizeof(unsigned short int *));
+    size_t data_bytes = nr_bytes(total, ncl, sizeof(unsigned short int));
+    unsigned short int **row = nr_allocate(row_bytes);
+    unsigned short int *data = nr_allocate(data_bytes);
+    size_t row_first = nr_first(nrl);
+    size_t data_first = nr_first(ncl);
+    size_t row_zero = nr_zero(nrl);
+    size_t data_zero = nr_zero(ncl);
+    size_t i;
 
-int ***i3tensor(int nrl, int nrh, int ncl, int nch,int ndl, int ndh){
-	/* allocate a integer 3tensor with subscript range m[nrl..nrh][ncl..nch][ndl..ndh]
-		   and intializing the matrix, e.g. m[nrl..nrh][ncl..nch][ndl..ndh]=0.0 */
-	int i,j,d, nrow=nrh-nrl+1,ncol=nch-ncl+1,ndep=ndh-ndl+1;
-	int ***t;
-
-	/* allocate pointers to pointers to rows */
-	t=(int ***) malloc((size_t) ((nrow+NR_END)*sizeof(int**)));
-	if (!t) err("allocation failure 1 in function i3tensor() ");
-	t += NR_END;
-	t -= nrl;
-
-	/* allocate pointers to rows and set pointers to them */
-	t[nrl]=(int **) malloc((size_t)((nrow*ncol+NR_END)*sizeof(int*)));
-	if (!t[nrl]) err("allocation failure 2 in function i3tensor() ");
-	t[nrl] += NR_END;
-	t[nrl] -= ncl;
-
-	/* allocate rows and set pointers to them */
-	t[nrl][ncl]=(int *) malloc((size_t)((nrow*ncol*ndep+NR_END)*sizeof(int)));
-	if (!t[nrl][ncl]) err("allocation failure 3 in function i3tensor() ");
-	t[nrl][ncl] += NR_END;
-	t[nrl][ncl] -= ndl;
-
-	for (j=ncl+1;j<=nch;j++) t[nrl][j]=t[nrl][j-1]+ndep;
-	for (i=nrl+1;i<=nrh;i++){
-		t[i]=t[i-1]+ncol;
-		t[i][ncl]=t[i-1][ncl]+ncol*ndep;
-		for (j=ncl+1;j<=nch;j++) t[i][j]=t[i][j-1]+ndep;
-	}
-
-	/* initializing 3tensor */
-	for (i=nrl;i<=nrh;i++)
-		for (j=ncl;j<=nch;j++)
-			for (d=ndl;d<=ndh;d++) t[i][j][d]=0;
-
-	/* return pointer to array of pointer to rows */
-	return t;
+    row[row_first] = data + data_zero;
+    for (i = 1; i < rows; ++i)
+        row[row_first + i] = data + data_zero + i * cols;
+    data[data_first] = 0;
+    for (i = 1; i < total; ++i)
+        data[data_first + i] = 0;
+    return row + row_zero;
 }
 
+float ***f3tensor(int nrl, int nrh, int ncl, int nch, int ndl, int ndh)
+{
+    size_t rows = nr_extent(nrl, nrh);
+    size_t cols = nr_extent(ncl, nch);
+    size_t depth = nr_extent(ndl, ndh);
+    size_t cells = nr_product(rows, cols);
+    size_t total = nr_product(cells, depth);
+    size_t row_bytes = nr_bytes(rows, nrl, sizeof(float **));
+    size_t column_bytes = nr_bytes(cells, ncl, sizeof(float *));
+    size_t data_bytes = nr_bytes(total, ndl, sizeof(float));
+    float ***row = nr_allocate(row_bytes);
+    float **column = nr_allocate(column_bytes);
+    float *data = nr_allocate(data_bytes);
+    size_t row_first = nr_first(nrl);
+    size_t column_first = nr_first(ncl);
+    size_t data_first = nr_first(ndl);
+    size_t row_zero = nr_zero(nrl);
+    size_t column_zero = nr_zero(ncl);
+    size_t data_zero = nr_zero(ndl);
+    size_t i;
 
-float ****f4tensor(int nrl, int nrh, int ncl, int nch,int ndl, int ndh, int nvl, int nvh){
-	/* allocate a float 3tensor with subscript range m[nrl..nrh][ncl..nch][ndl..ndh][nvl..nvh]
-		   and intializing the matrix, e.g. m[nrl..nrh][ncl..nch][ndl..ndh][nvl..nvh]=0.0 */
-	int i,j,d,v, nrow=nrh-nrl+1,ncol=nch-ncl+1,ndep=ndh-ndl+1, nval=nvh-nvl+1;
-	float ****t;
-
-	/* allocate pointers to pointers to rows */
-	t=(float ****) malloc((size_t) ((nrow+NR_END)*sizeof(float**)));
-	if (!t) err("allocation failure 1 in function f4tensor() ");
-	t += NR_END;
-	t -= nrl;
-
-	/* allocate pointers to rows and set pointers to them */
-	t[nrl]=(float ***) malloc((size_t)((nrow*ncol+NR_END)*sizeof(float*)));
-	if (!t[nrl]) err("allocation failure 2 in function f4tensor() ");
-	t[nrl] += NR_END;
-	t[nrl] -= ncl;
-
-	/* allocate rows and set pointers to them */
-	t[nrl][ncl]=(float **) malloc((size_t)((nrow*ncol*ndep+NR_END)*sizeof(float)));
-	if (!t[nrl][ncl]) err("allocation failure 3 in function f4tensor() ");
-	t[nrl][ncl] += NR_END;
-	t[nrl][ncl] -= ndl;
-
-	/* allocate values and set pointers to them */
-	t[nrl][ncl][ndl]=(float *) malloc((size_t)((nrow*ncol*ndep*nval+NR_END)*sizeof(float)));
-	if (!t[nrl][ncl][ndl]) err("allocation failure 4 in function f4tensor() ");
-	t[nrl][ncl][ndl] += NR_END;
-	t[nrl][ncl][ndl] -= nvl;
-
-	/*for (j=ncl+1;j<=nch;j++) t[nrl][j]=t[nrl][j-1]+ndep;*/
-	for (d=ndl+1;d<=ndh;d++) t[nrl][ncl][d]=t[nrl][ncl][d-1]+nval;
-
-	for (i=nrl+1;i<=nrh;i++){
-		t[i]=t[i-1]+ncol;
-		t[i][ncl]=t[i-1][ncl]+ncol*ndep;
-		t[i][ncl][ndl]=t[i-1][ncl][ndl]+ncol*ndep*nval;
-		for (j=ncl+1;j<=nch;j++){
-			t[i][j]=t[i][j-1]+ndep;
-			t[i][j][ndl]=t[i][j-1][ndl]+ndep*nval;
-			for (d=ndl+1;d<=ndh;d++){
-				t[i][j][d]=t[i][j][d-1]+nval;
-			}
-		}
-	}
-
-	/* initializing 4tensor */
-	for (i=nrl;i<=nrh;i++)
-		for (j=ncl;j<=nch;j++)
-			for (d=ndl;d<=ndh;d++)
-				for (v=nvl;d<=nvh;v++) t[i][j][d][v]=0.0;
-
-	/* return pointer to array of pointer to rows */
-	return t;
+    row[row_first] = column + column_zero;
+    for (i = 1; i < rows; ++i)
+        row[row_first + i] = column + column_zero + i * cols;
+    column[column_first] = data + data_zero;
+    for (i = 1; i < cells; ++i)
+        column[column_first + i] = data + data_zero + i * depth;
+    data[data_first] = 0;
+    for (i = 1; i < total; ++i)
+        data[data_first + i] = 0;
+    return row + row_zero;
 }
 
+int ***i3tensor(int nrl, int nrh, int ncl, int nch, int ndl, int ndh)
+{
+    size_t rows = nr_extent(nrl, nrh);
+    size_t cols = nr_extent(ncl, nch);
+    size_t depth = nr_extent(ndl, ndh);
+    size_t cells = nr_product(rows, cols);
+    size_t total = nr_product(cells, depth);
+    size_t row_bytes = nr_bytes(rows, nrl, sizeof(int **));
+    size_t column_bytes = nr_bytes(cells, ncl, sizeof(int *));
+    size_t data_bytes = nr_bytes(total, ndl, sizeof(int));
+    int ***row = nr_allocate(row_bytes);
+    int **column = nr_allocate(column_bytes);
+    int *data = nr_allocate(data_bytes);
+    size_t row_first = nr_first(nrl);
+    size_t column_first = nr_first(ncl);
+    size_t data_first = nr_first(ndl);
+    size_t row_zero = nr_zero(nrl);
+    size_t column_zero = nr_zero(ncl);
+    size_t data_zero = nr_zero(ndl);
+    size_t i;
 
+    row[row_first] = column + column_zero;
+    for (i = 1; i < rows; ++i)
+        row[row_first + i] = column + column_zero + i * cols;
+    column[column_first] = data + data_zero;
+    for (i = 1; i < cells; ++i)
+        column[column_first + i] = data + data_zero + i * depth;
+    data[data_first] = 0;
+    for (i = 1; i < total; ++i)
+        data[data_first + i] = 0;
+    return row + row_zero;
+}
 
+float ****f4tensor(int nrl, int nrh, int ncl, int nch,
+                  int ndl, int ndh, int nvl, int nvh)
+{
+    size_t rows = nr_extent(nrl, nrh);
+    size_t cols = nr_extent(ncl, nch);
+    size_t depth = nr_extent(ndl, ndh);
+    size_t values = nr_extent(nvl, nvh);
+    size_t cells = nr_product(rows, cols);
+    size_t layers = nr_product(cells, depth);
+    size_t total = nr_product(layers, values);
+    size_t row_bytes = nr_bytes(rows, nrl, sizeof(float ***));
+    size_t column_bytes = nr_bytes(cells, ncl, sizeof(float **));
+    size_t layer_bytes = nr_bytes(layers, ndl, sizeof(float *));
+    size_t data_bytes = nr_bytes(total, nvl, sizeof(float));
+    float ****row = nr_allocate(row_bytes);
+    float ***column = nr_allocate(column_bytes);
+    float **layer = nr_allocate(layer_bytes);
+    float *data = nr_allocate(data_bytes);
+    size_t row_first = nr_first(nrl);
+    size_t column_first = nr_first(ncl);
+    size_t layer_first = nr_first(ndl);
+    size_t data_first = nr_first(nvl);
+    size_t row_zero = nr_zero(nrl);
+    size_t column_zero = nr_zero(ncl);
+    size_t layer_zero = nr_zero(ndl);
+    size_t data_zero = nr_zero(nvl);
+    size_t i;
 
+    row[row_first] = column + column_zero;
+    for (i = 1; i < rows; ++i)
+        row[row_first + i] = column + column_zero + i * cols;
+    column[column_first] = layer + layer_zero;
+    for (i = 1; i < cells; ++i)
+        column[column_first + i] = layer + layer_zero + i * depth;
+    layer[layer_first] = data + data_zero;
+    for (i = 1; i < layers; ++i)
+        layer[layer_first + i] = data + data_zero + i * values;
+    data[data_first] = 0;
+    for (i = 1; i < total; ++i)
+        data[data_first + i] = 0;
+    return row + row_zero;
+}
 
 void free_vector(float *v, int nl, int nh){
 	/* free a float vector allocated with vector() */
@@ -449,36 +430,72 @@ void free_dvector(double *v, int nl, int nh){
 	free((FREE_ARG) (v+nl-NR_END));
         }
                 
-void free_matrix(float **m, int nrl, int nrh, int ncl, int nch){
-	/* free a float matrix allocated by matrix() */
-	free((FREE_ARG) (m[nrl]+ncl-NR_END));
-	free((FREE_ARG) (m+nrl-NR_END));
+void free_matrix(float **view, int nrl, int nrh, int ncl, int nch)
+{
+    (void)nrh; (void)nch;
+    if (!view)
+        return;
+    free(view[nrl] + ncl - nr_first(ncl));
+    free(view + nrl - nr_first(nrl));
 }
 
-void free_imatrix(int **m, int nrl, int nrh, int ncl, int nch){
-	/* free a integer matrix allocated by imatrix() */
-	free((FREE_ARG) (m[nrl]+ncl-NR_END));
-	free((FREE_ARG) (m+nrl-NR_END));
+void free_dmatrix(double **view, int nrl, int nrh, int ncl, int nch)
+{
+    (void)nrh; (void)nch;
+    if (!view)
+        return;
+    free(view[nrl] + ncl - nr_first(ncl));
+    free(view + nrl - nr_first(nrl));
 }
 
-void free_usmatrix(unsigned short int **m, int nrl, int nrh, int ncl, int nch){
-	/* free a integer matrix allocated by imatrix() */
-	free((FREE_ARG) (m[nrl]+ncl-NR_END));
-	free((FREE_ARG) (m+nrl-NR_END));
+void free_imatrix(int **view, int nrl, int nrh, int ncl, int nch)
+{
+    (void)nrh; (void)nch;
+    if (!view)
+        return;
+    free(view[nrl] + ncl - nr_first(ncl));
+    free(view + nrl - nr_first(nrl));
 }
 
-void free_f3tensor(float ***t, int nrl, int nrh, int ncl, int nch, int ndl, int ndh){
-	/* free a float matrix allocated by f3tensor() */
-	free((FREE_ARG) (t[nrl][ncl]+ndl-NR_END));
-	free((FREE_ARG) (t[nrl]+ncl-NR_END));
-	free((FREE_ARG) (t+nrl-NR_END));
+void free_usmatrix(unsigned short int **view, int nrl, int nrh, int ncl, int nch)
+{
+    (void)nrh; (void)nch;
+    if (!view)
+        return;
+    free(view[nrl] + ncl - nr_first(ncl));
+    free(view + nrl - nr_first(nrl));
 }
 
-void free_i3tensor(int ***t, int nrl, int nrh, int ncl, int nch, int ndl, int ndh){
-	/* free a float matrix allocated by i3tensor() */
-	free((FREE_ARG) (t[nrl][ncl]+ndl-NR_END));
-	free((FREE_ARG) (t[nrl]+ncl-NR_END));
-	free((FREE_ARG) (t+nrl-NR_END));
+void free_f3tensor(float ***view, int nrl, int nrh, int ncl, int nch, int ndl, int ndh)
+{
+    (void)nrh; (void)nch; (void)ndh;
+    if (!view)
+        return;
+    free(view[nrl][ncl] + ndl - nr_first(ndl));
+    free(view[nrl] + ncl - nr_first(ncl));
+    free(view + nrl - nr_first(nrl));
+}
+
+void free_i3tensor(int ***view, int nrl, int nrh, int ncl, int nch, int ndl, int ndh)
+{
+    (void)nrh; (void)nch; (void)ndh;
+    if (!view)
+        return;
+    free(view[nrl][ncl] + ndl - nr_first(ndl));
+    free(view[nrl] + ncl - nr_first(ncl));
+    free(view + nrl - nr_first(nrl));
+}
+
+void free_f4tensor(float ****view, int nrl, int nrh, int ncl, int nch,
+                   int ndl, int ndh, int nvl, int nvh)
+{
+    (void)nrh; (void)nch; (void)ndh; (void)nvh;
+    if (!view)
+        return;
+    free(view[nrl][ncl][ndl] + nvl - nr_first(nvl));
+    free(view[nrl][ncl] + ndl - nr_first(ndl));
+    free(view[nrl] + ncl - nr_first(ncl));
+    free(view + nrl - nr_first(nrl));
 }
 
 void zero(float *A, int u_max){

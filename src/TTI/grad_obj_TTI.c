@@ -149,7 +149,7 @@ double grad_obj_TTI(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 		if(nsrc_loc>0){
 			   sprintf(source_signal_file,"%s_source_signal.%d.su.shot%d", MFILE, MYID,ishot);
 			   fprintf(stdout,"\n PE %d outputs source time function in SU format to %s \n ", MYID, source_signal_file);
-			   output_source_signal(fopen(source_signal_file,"w"),(*acq).signals,NT,1);
+			   output_source_signal(fopen(source_signal_file,"wb"),(*acq).signals,NT,1);
 		}                                
 		                        
 		MPI_Barrier(MPI_COMM_WORLD);

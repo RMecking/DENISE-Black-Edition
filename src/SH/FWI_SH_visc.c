@@ -6,6 +6,7 @@
  */
 
 #include "fd.h"
+#include "fwi_misfit_history.h"
 
 static void exact_sh_require_collective_success(int local_status,
         char *message){
@@ -168,7 +169,7 @@ struct matSH exact_trial_material;
 int stagemax=0, nstage, min_stagemax, max_stagemax;
 
 /*vector for abort criterion*/
-double * L2_hist=NULL;
+struct fwi_misfit_history misfit_history;
 
 /* help variable for MIN_ITER */
 int min_iter_help=0;
@@ -363,8 +364,6 @@ if(READREC!=2){
 }
 
 /* memory allocation for abort criterion*/
-L2_hist = dvector(1,1000);
-
 /* estimate memory requirement of the variables in megabytes*/
 	
 switch (SEISMO){
@@ -527,6 +526,7 @@ read_par_inv(FP_stage,nstage,stagemax);
 FC=FC_END;
 
 iter=1;
+misfit_history = (struct fwi_misfit_history){0};
 /* --------------------------------------
  * Begin of Full Waveform iteration loop
  * -------------------------------------- */
@@ -924,7 +924,7 @@ else{
 
 
 /* saving history of final L2*/
-L2_hist[iter]=L2t[4];
+fwi_misfit_record(&misfit_history, iter, L2t[4]);
 
 if(MYID==0){	
 /*	fprintf(FPL2,"=============================================================\n");
@@ -946,23 +946,18 @@ if(MYID==0){
   fclose(FPL2);
 }
 
-if (iter>min_iter_help){
+{
 
 float diff=0.0, pro=PRO;
 
-/* calculating differnce of the actual L2 and before two iterations, dividing with L2_hist[iter-2] provide changing in procent*/
-diff=fabs((L2_hist[iter-2]-L2_hist[iter])/L2_hist[iter-2]);
-	
-	if((diff<=pro)||(step3==1)){
-        
-        	/* output of the model at the end of given FWI stage */
+	if (fwi_misfit_should_stop(&misfit_history, iter, min_iter_help,
+	                           step3 == 1, pro, &diff)) {
+
+		/* output of the model at the end of given FWI stage */
 		if(INV_MOD_OUT==0){
 		    model_freq_out_SH_visc(exact_base_rho,exact_base_primary,exact_base_q,nstage,FC);
 		}
 
-		min_iter_help=0;
-		min_iter_help=iter+MIN_ITER;
-		iter=0;
 
         	if(MYID==0){
 			if(step3==1){
@@ -1079,7 +1074,6 @@ if(EPRECOND==4){
  free_matrix(acq.srcpos1,1,8,1,1);
  
  /* free memory for abort criterion */
- free_dvector(L2_hist,1,1000);
  		
  free_dvector(L2t,1,4);
  free_vector(epst1,1,3);

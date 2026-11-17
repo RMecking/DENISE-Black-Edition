@@ -6,6 +6,7 @@
  */
 
 #include "fd.h"
+#include "fwi_misfit_history.h"
 
 void FWI_SH(){
 
@@ -71,7 +72,7 @@ float ** Ws, **Wr, **We;
 int stagemax=0, nstage;
 
 /*vector for abort criterion*/
-double * L2_hist=NULL;
+struct fwi_misfit_history misfit_history;
 
 /* help variable for MIN_ITER */
 int min_iter_help=0;
@@ -210,8 +211,6 @@ if(READREC!=2){
 }
 
 /* memory allocation for abort criterion*/
-L2_hist = dvector(1,1000);
-
 /* estimate memory requirement of the variables in megabytes*/
 	
 switch (SEISMO){
@@ -379,6 +378,7 @@ if(GRAD_METHOD==1){
 FC=FC_END;
 
 iter=1;
+misfit_history = (struct fwi_misfit_history){0};
 /* --------------------------------------
  * Begin of Full Waveform iteration loop
  * -------------------------------------- */
@@ -737,7 +737,7 @@ else{
 
 
 /* saving history of final L2*/
-L2_hist[iter]=L2t[4];
+fwi_misfit_record(&misfit_history, iter, L2t[4]);
 s=0;
 
 /* calculate optimal change in the material parameters */
@@ -769,24 +769,19 @@ if(MYID==0){
   fclose(FPL2);
 }
 
-if (iter>min_iter_help){
+{
 
 float diff=0.0, pro=PRO;
 
-/* calculating differnce of the actual L2 and before two iterations, dividing with L2_hist[iter-2] provide changing in procent*/
-diff=fabs((L2_hist[iter-2]-L2_hist[iter])/L2_hist[iter-2]);
-	
-	if((diff<=pro)||(step3==1)){
-        
-        	/* output of the model at the end of given FWI stage */
+	if (fwi_misfit_should_stop(&misfit_history, iter, min_iter_help,
+	                           step3 == 1, pro, &diff)) {
+
+		/* output of the model at the end of given FWI stage */
 		if(INV_MOD_OUT==0){
         	    model_freq_out_SH(matSH.prho,matSH.pu,nstage,FC);
 		}
 
 		s=1;
-		min_iter_help=0;
-		min_iter_help=iter+MIN_ITER;
-		iter=0;
 
         	if(GRAD_METHOD==1){
 	  		zero_PCG(PCG_old, PCG_new, PCG_dir, PCG_vec);
@@ -901,7 +896,6 @@ if (nsrc_loc>0){
  free_matrix(acq.srcpos1,1,8,1,1);
  
  /* free memory for abort criterion */
- free_dvector(L2_hist,1,1000);
  		
  free_dvector(L2t,1,4);
  free_vector(epst1,1,3);
