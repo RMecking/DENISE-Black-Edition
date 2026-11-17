@@ -1,0 +1,145 @@
+[
+  {
+    "name": "local-min",
+    "producer": "LOCAL",
+    "traces": 1,
+    "available": 1,
+    "stride": 1,
+    "physical_steps": 0,
+    "samples": 1,
+    "legacy_compare": true,
+    "expected_bytes": 244
+  },
+  {
+    "name": "local-two",
+    "producer": "LOCAL",
+    "traces": 1,
+    "available": 2,
+    "stride": 1,
+    "physical_steps": 0,
+    "samples": 2,
+    "legacy_compare": true,
+    "expected_bytes": 248
+  },
+  {
+    "name": "local-multi",
+    "producer": "LOCAL",
+    "traces": 3,
+    "available": 5,
+    "stride": 1,
+    "physical_steps": 0,
+    "samples": 5,
+    "legacy_compare": true,
+    "expected_bytes": 780
+  },
+  {
+    "name": "local-max",
+    "producer": "LOCAL",
+    "traces": 1,
+    "available": 60768,
+    "stride": 1,
+    "physical_steps": 0,
+    "samples": 60768,
+    "legacy_compare": false,
+    "expected_bytes": 243312
+  },
+  {
+    "name": "global-single",
+    "producer": "GLOBAL",
+    "traces": 1,
+    "available": 1,
+    "stride": 1,
+    "physical_steps": 1,
+    "samples": 1,
+    "legacy_compare": false,
+    "expected_bytes": 244
+  },
+  {
+    "name": "global-stride",
+    "producer": "GLOBAL",
+    "traces": 2,
+    "available": 7,
+    "stride": 2,
+    "physical_steps": 7,
+    "samples": 3,
+    "legacy_compare": true,
+    "expected_bytes": 504
+  },
+  {
+    "name": "global-max",
+    "producer": "GLOBAL",
+    "traces": 2,
+    "available": 121536,
+    "stride": 2,
+    "physical_steps": 121536,
+    "samples": 60768,
+    "legacy_compare": false,
+    "expected_bytes": 486624
+  },
+  {
+    "name": "global-empty",
+    "producer": "GLOBAL",
+    "traces": 0,
+    "available": 1,
+    "stride": 1,
+    "physical_steps": 1,
+    "samples": 1,
+    "legacy_compare": false,
+    "expected_bytes": 0
+  },
+  {
+    "name": "vector-upper",
+    "producer": "VECTOR",
+    "traces": 1,
+    "available": 60767,
+    "stride": 1,
+    "physical_steps": 0,
+    "samples": 60767,
+    "legacy_compare": true,
+    "expected_bytes": 243308
+  },
+  {
+    "name": "vector-max",
+    "producer": "VECTOR",
+    "traces": 1,
+    "available": 60768,
+    "stride": 1,
+    "physical_steps": 0,
+    "samples": 60768,
+    "legacy_compare": false,
+    "expected_bytes": 243312
+  },
+  {
+    "name": "source-min",
+    "producer": "SOURCE",
+    "traces": 1,
+    "available": 1,
+    "stride": 1,
+    "physical_steps": 0,
+    "samples": 1,
+    "legacy_compare": true,
+    "expected_bytes": 244
+  },
+  {
+    "name": "source-stride",
+    "producer": "SOURCE",
+    "traces": 1,
+    "available": 13,
+    "stride": 3,
+    "physical_steps": 13,
+    "samples": 4,
+    "legacy_compare": true,
+    "expected_bytes": 256
+  },
+  {
+    "name": "source-max",
+    "producer": "SOURCE",
+    "traces": 1,
+    "available": 60768,
+    "stride": 1,
+    "physical_steps": 0,
+    "samples": 60768,
+    "legacy_compare": false,
+    "expected_bytes": 243312
+  }
+]
