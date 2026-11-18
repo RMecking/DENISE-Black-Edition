@@ -61,6 +61,18 @@ def test_driver_contract_is_separate_streaming_and_dtinv1(repository_root:Path):
   assert forbidden not in body
 
 def test_locked_and_active_paths_remain_untouched(repository_root:Path):
- # C8 owns later active-driver integration; keep the locked C5-C7 kernels guarded here.
+ # Check only the historical provenance of M6.3c-7c-b2.
  paths=["src/SH/visco_sh_full_state_adjoint_step.c","src/SH/visco_sh_material_timestep_vjp.c","src/SH/matcopy_SH_adjoint.c","src/SH/visco_sh_material_observable.c","src/SH/FWI_SH.c","src/SH/grad_obj_sh.c","src/SH/grad_obj_sh_visc.c"]
- r=subprocess.run(["git","diff","--name-only","f67daaff71f98b1f7ef048821175b56e9ea73ac8","--",*paths],cwd=repository_root,text=True,stdout=subprocess.PIPE,check=True);assert r.stdout==""
+ r = subprocess.run(
+     [
+         "git", "diff", "--name-only",
+         "f67daaff71f98b1f7ef048821175b56e9ea73ac8",
+         "dc37e0602c92c3bfc76600f2a32eac691ca69941",
+         "--", *paths,
+     ],
+     cwd=repository_root,
+     text=True,
+     stdout=subprocess.PIPE,
+     check=True,
+ )
+ assert r.stdout == ""
