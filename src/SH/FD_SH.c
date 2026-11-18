@@ -243,7 +243,6 @@ for (nt=1;nt<=8;nt++) acq.srcpos1[nt][1]=acq.srcpos[nt][ishot];
 	if (RUN_MULTIPLE_SHOTS){
 
                 /* find this single source positions on subdomains */
-                if (nsrc_loc>0) free_matrix(acq.srcpos_loc,1,8,1,1);
                 acq.srcpos_loc=splitsrc(acq.srcpos1,&nsrc_loc, 1);
         }
 
@@ -260,7 +259,6 @@ MPI_Barrier(MPI_COMM_WORLD);
 ==================================================================================*/
 		
 /* calculate wavelet for each source point */
-acq.signals=NULL;
 acq.signals=wavelet(acq.srcpos_loc,nsrc_loc,ishot);
 
 /* time domain filtering of spike source signal */
@@ -278,7 +276,7 @@ if(RUN_MULTIPLE_SHOTS){
         	   char  source_signal_file[STRING_SIZE];
         	   sprintf(source_signal_file,"%s_source_signal.%d.su.shot%d", MFILE, MYID,ishot);
         	   fprintf(stdout,"\n PE %d outputs source time function in SU format to %s \n ", MYID, source_signal_file);
-        	   output_source_signal(fopen(source_signal_file,"w"),acq.signals,NT,1);
+        	   output_source_signal(fopen(source_signal_file,"wb"),acq.signals,NT,1);
 	}                                
                                 
 	MPI_Barrier(MPI_COMM_WORLD);
@@ -323,6 +321,13 @@ if(READREC==2){
    
 }
 
+/* Release shot-local source data before resetting the allocation bounds. */
+free_matrix(acq.signals,1,nsrc_loc,1,NT);
+acq.signals=NULL;
+if (acq.srcpos_loc) {
+   free_matrix(acq.srcpos_loc,1,8,1,nsrc_loc);
+   acq.srcpos_loc=NULL;
+}
 nsrc_loc=0;
 
 } /* end of loop over shots */
@@ -342,12 +347,6 @@ free_matrix(mpiPSV.buffertop_to_bot,1,NX,1,fdo3);
 free_matrix(mpiPSV.bufferbot_to_top,1,NX,1,fdo3);
 
 free_vector(hc,0,6);
-
-if (nsrc_loc>0){	
-	free_matrix(acq.signals,1,nsrc_loc,1,NT);
-	free_matrix(acq.srcpos_loc,1,8,1,nsrc_loc);
-	free_matrix(acq.srcpos_loc_back,1,6,1,nsrc_loc);
-}		   
 
  /* free memory for global source positions */
  free_matrix(acq.srcpos,1,8,1,nsrc);

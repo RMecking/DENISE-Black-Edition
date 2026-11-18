@@ -6,6 +6,7 @@
  *  ----------------------------------------------------------------------*/
 #include "fd.h"
 #include "segy.h"
+#include "su_write.h"
 
 void  outseis_vector(FILE *fp, FILE *fpdata, int comp, float *section,
 int **recpos, int **recpos_loc, int ntr, float ** srcpos,
@@ -19,7 +20,8 @@ int nsrc, int ns, int seis_form, int ishot, int sws){
 
 
 	/* declaration of local variables */
-	int i,j,ndt,ns2,nt,lsamp;
+	int i,j,ns2=0,nt,lsamp;
+	struct su_sampling sampling;
 	segy tr;
 	int tracl1 ;
 	float xr, yr, x, y;
@@ -27,16 +29,16 @@ int nsrc, int ns, int seis_form, int ishot, int sws){
 
 
 
-	nt=iround(TIME/DT);
-	if (sws==1){	/* parameter NDT is used */
-		ndt=NDT;
-		ns2=iround(nt/NDT);}
-	else{ 
-		ndt=1;
-		ns2=ns;}
-	
-	
-	
+	if (seis_form == 1) {
+		if (sws != 0 && sws != 1)
+			su_output_error(fpdata, "Invalid SU output sampling mode");
+		sampling = su_output_sampling(fpdata, ns, sws == 1 ? NDT : 1,
+		                              DT, sws == 1, TIME);
+	} else {
+		nt=iround(TIME/DT);
+		ns2=sws==1 ? iround(nt/NDT) : ns;
+	}
+
 	/* source coordinates are written into trace header fields */
 	XS=srcpos[1][ishot];	
 	YS=srcpos[2][ishot];	
@@ -50,6 +52,7 @@ int nsrc, int ns, int seis_form, int ishot, int sws){
          		yr=YS;
          		x=xr-REFREC[1];
          		y=yr-REFREC[2];
+			memset(&tr, 0, SU_WRITE_HEADER_BYTES);
 			tr.tracl=tracl1;
 			tr.ep=comp;     
 			tr.cdp=0;
@@ -70,8 +73,8 @@ int nsrc, int ns, int seis_form, int ishot, int sws){
 			        /* group coordinates */
 			tr.gx=(signed int)iround(xr*1000.0);
 
-			tr.ns=(unsigned short)ns2; /* number of samples in this trace */
-			tr.dt=(unsigned short)iround(((float)ndt*DT)*1.0e6); /* sample interval in micro-seconds */
+			tr.ns=(unsigned short)sampling.count; /* number of samples in this trace */
+			tr.dt=sampling.interval_us; /* sample interval in micro-seconds */
 			/*tr.d1=(float)(TIME/ns2);*/        /* sample spacing for non-seismic data */
 			tr.d1=(float)tr.dt*1.0e-6;
 
@@ -255,18 +258,8 @@ int nsrc, int ns, int seis_form, int ishot, int sws){
 
 			tr.mark=0     ;
 			
-			if (sws==0){		
-				for(j=1;j<=ns;j++) tr.data[j]=section[j];}
-			else{
-				lsamp=0;
-				for(j=1;j<=ns2;j++){
-					lsamp +=NDT;
-					tr.data[j]=section[lsamp];}
-			}
+			su_write_trace(fpdata, &tr, section, sampling);
 
-			fwrite(&tr,240,1,fpdata);
-			fwrite(&tr.data[1],4,ns2,fpdata);
-		
 		break;
 
 
@@ -298,5 +291,8 @@ int nsrc, int ns, int seis_form, int ishot, int sws){
 		fprintf(fp," No output written. ");
 	}
 
-	fclose(fpdata);
+	if (seis_form == 1)
+		su_close_output(fpdata);
+	else
+		fclose(fpdata);
 }

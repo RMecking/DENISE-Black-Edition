@@ -6,6 +6,7 @@
  */
 
 #include "fd.h"
+#include "fwi_misfit_history.h"
 
 static int distributed_exact_gradient_only(void) {
   const char *value=getenv("DENISE_PSV_EXACT_DISTRIBUTED_GRADIENT_ONLY");
@@ -78,7 +79,7 @@ void FWI_PSV()
   int stagemax = 0, nstage;
 
   /*vector for abort criterion*/
-  double *L2_hist = NULL;
+  struct fwi_misfit_history misfit_history;
 
   /* help variable for MIN_ITER */
   int min_iter_help = 0;
@@ -226,8 +227,6 @@ void FWI_PSV()
   }
 
   /* memory allocation for abort criterion*/
-  L2_hist = dvector(1, 1000);
-
   /* estimate memory requirement of the variables in megabytes*/
 
   switch (SEISMO)
@@ -432,6 +431,7 @@ void FWI_PSV()
     FC = FC_END;
 
     iter = 1;
+    misfit_history = (struct fwi_misfit_history){0};
     /* --------------------------------------
  * Begin of Full Waveform iteration loop
  * -------------------------------------- */
@@ -635,7 +635,6 @@ void FWI_PSV()
 
       if(exact_visco_fwi){
         if(distributed_exact_gradient_only()){
-          L2_hist[iter]=L2sum;
           if(MYID==0){
             fprintf(FPL2,"0.0 0.0 0.0 0.0 %e 0.0 0.0 %e %d\n",
                     L2sum,L2sum,nstage);
@@ -671,7 +670,6 @@ void FWI_PSV()
         exact_request.req_rec=req_rec;
         exact_request.base_objective=L2sum;
         L2t[4]=visco_psv_exact_active_step(&exact_request);
-        L2_hist[iter]=L2t[4];
         if(MYID==0){
           fprintf(FPL2,"0.0 0.0 0.0 0.0 %e 0.0 0.0 %e %d\n",
                   L2t[1],L2t[4],nstage);
@@ -811,7 +809,7 @@ frequency MIN_ITER */
       }
 
       /* saving history of final L2*/
-      L2_hist[iter] = L2t[4];
+      fwi_misfit_record(&misfit_history, iter, L2t[4]);
       s = 0;
 
       /* calculate optimal change in the material parameters */
@@ -846,15 +844,12 @@ frequency MIN_ITER */
         fclose(FPL2);
       }
 
-      if (iter > min_iter_help)
       {
 
         float diff = 0.0, pro = PRO;
 
-        /* calculating differnce of the actual L2 and before two iterations, dividing with L2_hist[iter-2] provide changing in procent*/
-        diff = fabs((L2_hist[iter - 2] - L2_hist[iter]) / L2_hist[iter - 2]);
-
-        if ((diff <= pro) || (step3 == 1))
+        if (fwi_misfit_should_stop(&misfit_history, iter, min_iter_help,
+                                   step3 == 1, pro, &diff))
         {
 
           /* output of the model at the end of given FWI stage */
@@ -863,9 +858,6 @@ frequency MIN_ITER */
             model_freq_out_PSV(matPSV.ppi, matPSV.prho, matPSV.pu, nstage, FC);
           }
           s = 1;
-          min_iter_help = 0;
-          min_iter_help = iter + MIN_ITER;
-          iter = 0;
 
           if (GRAD_METHOD == 1)
           {
@@ -984,7 +976,6 @@ frequency MIN_ITER */
   free_matrix(acq.srcpos1, 1, 8, 1, 1);
 
   /* free memory for abort criterion */
-  free_dvector(L2_hist, 1, 1000);
   free_dvector(L2t, 1, 4);
   free_vector(epst1, 1, 3);
 

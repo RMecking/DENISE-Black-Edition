@@ -343,7 +343,7 @@ void FD_PSV()
                                 char source_signal_file[STRING_SIZE];
                                 sprintf(source_signal_file, "%s_source_signal.%d.su.shot%d", MFILE, MYID, ishot);
                                 fprintf(stdout, "\n PE %d outputs source time function in SU format to %s \n ", MYID, source_signal_file);
-                                output_source_signal(fopen(source_signal_file, "w"), acq.signals, NT, 1);
+                                output_source_signal(fopen(source_signal_file, "wb"), acq.signals, NT, 1);
                         }
 
                         MPI_Barrier(SHOT_COMM);

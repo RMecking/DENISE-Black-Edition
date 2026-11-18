@@ -1659,5 +1659,15 @@ void free_matrix(float **m, int nrl, int nrh, int ncl, int nch);
 void free_imatrix(int **m, int nrl, int nrh, int ncl, int nch);
 void free_f3tensor(float ***t, int nrl, int nrh, int ncl, int nch, int ndl, 
 int ndh);
+double **dmatrix(int nrl, int nrh, int ncl, int nch);
+unsigned short int **usmatrix(int nrl, int nrh, int ncl, int nch);
+int ***i3tensor(int nrl, int nrh, int ncl, int nch, int ndl, int ndh);
+float ****f4tensor(int nrl, int nrh, int ncl, int nch,
+                   int ndl, int ndh, int nvl, int nvh);
+void free_dmatrix(double **m, int nrl, int nrh, int ncl, int nch);
+void free_usmatrix(unsigned short int **m, int nrl, int nrh, int ncl, int nch);
+void free_i3tensor(int ***t, int nrl, int nrh, int ncl, int nch, int ndl, int ndh);
+void free_f4tensor(float ****t, int nrl, int nrh, int ncl, int nch,
+                   int ndl, int ndh, int nvl, int nvh);
 void zero(float *A, int u_max);
 void normalize_data(float **data, int ntr, int ns);

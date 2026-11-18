@@ -4,6 +4,7 @@
  *  ----------------------------------------------------------------------*/
 #include "fd.h"
 #include "segy.h"
+#include "su_write.h"
 
 void  output_source_signal(FILE *fp, float **signals, int ns, int seis_form){
 
@@ -14,26 +15,18 @@ void  output_source_signal(FILE *fp, float **signals, int ns, int seis_form){
 	/* declaration of local variables */
 	int i,j, ntr=1;
 	segy tr;
-	int tracl ;
-	
-	
-	
+	struct su_sampling sampling;
+
 	switch(seis_form){
 	case 1 :
-		for(tracl=1;tracl<=ntr;tracl++){        /*SEGY (without file-header)*/
-         		
-			tr.tracl=tracl;     
-			tr.trid=(short)1;           /* trace identification code: 1=seismic*/
-			
-			tr.ns=(unsigned short)iround(ns/NDT); /* number of samples in this trace */
-			tr.dt=(unsigned short)iround(((float)NDT*DT)*1.0e6); /* sample interval in micro-seconds */
-			tr.d1=(float)NDT*DT;        /* sample spacing for non-seismic data */
-
-			for(j=1;j<=tr.ns;j++) tr.data[j]=signals[tracl][j*NDT];
-
-			fwrite(&tr,240,1,fp);
-			fwrite(&tr.data[1],4,tr.ns,fp);
-		}
+		sampling = su_output_sampling(fp, ns, NDT, DT, 0, 0.0f);
+		memset(&tr, 0, SU_WRITE_HEADER_BYTES);
+		tr.tracl=1;
+		tr.trid=1;
+		tr.ns=(unsigned short)sampling.count;
+		tr.dt=sampling.interval_us;
+		tr.d1=(float)NDT*DT;
+		su_write_trace(fp, &tr, signals[1], sampling);
 		break;
 
 
@@ -55,5 +48,8 @@ void  output_source_signal(FILE *fp, float **signals, int ns, int seis_form){
 		fprintf(stdout," No output written. ");
 	}
 
-	fclose(fp);
+	if (seis_form == 1)
+		su_close_output(fp);
+	else
+		fclose(fp);
 }
