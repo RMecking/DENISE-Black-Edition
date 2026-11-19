@@ -1,6 +1,7 @@
 /* Inactive exact viscoelastic SH multi-shot objective-only wrapper. */
 
 #include "fd.h"
+#include "exact_sh_receivers.h"
 
 static int exact_objective_multi_preflight(
         const struct visco_sh_exact_multi_shot_request *request) {
@@ -19,22 +20,20 @@ static int exact_objective_multi_preflight(
             (request->acquisition->srcpos == NULL) ||
             (request->acquisition->srcpos1 == NULL) ||
             (request->nsrc < 1) || (request->ns != NT) ||
-            (request->nrec_local < 0) || (request->nrec_global < 1) ||
-            (request->nrec_local > request->nrec_global) ||
             (NX < 1) || (NY < 1) || (L < 1) ||
             ((INVMAT1 != 1) && (INVMAT1 != 3)) ||
             (DTINV != 1) || (LNORM != 2) || (GRAD_FORM != 2) ||
             (N_ORDER != 0) || (TIMEWIN != 0) || (OFFSET_MUTE != 0) ||
             (TRKILL != 0) || (SEISMO != 1) || (EPRECOND != 0) ||
             (SWS_TAPER_CIRCULAR_PER_SHOT != 0) || (TIME_FILT != 0) ||
-            (INV_STF != 0) || (QUELLTYPB == 0) ||
-            ((READREC != 2) &&
-             ((request->acquisition->recpos == NULL) ||
-              (request->acquisition->recpos_loc == NULL) ||
-              (request->seismogram->sectionvz == NULL) ||
-              (request->legacy_fwi_seismogram->sectionread == NULL) ||
-              (request->legacy_fwi_seismogram->sectionvzdata == NULL))))
+            (INV_STF != 0) || (QUELLTYPB == 0) || (READREC < 0) ||
+            (READREC > 2) || (request->ns < 1))
         return -1;
+    if (READREC != 2)
+        return exact_sh_receiver_status(request->acquisition, request->nrec_local,
+                request->nrec_global, request->seismogram->sectionvz,
+                request->legacy_fwi_seismogram->sectionvzdata,
+                request->legacy_fwi_seismogram->sectionread);
     return 0;
 }
 
@@ -58,11 +57,12 @@ static void exact_objective_multi_release_dynamic_receivers(
 
     if (nrec_local > 0) {
         free_matrix(seismogram->sectionvz, 1, nrec_local, 1, request->ns);
-        free_matrix(legacy->sectionvzdata, 1, nrec_local, 1, request->ns);
-        free_matrix(legacy->sectionvzdiff, 1, nrec_local, 1, request->ns);
-        free_matrix(legacy->sectionvzdiffold, 1, nrec_local, 1, request->ns);
         free_imatrix(acquisition->recpos_loc, 1, 3, 1, nrec_local);
     }
+    /* alloc_seisSHfwi allocates these three matrices even at count zero. */
+    free_matrix(legacy->sectionvzdata, 1, nrec_local, 1, request->ns);
+    free_matrix(legacy->sectionvzdiff, 1, nrec_local, 1, request->ns);
+    free_matrix(legacy->sectionvzdiffold, 1, nrec_local, 1, request->ns);
     free_matrix(legacy->sectionread, 1, nrec_global, 1, request->ns);
     free_ivector(acquisition->recswitch, 1, nrec_global);
     free_imatrix(acquisition->recpos, 1, 3, 1, nrec_global);
@@ -89,10 +89,15 @@ int visco_sh_exact_objective(
     int nt, shot_status;
     double objective = 0.0;
 
-    if ((result == NULL) || exact_objective_multi_preflight(request) != 0)
-        return -1;
-    if ((RUN_MULTIPLE_SHOTS == 0) && (request->nsrc > 1)) return -1;
+    shot_status = (result == NULL) ? -1 : exact_objective_multi_preflight(request);
+    if (shot_status == 0 && !RUN_MULTIPLE_SHOTS && request->nsrc > 1)
+        shot_status = -1;
+    shot_status = exact_sh_collective_status(MPI_COMM_WORLD,
+            "objective request/receiver preflight", shot_status);
+    if (shot_status != 0) return shot_status;
     nshots = RUN_MULTIPLE_SHOTS ? request->nsrc : 1;
+    shot_status = exact_sh_check_schedule(nshots, READREC, request->ns);
+    if (shot_status != 0) return shot_status;
     source_columns = RUN_MULTIPLE_SHOTS ? 1 : request->nsrc;
 
     for (ishot = 1; ishot <= nshots; ++ishot) {
@@ -100,6 +105,16 @@ int visco_sh_exact_objective(
         nrec_global = request->nrec_global;
         if (READREC == 2) {
             request->acquisition->recpos = receiver(FP, &nrec_global, ishot);
+            shot_status = exact_sh_collective_status(MPI_COMM_WORLD,
+                    "per-shot global receivers", exact_sh_global_receivers_valid(
+                    request->acquisition->recpos, nrec_global) ? 0 : -1);
+            if (shot_status != 0) {
+                if (request->acquisition->recpos != NULL)
+                    free_imatrix(request->acquisition->recpos, 1, 3, 1, nrec_global);
+                request->acquisition->recpos = NULL;
+                return shot_status;
+            }
+            request->seismogram->sectionvz = NULL;
             request->acquisition->recswitch = ivector(1, nrec_global);
             request->acquisition->recpos_loc = splitrec(
                     request->acquisition->recpos, &nrec_local, nrec_global,
@@ -107,6 +122,16 @@ int visco_sh_exact_objective(
             alloc_seisSH(nrec_local, request->ns, request->seismogram);
             alloc_seisSHfwi(nrec_local, nrec_global, request->ns,
                             request->legacy_fwi_seismogram);
+            shot_status = exact_sh_collective_status(MPI_COMM_WORLD,
+                    "per-shot local receivers", exact_sh_receiver_status(
+                    request->acquisition, nrec_local, nrec_global,
+                    request->seismogram->sectionvz,
+                    request->legacy_fwi_seismogram->sectionvzdata,
+                    request->legacy_fwi_seismogram->sectionread));
+            if (shot_status != 0) {
+                exact_objective_multi_release_dynamic_receivers(request, nrec_local, nrec_global);
+                return shot_status;
+            }
         }
 
         for (nt = 1; nt <= 8; ++nt)
@@ -117,7 +142,8 @@ int visco_sh_exact_objective(
                 RUN_MULTIPLE_SHOTS ? request->acquisition->srcpos1
                                    : request->acquisition->srcpos,
                 &nsrc_local, source_columns);
-        MPI_Barrier(MPI_COMM_WORLD);
+        if (MPI_Barrier(MPI_COMM_WORLD) != MPI_SUCCESS)
+            return exact_sh_abort_phase(MPI_COMM_WORLD, "objective shot barrier", -2);
         request->acquisition->signals = wavelet(
                 request->acquisition->srcpos_loc, nsrc_local, ishot);
         if ((QUELLART == 6) && (nsrc_local > 0))

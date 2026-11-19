@@ -1,6 +1,7 @@
 /* Exact transpose of the two-stage cyclic SH material halo exchange. */
 
 #include "fd.h"
+#include "exact_sh_collective.h"
 
 static void pack_cell(float *buffer, int offset,
                       float **rho, float **u, float **taus,
@@ -33,9 +34,6 @@ int matcopy_SH_adjoint(float **bar_rho, float **bar_u, float **bar_taus) {
     int vertical_count = 3 * NX;
     int i, j, status_code = MPI_SUCCESS;
 
-    if (bar_rho == NULL || bar_u == NULL || bar_taus == NULL)
-        return MPI_ERR_ARG;
-
     send_right = (float *)malloc((size_t)horizontal_count * sizeof(float));
     recv_left = (float *)malloc((size_t)horizontal_count * sizeof(float));
     send_left = (float *)malloc((size_t)horizontal_count * sizeof(float));
@@ -48,8 +46,12 @@ int matcopy_SH_adjoint(float **bar_rho, float **bar_u, float **bar_taus) {
         recv_right == NULL || send_bottom == NULL || recv_top == NULL ||
         send_top == NULL || recv_bottom == NULL) {
         status_code = MPI_ERR_NO_MEM;
-        goto cleanup;
     }
+    if (bar_rho == NULL || bar_u == NULL || bar_taus == NULL)
+        status_code = MPI_ERR_ARG;
+    status_code = exact_sh_collective_status(MPI_COMM_WORLD,
+            "material halo workspace", status_code);
+    if (status_code != MPI_SUCCESS) goto cleanup;
 
     /* H^T: right-halo bars return right, left-halo bars return left. */
     for (j = 0; j <= NY + 1; ++j) {
@@ -59,10 +61,14 @@ int matcopy_SH_adjoint(float **bar_rho, float **bar_u, float **bar_taus) {
     status_code = MPI_Sendrecv(send_right, horizontal_count, MPI_FLOAT,
             INDEX[2], 6311, recv_left, horizontal_count, MPI_FLOAT,
             INDEX[1], 6311, MPI_COMM_WORLD, &status);
+    if (status_code != MPI_SUCCESS)
+        status_code = exact_sh_abort_phase(MPI_COMM_WORLD, "material halo exchange", status_code);
     if (status_code != MPI_SUCCESS) goto cleanup;
     status_code = MPI_Sendrecv(send_left, horizontal_count, MPI_FLOAT,
             INDEX[1], 6312, recv_right, horizontal_count, MPI_FLOAT,
             INDEX[2], 6312, MPI_COMM_WORLD, &status);
+    if (status_code != MPI_SUCCESS)
+        status_code = exact_sh_abort_phase(MPI_COMM_WORLD, "material halo exchange", status_code);
     if (status_code != MPI_SUCCESS) goto cleanup;
     for (j = 0; j <= NY + 1; ++j) {
         clear_cell(bar_rho, bar_u, bar_taus, j, 0);
@@ -79,10 +85,14 @@ int matcopy_SH_adjoint(float **bar_rho, float **bar_u, float **bar_taus) {
     status_code = MPI_Sendrecv(send_bottom, vertical_count, MPI_FLOAT,
             INDEX[4], 6313, recv_top, vertical_count, MPI_FLOAT,
             INDEX[3], 6313, MPI_COMM_WORLD, &status);
+    if (status_code != MPI_SUCCESS)
+        status_code = exact_sh_abort_phase(MPI_COMM_WORLD, "material halo exchange", status_code);
     if (status_code != MPI_SUCCESS) goto cleanup;
     status_code = MPI_Sendrecv(send_top, vertical_count, MPI_FLOAT,
             INDEX[3], 6314, recv_bottom, vertical_count, MPI_FLOAT,
             INDEX[4], 6314, MPI_COMM_WORLD, &status);
+    if (status_code != MPI_SUCCESS)
+        status_code = exact_sh_abort_phase(MPI_COMM_WORLD, "material halo exchange", status_code);
     if (status_code != MPI_SUCCESS) goto cleanup;
     for (i = 1; i <= NX; ++i) {
         clear_cell(bar_rho, bar_u, bar_taus, 0, i);

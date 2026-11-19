@@ -15,6 +15,8 @@
 #include <stddef.h>
 #include <stdlib.h>
 
+#include "exact_sh_collective.h"
+
 #define M63C_MAX_PATCH 13
 #define M63C_PATCH_CELLS (M63C_MAX_PATCH * M63C_MAX_PATCH)
 
@@ -598,6 +600,17 @@ static int reverse_velocity_block(
     return 0;
 }
 
+/* A peer can already be in a halo exchange when a local point operation
+ * fails. Terminate that distributed material step through its communicator. */
+static int exact_sh_reverse_step_failure(const struct visco_sh_full_step_config *cfg,
+        const struct visco_sh_material_adjoint_step_context *material,
+        const char *phase, int status) {
+    if (cfg != NULL && material != NULL &&
+            (cfg->nproc_x > 1 || cfg->nproc_y > 1))
+        return exact_sh_abort_phase(cfg->comm, phase, status);
+    return status;
+}
+
 static int visco_sh_full_state_adjoint_step_internal(
         const struct visco_sh_full_step_config *cfg,
         struct visco_sh_full_state *bar_next_work,
@@ -607,13 +620,16 @@ static int visco_sh_full_state_adjoint_step_internal(
     int h, row_min, row_max, col_min, col_max, status;
 
     status = validate_config(cfg);
-    if (status != 0) return status;
+    if (status != 0) return exact_sh_reverse_step_failure(cfg, material,
+            "reverse step configuration", status);
     status = validate_material_context(cfg, material);
-    if (status != 0) return status;
+    if (status != 0) return exact_sh_reverse_step_failure(cfg, material,
+            "reverse step material capture", status);
     if (!state_complete(bar_next_work, cfg->fw) ||
             !state_complete(bar_prev, cfg->fw) ||
             !state_distinct(bar_next_work, bar_prev, cfg->fw) ||
-            ((cfg->nsrc > 0) && (bar_signal == NULL))) return -1;
+            ((cfg->nsrc > 0) && (bar_signal == NULL)))
+        return exact_sh_reverse_step_failure(cfg, material, "reverse step workspace", -1);
 
     h = cfg->fdorder / 2;
     row_min = -h;
@@ -648,12 +664,14 @@ static int visco_sh_full_state_adjoint_step_internal(
 
     status = receiver_transpose(
             cfg, bar_next_work, row_min, row_max, col_min, col_max);
-    if (status != 0) return status;
+    if (status != 0) return exact_sh_reverse_step_failure(cfg, material,
+            "receiver transpose", status);
     status = exchange_s_SH_adjoint(
             bar_next_work->sxz, bar_next_work->syz, cfg->nx, cfg->ny,
             cfg->fdorder, cfg->boundary, cfg->pos, cfg->nproc_x,
             cfg->nproc_y, cfg->index, cfg->comm);
-    if (status != MPI_SUCCESS) return status;
+    if (status != MPI_SUCCESS) return exact_sh_reverse_step_failure(cfg, material,
+            "reverse stress halo", status);
     if (cfg->free_surface && (cfg->pos[2] == 0))
         surface_elastic_SH_stress_adjoint(
                 bar_next_work->syz, cfg->nx, h);
@@ -661,7 +679,8 @@ static int visco_sh_full_state_adjoint_step_internal(
     if (material != NULL) {
         status = capture_material_stress_cotangents(
                 cfg, bar_next_work, material);
-        if (status != 0) return status;
+        if (status != 0) return exact_sh_reverse_step_failure(cfg, material,
+                "reverse stress capture", status);
     }
 
     /* The stress halo/surface maps precede the constitutive update in
@@ -673,7 +692,8 @@ static int visco_sh_full_state_adjoint_step_internal(
                row_min, row_max, col_min, col_max);
 
     status = reverse_stress_block(cfg, bar_next_work, bar_prev);
-    if (status != 0) return status;
+    if (status != 0) return exact_sh_reverse_step_failure(cfg, material,
+            "reverse stress update", status);
 
     if (cfg->free_surface && (cfg->pos[2] == 0))
         surface_elastic_SH_velocity_adjoint(
@@ -682,7 +702,8 @@ static int visco_sh_full_state_adjoint_step_internal(
             bar_next_work->vz, cfg->nx, cfg->ny, cfg->fdorder,
             cfg->boundary, cfg->pos, cfg->nproc_x, cfg->nproc_y,
             cfg->index, cfg->comm);
-    if (status != MPI_SUCCESS) return status;
+    if (status != MPI_SUCCESS) return exact_sh_reverse_step_failure(cfg, material,
+            "reverse velocity halo", status);
 
     /* Source^T and velocity-update^T both consume this same post-source
      * cotangent.  source_transpose copies it to prev; physical cells are then
@@ -691,13 +712,18 @@ static int visco_sh_full_state_adjoint_step_internal(
     status = source_transpose(
             cfg, bar_next_work->vz, bar_prev->vz, row_min, row_max,
             col_min, col_max, bar_signal);
-    if (status != 0) return status;
+    if (status != 0) return exact_sh_reverse_step_failure(cfg, material,
+            "source transpose", status);
     if (material != NULL) {
         status = capture_material_velocity_cotangent(
                 cfg, bar_next_work, material);
-        if (status != 0) return status;
+        if (status != 0) return exact_sh_reverse_step_failure(cfg, material,
+                "reverse velocity capture", status);
     }
-    return reverse_velocity_block(cfg, bar_next_work, bar_prev);
+    status = reverse_velocity_block(cfg, bar_next_work, bar_prev);
+    if (status != 0) return exact_sh_reverse_step_failure(cfg, material,
+            "reverse velocity update", status);
+    return 0;
 }
 
 int visco_sh_full_state_adjoint_step(

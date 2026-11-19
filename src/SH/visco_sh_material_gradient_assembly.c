@@ -1,6 +1,7 @@
 /* C7c-a temporal reduction and exact distributed material-gradient mapping. */
 
 #include "fd.h"
+#include "exact_sh_collective.h"
 
 struct local_field {
     float **row;
@@ -76,13 +77,13 @@ int visco_sh_distributed_material_gradient_vjp(
             native->g_tau_x == NULL || native->g_tau_y == NULL ||
             grad_primary == NULL || grad_rho == NULL || grad_q == NULL ||
             NX < 1 || NY < 1)
-        return -1;
+        goto reconcile_material_halo;
     if (field_allocate(&bar_primary, NX, NY) != 0 ||
             field_allocate(&bar_rho, NX, NY) != 0 ||
             field_allocate(&bar_tau, NX, NY) != 0 ||
             field_allocate(&bar_mu, NX, NY) != 0) {
         status = MPI_ERR_NO_MEM;
-        goto cleanup;
+        goto reconcile_material_halo;
     }
 
     for (j = 0; j <= NY + 1; ++j) {
@@ -92,7 +93,7 @@ int visco_sh_distributed_material_gradient_vjp(
                     !isfinite(primary_post[j][i]) ||
                     !isfinite(rho_post[j][i])) {
                 status = -2;
-                goto cleanup;
+                goto reconcile_material_halo;
             }
             grad_primary[j][i] = 0.0f;
             grad_rho[j][i] = 0.0f;
@@ -117,11 +118,11 @@ int visco_sh_distributed_material_gradient_vjp(
             status = visco_sh_harmonic_pair_vjp(
                     center, east, native->g_mu_x[j][i],
                     &bar_center, &bar_east);
-            if (status != 0) goto cleanup;
+            if (status != 0) goto reconcile_material_halo;
             status = visco_sh_harmonic_pair_vjp(
                     center, south, native->g_mu_y[j][i],
                     &bar_center, &bar_south);
-            if (status != 0) goto cleanup;
+            if (status != 0) goto reconcile_material_halo;
             bar_mu.row[j][i] += (float)bar_center;
             bar_mu.row[j][i + 1] += (float)bar_east;
             bar_mu.row[j + 1][i] += (float)bar_south;
@@ -152,6 +153,10 @@ int visco_sh_distributed_material_gradient_vjp(
         }
     }
 
+    status = 0;
+reconcile_material_halo:
+    status = exact_sh_collective_status(MPI_COMM_WORLD, "material halo inputs", status);
+    if (status != 0) goto cleanup;
     /* Reverse the actual V-then-H matcopy graph as H^T then V^T. */
     status = matcopy_SH_adjoint(
             bar_rho.row, bar_primary.row, bar_tau.row);

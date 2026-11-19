@@ -1,6 +1,7 @@
 /* Inactive exact viscoelastic SH single-shot objective evaluator. */
 
 #include "fd.h"
+#include "exact_sh_receivers.h"
 
 static int exact_objective_shot_preflight(
         const struct visco_sh_exact_objective_shot_request *request,
@@ -21,10 +22,9 @@ static int exact_objective_shot_preflight(
             (LNORM != 2) || (GRAD_FORM != 2) || (N_ORDER != 0) ||
             (TIMEWIN != 0) || (OFFSET_MUTE != 0) || (TRKILL != 0) ||
             (SEISMO != 1)) return -1;
-    if ((request->nrec_local > 0) &&
-            ((request->observed_vz == NULL) ||
-             (request->seismogram->sectionvz == NULL) ||
-             (request->acquisition->recpos_loc == NULL))) return -1;
+    if (!exact_sh_local_receivers_valid(request->acquisition->recpos_loc,
+            request->nrec_local, request->seismogram->sectionvz,
+            request->observed_vz)) return -1;
     if ((request->nsrc_local > 0) &&
             ((request->acquisition->srcpos_loc == NULL) ||
              (request->acquisition->signals == NULL))) return -1;
@@ -36,9 +36,11 @@ int visco_sh_exact_objective_shot(
         struct visco_sh_exact_objective_shot_result *result) {
     extern int NT;
     double local_objective = 0.0, global_objective = 0.0;
-    int i, n;
+    int i, n, status;
 
-    if (exact_objective_shot_preflight(request, result) != 0) return -1;
+    status = exact_sh_collective_status(MPI_COMM_WORLD, "objective shot preflight",
+            exact_objective_shot_preflight(request, result));
+    if (status != 0) return status;
 
     /* Share the exact-gradient bridge's physical forward stepping.  Mode 2
      * samples receivers without trajectory capture or gradient storage. */
@@ -61,7 +63,8 @@ int visco_sh_exact_objective_shot(
         }
     }
     if (MPI_Allreduce(&local_objective, &global_objective, 1, MPI_DOUBLE,
-                      MPI_SUM, MPI_COMM_WORLD) != MPI_SUCCESS) return -2;
+                      MPI_SUM, MPI_COMM_WORLD) != MPI_SUCCESS)
+        return exact_sh_abort_phase(MPI_COMM_WORLD, "shot objective reduction", -2);
 
     result->objective = global_objective;
     return 0;

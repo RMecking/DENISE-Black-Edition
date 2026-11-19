@@ -1,6 +1,7 @@
 /* Material-aware companion for the locked fixed-material reverse driver. */
 
 #include "fd.h"
+#include "exact_sh_collective.h"
 
 #include <stddef.h>
 
@@ -129,8 +130,8 @@ int visco_sh_reverse_time_adjoint_material(
     if ((base_config == NULL) || (nsteps < 1) ||
             ((base_config->nrec > 0) && (bar_receiver_series == NULL)) ||
             ((base_config->nsrc > 0) && (bar_signal_series == NULL)))
-        return -1;
-    if (!state_complete_for_material_driver(bar_terminal_work, base_config->fw) ||
+        status = -1;
+    else if (!state_complete_for_material_driver(bar_terminal_work, base_config->fw) ||
             !state_complete_for_material_driver(bar_initial, base_config->fw) ||
             !state_complete_for_material_driver(scratch, base_config->fw) ||
             !states_distinct_for_material_driver(
@@ -138,10 +139,11 @@ int visco_sh_reverse_time_adjoint_material(
             !states_distinct_for_material_driver(
                 bar_terminal_work, scratch, base_config->fw) ||
             !states_distinct_for_material_driver(
-                bar_initial, scratch, base_config->fw)) return -1;
-    if (unsupported_cpml_overlap_material(base_config)) return -2;
-    if (c7cb2_material_preflight(base_config, nsteps, material) != 0)
-        return -1;
+                bar_initial, scratch, base_config->fw)) status = -1;
+    else if (unsupported_cpml_overlap_material(base_config)) status = -2;
+    else status = c7cb2_material_preflight(base_config, nsteps, material);
+    status = exact_sh_collective_status(MPI_COMM_WORLD, "material reverse preflight", status);
+    if (status != 0) return status;
 
     for (channel = 0; channel < 5; ++channel)
         if ((c7cb2_field_allocate(
@@ -151,17 +153,18 @@ int visco_sh_reverse_time_adjoint_material(
                     &sum_fields[channel], base_config->nx,
                     base_config->ny) != 0)) {
             status = MPI_ERR_NO_MEM;
-            goto cleanup;
+            break;
         }
     points = base_config->nx * base_config->ny;
-    unweighted = (struct visco_sh_material_timestep_vjp_output *)calloc(
-            (size_t)points, sizeof(*unweighted));
-    weighted = (struct visco_sh_material_timestep_vjp_output *)calloc(
-            (size_t)points, sizeof(*weighted));
-    if ((unweighted == NULL) || (weighted == NULL)) {
-        status = MPI_ERR_NO_MEM;
-        goto cleanup;
+    if (status == 0) {
+        unweighted = (struct visco_sh_material_timestep_vjp_output *)calloc(
+                (size_t)points, sizeof(*unweighted));
+        weighted = (struct visco_sh_material_timestep_vjp_output *)calloc(
+                (size_t)points, sizeof(*weighted));
+        if ((unweighted == NULL) || (weighted == NULL)) status = MPI_ERR_NO_MEM;
     }
+    status = exact_sh_collective_status(MPI_COMM_WORLD, "material reverse allocation", status);
+    if (status != 0) goto cleanup;
     step_native.g_rhoi = step_fields[0].row;
     step_native.g_mu_x = step_fields[1].row;
     step_native.g_mu_y = step_fields[2].row;
@@ -222,6 +225,7 @@ int visco_sh_reverse_time_adjoint_material(
     status = visco_sh_temporal_native_gradient_accumulate(
             1, points, material->trajectory->dtinv,
             unweighted, weighted);
+    status = exact_sh_collective_status(MPI_COMM_WORLD, "temporal gradient accumulation", status);
     if (status != 0) goto cleanup;
     for (j = 1; j <= base_config->ny; ++j)
         for (i = 1; i <= base_config->nx; ++i) {

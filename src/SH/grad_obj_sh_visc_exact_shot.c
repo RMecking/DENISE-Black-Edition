@@ -1,6 +1,7 @@
 /* Inactive exact viscoelastic SH single-shot objective/raw-gradient bridge. */
 
 #include "fd.h"
+#include "exact_sh_receivers.h"
 
 struct exact_shot_workspace {
     struct waveSH wave;
@@ -93,10 +94,9 @@ static int exact_shot_preflight(
             (DTINV != 1) || (LNORM != 2) || (GRAD_FORM != 2) ||
             (N_ORDER != 0) || (TIMEWIN != 0) || (OFFSET_MUTE != 0) ||
             (TRKILL != 0) || (SEISMO != 1)) return -1;
-    if ((request->nrec_local > 0) &&
-            ((request->observed_vz == NULL) ||
-             (request->seismogram->sectionvz == NULL) ||
-             (request->acquisition->recpos_loc == NULL))) return -1;
+    if (!exact_sh_local_receivers_valid(request->acquisition->recpos_loc,
+            request->nrec_local, request->seismogram->sectionvz,
+            request->observed_vz)) return -1;
     if ((request->nsrc_local > 0) &&
             ((request->acquisition->srcpos_loc == NULL) ||
              (request->acquisition->signals == NULL))) return -1;
@@ -125,11 +125,14 @@ int visco_sh_exact_objective_gradient_shot(
     memset(&terminal, 0, sizeof(terminal));
     memset(&initial, 0, sizeof(initial));
     memset(&scratch, 0, sizeof(scratch));
-    if ((result == NULL) || exact_shot_preflight(request) != 0) return -1;
-    if (visco_sh_material_observable_trajectory_init(
-                &trajectory, NX, NY, NT, 1, FW, FREE_SURF, BOUNDARY,
-                NPROCX, NPROCY) != 0) goto cleanup;
-    trajectory_ready = 1;
+    status = exact_sh_collective_status(MPI_COMM_WORLD, "gradient shot preflight",
+            result == NULL ? -1 : exact_shot_preflight(request));
+    if (status != 0) return status;
+    status = visco_sh_material_observable_trajectory_init(
+            &trajectory, NX, NY, NT, 1, FW, FREE_SURF, BOUNDARY, NPROCX, NPROCY);
+    trajectory_ready = status == 0;
+    status = exact_sh_collective_status(MPI_COMM_WORLD, "trajectory allocation", status);
+    if (status != 0) goto cleanup;
 
     sh_visc_with_material_trajectory(
             request->wave, request->pml, request->material, request->fwi,
@@ -139,15 +142,19 @@ int visco_sh_exact_objective_gradient_shot(
             request->nrec_local, request->source_energy,
             request->receiver_energy, request->hin, request->dtinv_help, 0,
             request->request_send, request->request_receive, &trajectory);
-    if (visco_sh_material_observable_is_active()) goto cleanup;
+    status = exact_sh_collective_status(MPI_COMM_WORLD, "trajectory capture",
+            visco_sh_material_observable_is_active() ? -1 : 0);
+    if (status != 0) goto cleanup;
 
     if (request->nrec_local > 0) {
         bar_receiver = (double *)calloc(
                 (size_t)NT * request->nrec_local, sizeof(*bar_receiver));
         rec_x = (int *)malloc((size_t)request->nrec_local * sizeof(*rec_x));
         rec_y = (int *)malloc((size_t)request->nrec_local * sizeof(*rec_y));
-        if ((bar_receiver == NULL) || (rec_x == NULL) || (rec_y == NULL))
-            goto cleanup;
+        if ((bar_receiver == NULL) || (rec_x == NULL) || (rec_y == NULL)) {
+            status = MPI_ERR_NO_MEM;
+            goto reconcile_reverse_inputs;
+        }
         for (i = 0; i < request->nrec_local; ++i) {
             rec_x[i] = request->acquisition->recpos_loc[1][i + 1];
             rec_y[i] = request->acquisition->recpos_loc[2][i + 1];
@@ -164,9 +171,6 @@ int visco_sh_exact_objective_gradient_shot(
             memcpy(request->receiver_cotangent, bar_receiver,
                    (size_t)NT * request->nrec_local * sizeof(*bar_receiver));
     }
-    MPI_Allreduce(&local_objective, &global_objective, 1, MPI_DOUBLE,
-                  MPI_SUM, MPI_COMM_WORLD);
-
     if (request->nsrc_local > 0) {
         bar_signal = (double *)calloc(
                 (size_t)NT * request->nsrc_local, sizeof(*bar_signal));
@@ -175,13 +179,25 @@ int visco_sh_exact_objective_gradient_shot(
         source_type = (int *)malloc(
                 (size_t)request->nsrc_local * sizeof(*source_type));
         if ((bar_signal == NULL) || (src_x == NULL) || (src_y == NULL) ||
-                (source_type == NULL)) goto cleanup;
+                (source_type == NULL)) {
+            status = MPI_ERR_NO_MEM;
+            goto reconcile_reverse_inputs;
+        }
         for (i = 0; i < request->nsrc_local; ++i) {
             src_x[i] = iround(request->acquisition->srcpos_loc[1][i + 1]);
             src_y[i] = iround(request->acquisition->srcpos_loc[2][i + 1]);
             source_type[i] = iround(
                     request->acquisition->srcpos_loc[8][i + 1]);
         }
+    }
+
+reconcile_reverse_inputs:
+    status = exact_sh_collective_status(MPI_COMM_WORLD, "receiver/source cotangents", status);
+    if (status != 0) goto cleanup;
+    if (MPI_Allreduce(&local_objective, &global_objective, 1, MPI_DOUBLE,
+                      MPI_SUM, MPI_COMM_WORLD) != MPI_SUCCESS) {
+        status = exact_sh_abort_phase(MPI_COMM_WORLD, "gradient objective reduction", -2);
+        goto cleanup;
     }
 
     memset(&config, 0, sizeof(config));
@@ -236,7 +252,9 @@ int visco_sh_exact_objective_gradient_shot(
             (exact_shot_allocate_workspace(
                  &initial, NX, NY, FDORDER, L, FW) != 0) ||
             (exact_shot_allocate_workspace(
-                 &scratch, NX, NY, FDORDER, L, FW) != 0)) goto cleanup;
+                 &scratch, NX, NY, FDORDER, L, FW) != 0)) status = -1;
+    status = exact_sh_collective_status(MPI_COMM_WORLD, "reverse workspace", status);
+    if (status != 0) goto cleanup;
     status = visco_sh_reverse_time_adjoint_material(
             &config, NT, bar_receiver, &terminal.state, &initial.state,
             &scratch.state, bar_signal, &material_context);
