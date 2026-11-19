@@ -6,6 +6,7 @@
  */
 
 #include "fd.h"
+#include "exact_sh_receivers.h"
 #include "fwi_misfit_history.h"
 
 static void exact_sh_require_collective_success(int local_status,
@@ -98,6 +99,7 @@ void FWI_SH_visc(){
 
 /* forward modelling */
 extern int MYID, FDORDER, NX, NY, NT, L, READMOD, TIME_FILT, READREC;
+extern int NCOLORS;
 extern int LOG, SEISMO, FW, NXG, NYG, IENDX, IENDY, NTDTINV, IDXI, IDYI, NXNYI, DTINV;
 extern float FC, FC_START, TIME, DT;
 extern char LOG_FILE[STRING_SIZE];
@@ -188,6 +190,7 @@ FILE *FPL2, *FP_stage, *LAMBDA;
 
 /* Validate global exact controls before allocation, model loading, or the
    historical GRAD_FORM assignment could hide an unsupported input value. */
+exact_sh_require_config_int("NCOLORS",NCOLORS,1,1,0);
 exact_sh_require_config_int("GRAD_METHOD",GRAD_METHOD,0,0,0);
 exact_sh_require_config_int("GRAD_FORM",GRAD_FORM,2,2,0);
 exact_sh_require_config_int("DTINV",DTINV,1,1,0);
@@ -343,6 +346,9 @@ ns=NT;	/* in a FWI one has to keep all samples of the forward modeled data
 if (SEISMO && (READREC!=2)){
 
    acq.recpos=receiver(FP, &ntr, ishot);
+   exact_sh_require_collective_success(
+           !exact_sh_global_receivers_valid(acq.recpos, ntr),
+           "Invalid global receiver geometry for exact SH FWI.");
    acq.recswitch = ivector(1,ntr);
    acq.recpos_loc = splitrec(acq.recpos,&ntr_loc, ntr, acq.recswitch);
    ntr_glob=ntr;
@@ -353,6 +359,7 @@ if (SEISMO && (READREC!=2)){
 if(READREC!=2){
 
    /* Memory for seismic data */
+   seisSH.sectionvz = NULL;
    alloc_seisSH(ntr,ns,&seisSH);
 
    /* Memory for FWI seismic data */ 
@@ -1098,7 +1105,7 @@ if(EPRECOND==4){
     }
 
     free_matrix(seisSHfwi.sectionread,1,ntr_glob,1,ns);
-    free_ivector(acq.recswitch,1,ntr);
+    free_ivector(acq.recswitch,1,ntr_glob);
     
     if(QUELLTYPB){
        free_matrix(seisSHfwi.sectionvzdata,1,ntr,1,ns);
