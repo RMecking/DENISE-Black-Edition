@@ -720,10 +720,7 @@ static int visco_sh_full_state_adjoint_step_internal(
         if (status != 0) return exact_sh_reverse_step_failure(cfg, material,
                 "reverse velocity capture", status);
     }
-    status = reverse_velocity_block(cfg, bar_next_work, bar_prev);
-    if (status != 0) return exact_sh_reverse_step_failure(cfg, material,
-            "reverse velocity update", status);
-    return 0;
+    return reverse_velocity_block(cfg, bar_next_work, bar_prev);
 }
 
 int visco_sh_full_state_adjoint_step(
@@ -741,7 +738,15 @@ int visco_sh_full_state_adjoint_step_material(
         struct visco_sh_full_state *bar_prev,
         double *bar_signal,
         const struct visco_sh_material_adjoint_step_context *material) {
+    int status;
+
     if (material == NULL) return -1;
-    return visco_sh_full_state_adjoint_step_internal(
+    status = visco_sh_full_state_adjoint_step_internal(
             cfg, bar_next_work, bar_prev, bar_signal, material);
+    /* In a distributed material step every earlier failure has already
+     * aborted at its own phase, so a nonzero status reaching this point
+     * comes from the final reverse velocity update. */
+    if (status != 0) return exact_sh_reverse_step_failure(cfg, material,
+            "reverse velocity update", status);
+    return 0;
 }

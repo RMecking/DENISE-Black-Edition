@@ -8,7 +8,8 @@ static int exact_multi_preflight(
     extern int DTINV, LNORM, GRAD_FORM, N_ORDER, TIMEWIN, OFFSET_MUTE;
     extern int TRKILL, NX, NY, NT, L, INVMAT1, SEISMO, EPRECOND;
     extern int SWS_TAPER_CIRCULAR_PER_SHOT, TIME_FILT, INV_STF;
-    extern int QUELLTYPB, READREC;
+    extern int QUELLTYPB, READREC, RUN_MULTIPLE_SHOTS;
+    int status;
     if ((request == NULL) || (request->wave == NULL) ||
             (request->pml == NULL) || (request->material == NULL) ||
             (request->fwi == NULL) || (request->mpi == NULL) ||
@@ -30,11 +31,14 @@ static int exact_multi_preflight(
             (INV_STF != 0) || (QUELLTYPB == 0) || (READREC < 0) ||
             (READREC > 2) || (request->ns < 1))
         return -1;
-    if (READREC != 2)
-        return exact_sh_receiver_status(request->acquisition, request->nrec_local,
+    if (READREC != 2) {
+        status = exact_sh_receiver_status(request->acquisition, request->nrec_local,
                 request->nrec_global, request->seismogram->sectionvz,
                 request->legacy_fwi_seismogram->sectionvzdata,
                 request->legacy_fwi_seismogram->sectionread);
+        if (status != 0) return status;
+    }
+    if ((RUN_MULTIPLE_SHOTS == 0) && (request->nsrc > 1)) return -1;
     return 0;
 }
 
@@ -104,8 +108,6 @@ int visco_sh_exact_objective_gradient(
     double objective = 0.0;
 
     shot_status = (result == NULL) ? -1 : exact_multi_preflight(request);
-    if (shot_status == 0 && !RUN_MULTIPLE_SHOTS && request->nsrc > 1)
-        shot_status = -1;
     shot_status = exact_sh_collective_status(MPI_COMM_WORLD,
             "objective-gradient request/receiver preflight", shot_status);
     if (shot_status != 0) return shot_status;
