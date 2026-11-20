@@ -88,6 +88,8 @@ extern int BACK_DENSITY;
 extern int WRITE_STF, WRITEMOD;
 extern int Q_PARAMETERIZATION_MODE;
 extern float Q_APPROX_FMIN, Q_APPROX_FMAX, Q_APPROX_DF;
+extern int OPT_STEP_SCALING, OPT_DIAG_OUT;
+extern float OPT_WEIGHT_PRIMARY, OPT_WEIGHT_RHO, OPT_WEIGHT_Q;
 
 /* definition of local variables */
 char s[120];
@@ -480,6 +482,22 @@ int  c=0, lineno=0, l;
 	    break;
 	 case 122 :
 	   fscanf(fp_in,"%s =%255s",s,MIGRATION_IMAGE_PREFIX);
+	    break;
+	 /* SH-OPT-SCALE-01: optional, read in order; absent records keep defaults */
+	 case 123 :
+	   fscanf(fp_in,"%s =%i",s,&OPT_STEP_SCALING);
+	    break;
+	 case 124 :
+	   fscanf(fp_in,"%s =%f",s,&OPT_WEIGHT_PRIMARY);
+	    break;
+	 case 125 :
+	   fscanf(fp_in,"%s =%f",s,&OPT_WEIGHT_RHO);
+	    break;
+	 case 126 :
+	   fscanf(fp_in,"%s =%f",s,&OPT_WEIGHT_Q);
+	    break;
+	 case 127 :
+	   fscanf(fp_in,"%s =%i",s,&OPT_DIAG_OUT);
 	    break;
 	 default:
 	    break;

@@ -1275,6 +1275,26 @@ int visco_sh_exact_prepare_visco_material(
 int visco_sh_exact_build_steepest_subtractive_step(
         const struct visco_sh_exact_optimizer_boundary *boundary);
 
+/* SH-OPT-SCALE-01 (docs/sh_opt_scale_01_contract.md): optional class-scaled
+ * direction p_k = M * w_k * s_k * g_k and CPML update mask.  Mode 0 or a NULL
+ * scaling reproduces visco_sh_exact_build_steepest_subtractive_step. */
+struct visco_sh_exact_step_scaling {
+   int scaling_mode;                 /* 0 identity, 1 RMS, 2 MAX            */
+   float **base_primary;             /* current base model, local NY x NX   */
+   float **base_rho;
+   float **base_q;
+   float **update_mask;              /* 1.0f or 0.0f per local cell          */
+   float weight_primary, weight_rho, weight_q;  /* effective class weights   */
+};
+
+int visco_sh_exact_build_scaled_steepest_step(
+        const struct visco_sh_exact_optimizer_boundary *boundary,
+        const struct visco_sh_exact_step_scaling *scaling);
+
+int visco_sh_exact_build_update_mask(float **mask, int nx, int ny,
+        int pos_x, int pos_y, int nprocx, int nprocy,
+        int fw, int free_surf, int boundary);
+
 int visco_sh_exact_build_trial_parameter_state(
         const struct visco_sh_exact_trial_state_request *request);
 

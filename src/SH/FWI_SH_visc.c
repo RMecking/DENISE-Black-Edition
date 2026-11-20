@@ -66,6 +66,25 @@ static void exact_sh_require_config_float(const char *name, float value,
     }
 }
 
+/* SH-OPT-SCALE-01 diagnostics: merged FP32 file
+   <INV_MODELFILE>_stage_<s>_it_<k>.<suffix>, same pattern as
+   model_it_out_SH_visc (per-rank parts are removed after merging). */
+static void exact_sh_write_diag_field(float **field, const char *suffix,
+        int stage, int iteration){
+    extern int POS[3], MYID;
+    extern char INV_MODELFILE[STRING_SIZE];
+    char modfile[STRING_SIZE2];
+    snprintf(modfile,sizeof(modfile),"%s_stage_%d_it_%d.%s",
+             INV_MODELFILE,stage,iteration,suffix);
+    writemod(modfile,field,3);
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (MYID==0) mergemod(modfile,3);
+    MPI_Barrier(MPI_COMM_WORLD);
+    snprintf(modfile,sizeof(modfile),"%s_stage_%d_it_%d.%s.%i.%i",
+             INV_MODELFILE,stage,iteration,suffix,POS[1],POS[2]);
+    remove(modfile);
+}
+
 static void exact_sh_free_material(struct matSH *material, int nd,
         int nx, int ny, int mechanisms){
     free_matrix(material->prho,-nd+1,ny+nd,-nd+1,nx+nd);
@@ -127,6 +146,9 @@ extern float EPS_SCALE, SCALEFAC, VSUPPERLIM, VSLOWERLIM;
 extern float RHOUPPERLIM, RHOLOWERLIM, QSUPPERLIM, QSLOWERLIM, *FL;
 extern float Q_APPROX_FMIN, Q_APPROX_FMAX, Q_APPROX_DF;
 extern int STEPMAX, Q_PARAMETERIZATION_MODE;
+extern int OPT_STEP_SCALING, OPT_DIAG_OUT;
+extern float OPT_WEIGHT_PRIMARY, OPT_WEIGHT_RHO, OPT_WEIGHT_Q;
+extern int POS[3], NPROCX, NPROCY, FREE_SURF, BOUNDARY;
 extern char MISFIT_LOG_FILE[STRING_SIZE];
 extern char *FILEINP1;
 
@@ -161,6 +183,9 @@ struct visco_sh_exact_material_preparation_request exact_material_request;
 struct visco_sh_exact_multi_shot_request exact_objective_request;
 struct visco_sh_exact_multi_shot_result exact_objective_result;
 struct visco_sh_exact_optimizer_boundary exact_optimizer_boundary;
+struct visco_sh_exact_step_scaling exact_step_scaling;
+float **exact_update_mask=NULL;
+float exact_w_primary=0.0f, exact_w_rho=0.0f, exact_w_q=0.0f;
 struct visco_sh_exact_trial_state_request exact_trial_state;
 struct visco_sh_exact_trial_objective_request exact_trial_objective;
 struct visco_sh_exact_line_search_request exact_line_search;
@@ -218,6 +243,25 @@ exact_sh_require_config_int("Q_PARAMETERIZATION_MODE",Q_PARAMETERIZATION_MODE,
 exact_sh_require_config_int("INVMAT1",INVMAT1,1,3,0);
 exact_sh_require_config_int("READMOD",READMOD,1,1,0);
 exact_sh_require_config_int("GRAVITY",GRAVITY,0,0,0);
+/* SH-OPT-SCALE-01 controls (records 123-127). Mode 0 keeps the d4693e1
+   identity direction and requires default weights. */
+exact_sh_require_collective_success(
+        OPT_STEP_SCALING<0 || OPT_STEP_SCALING>2,
+        "Exact viscoelastic SH FWI: OPT_STEP_SCALING must be 0, 1 or 2.");
+exact_sh_require_config_int("OPT_DIAG_OUT",OPT_DIAG_OUT,0,1,0);
+if(OPT_STEP_SCALING==0){
+    exact_sh_require_config_float("OPT_WEIGHT_PRIMARY",OPT_WEIGHT_PRIMARY,1.0f,0);
+    exact_sh_require_config_float("OPT_WEIGHT_RHO",OPT_WEIGHT_RHO,1.0f,0);
+    exact_sh_require_config_float("OPT_WEIGHT_Q",OPT_WEIGHT_Q,1.0f,0);
+} else {
+    exact_sh_require_collective_success(
+            !isfinite(OPT_WEIGHT_PRIMARY) || OPT_WEIGHT_PRIMARY<0.0f ||
+            !isfinite(OPT_WEIGHT_RHO) || OPT_WEIGHT_RHO<0.0f ||
+            !isfinite(OPT_WEIGHT_Q) || OPT_WEIGHT_Q<0.0f ||
+            (OPT_WEIGHT_PRIMARY==0.0f && OPT_WEIGHT_RHO==0.0f &&
+             OPT_WEIGHT_Q==0.0f),
+            "Exact viscoelastic SH FWI: OPT_WEIGHT_* must be finite, >= 0 and not all zero.");
+}
 
 /* Exact C8c activation currently supports steepest descent only.  Abort
    before loading or changing any model state for unsupported optimizers. */
@@ -268,9 +312,15 @@ for(nstage=1;nstage<=stagemax;nstage++){
     exact_sh_require_config_int("SPATFILTER",SPATFILTER,0,0,nstage);
     exact_sh_require_config_int("ROWI",ROWI,0,0,nstage);
     exact_sh_require_config_int("NORMALIZE",NORMALIZE,0,0,nstage);
+    if(OPT_STEP_SCALING==0){
     exact_sh_require_config_int("INV_VS_ITER",INV_VS_ITER,0,1,nstage);
     exact_sh_require_config_int("INV_RHO_ITER",INV_RHO_ITER,0,1,nstage);
     exact_sh_require_config_int("INV_QS_ITER",INV_QS_ITER,0,1,nstage);
+    } else {
+    exact_sh_require_collective_success(
+            INV_VS_ITER<0 || INV_RHO_ITER<0 || INV_QS_ITER<0,
+            "Exact viscoelastic SH FWI: with OPT_STEP_SCALING, INV_VS_ITER, INV_RHO_ITER and INV_QS_ITER must be >= 0.");
+    }
     exact_sh_require_config_float("SCALERHO",SCALERHO,1.0f,nstage);
     exact_sh_require_config_float("SCALEQS",SCALEQS,1.0f,nstage);
     exact_sh_require_config_float("GAMMA_GRAV",GAMMA_GRAV,0.0f,nstage);
@@ -433,6 +483,14 @@ exact_trial_rho = matrix(1,NY,1,NX);
 exact_trial_q = matrix(1,NY,1,NX);
 exact_trial_tau = matrix(1,NY,1,NX);
 exact_peta = vector(1,L);
+if(OPT_STEP_SCALING!=0){
+    /* SH-OPT-SCALE-01: CPML cells are excluded from the model update. */
+    exact_update_mask = matrix(1,NY,1,NX);
+    exact_sh_require_collective_success(
+            visco_sh_exact_build_update_mask(exact_update_mask,NX,NY,
+                    POS[1],POS[2],NPROCX,NPROCY,FW,FREE_SURF,BOUNDARY),
+            "Exact SH update-mask construction failed.");
+}
 
 /* memory for source position definition */
 acq.srcpos1=fmatrix(1,8,1,1);
@@ -575,6 +633,16 @@ if (MYID==0)
    fprintf(FP,"\n\n\n                   TDFWI ITERATION %d \t of %d \n",iter,ITERMAX);
    fprintf(FP,"\n\n\n ------------------------------------------------------------------\n");
    }
+
+if(OPT_STEP_SCALING!=0){
+    /* SH-OPT-SCALE-01: class k is active from iteration INV_k_ITER on. */
+    exact_w_primary=(iter>=INV_VS_ITER) ? OPT_WEIGHT_PRIMARY : 0.0f;
+    exact_w_rho=(iter>=INV_RHO_ITER) ? OPT_WEIGHT_RHO : 0.0f;
+    exact_w_q=(iter>=INV_QS_ITER) ? OPT_WEIGHT_Q : 0.0f;
+    exact_sh_require_collective_success(
+            exact_w_primary==0.0f && exact_w_rho==0.0f && exact_w_q==0.0f,
+            "Exact viscoelastic SH FWI: no parameter class is active in this iteration (OPT_WEIGHT_* and INV_*_ITER).");
+}
 
 /* Rebuild solver-ready Base material from authoritative physical Q. */
 exact_status=visco_sh_exact_prepare_visco_material(&exact_material_request);
@@ -812,10 +880,32 @@ exact_optimizer_boundary.grad_raw_q=exact_grad_q;
 exact_optimizer_boundary.optimizer_step_primary=exact_step_primary;
 exact_optimizer_boundary.optimizer_step_rho=exact_step_rho;
 exact_optimizer_boundary.optimizer_step_q=exact_step_q;
+if(OPT_STEP_SCALING==0){
 exact_status=visco_sh_exact_build_steepest_subtractive_step(
         &exact_optimizer_boundary);
+} else {
+    memset(&exact_step_scaling,0,sizeof(exact_step_scaling));
+    exact_step_scaling.scaling_mode=OPT_STEP_SCALING;
+    exact_step_scaling.base_primary=exact_base_primary;
+    exact_step_scaling.base_rho=exact_base_rho;
+    exact_step_scaling.base_q=exact_base_q;
+    exact_step_scaling.update_mask=exact_update_mask;
+    exact_step_scaling.weight_primary=exact_w_primary;
+    exact_step_scaling.weight_rho=exact_w_rho;
+    exact_step_scaling.weight_q=exact_w_q;
+    exact_status=visco_sh_exact_build_scaled_steepest_step(
+            &exact_optimizer_boundary,&exact_step_scaling);
+}
 exact_sh_require_collective_success(exact_status,
         "Exact SH optimizer-boundary construction failed.");
+if(OPT_DIAG_OUT==1){
+    exact_sh_write_diag_field(exact_grad_primary,INVMAT1==1 ? "grad_vs" : "grad_mu",nstage,iter);
+    exact_sh_write_diag_field(exact_grad_rho,"grad_rho",nstage,iter);
+    exact_sh_write_diag_field(exact_grad_q,"grad_qs",nstage,iter);
+    exact_sh_write_diag_field(exact_step_primary,INVMAT1==1 ? "step_vs" : "step_mu",nstage,iter);
+    exact_sh_write_diag_field(exact_step_rho,"step_rho",nstage,iter);
+    exact_sh_write_diag_field(exact_step_q,"step_qs",nstage,iter);
+}
 
 opteps_vs=0.0;
 opteps_rho=0.0;
@@ -1006,6 +1096,7 @@ free_matrix(exact_grad_q,1,NY,1,NX);
 free_matrix(exact_step_primary,1,NY,1,NX);
 free_matrix(exact_step_rho,1,NY,1,NX);
 free_matrix(exact_step_q,1,NY,1,NX);
+if(exact_update_mask!=NULL) free_matrix(exact_update_mask,1,NY,1,NX);
 free_matrix(exact_trial_primary,1,NY,1,NX);
 free_matrix(exact_trial_rho,1,NY,1,NX);
 free_matrix(exact_trial_q,1,NY,1,NX);
