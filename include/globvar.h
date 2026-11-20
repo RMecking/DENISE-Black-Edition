@@ -15,6 +15,9 @@ float Q_APPROX_FMIN, Q_APPROX_FMAX, Q_APPROX_DF;
 /* SH-OPT-SCALE-01 optional records 123-127 (defaults = d4693e1 behaviour) */
 int OPT_STEP_SCALING = 0, OPT_DIAG_OUT = 0;
 float OPT_WEIGHT_PRIMARY = 1.0f, OPT_WEIGHT_RHO = 1.0f, OPT_WEIGHT_Q = 1.0f;
+/* SH-PRECOND-01 optional records 128-131 (defaults = 8ca5738 behaviour) */
+int OPT_PRECOND = 0, OPT_ALPHA_ADAPT = 0;
+float OPT_PRECOND_EPS = 0.005f, OPT_ALPHA_ADAPT_FACTOR = 2.0f;
 float ANGLE;
 float REFREC[4] = {0.0, 0.0, 0.0, 0.0}, FPML;
 int SEISMO, NDT, NSRC = 1, SEIS_FORMAT, FREE_SURF, READMOD, READREC, SRCREC, FW = 0;

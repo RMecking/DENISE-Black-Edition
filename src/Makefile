@@ -273,6 +273,7 @@ DENISE += alloc_fwiSH.c \
 	  obj_sh_visc_exact_trial.c \
 	  visco_sh_exact_optimizer_boundary.c \
 	  visco_sh_exact_step_scaling.c \
+	  visco_sh_exact_precond.c \
 	  visco_sh_exact_trial_state.c \
 	  visco_sh_exact_material_preparation.c \
 	  step_length_est_sh_visc_exact.c \

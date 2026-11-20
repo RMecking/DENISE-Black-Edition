@@ -183,6 +183,11 @@ void sh_visc_with_material_trajectory(struct waveSH *waveSH, struct waveSH_PML *
 	      visco_sh_material_observable_end_step();
 	   }
 
+	   /* SH-PRECOND-01: forward energy of the exact gradient run only. */
+	   if((trajectory!=NULL)&&(Ws!=NULL)){
+	      visco_sh_exact_energy_step(Ws,(*waveSH).pvz,NX,NY);
+	   }
+
 
 	   /* store amplitudes at receivers in section-arrays */
 	   if (SEISMO && (mode==0 || mode==2)){

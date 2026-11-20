@@ -148,6 +148,8 @@ extern float Q_APPROX_FMIN, Q_APPROX_FMAX, Q_APPROX_DF;
 extern int STEPMAX, Q_PARAMETERIZATION_MODE;
 extern int OPT_STEP_SCALING, OPT_DIAG_OUT;
 extern float OPT_WEIGHT_PRIMARY, OPT_WEIGHT_RHO, OPT_WEIGHT_Q;
+extern int OPT_PRECOND, OPT_ALPHA_ADAPT;
+extern float OPT_PRECOND_EPS, OPT_ALPHA_ADAPT_FACTOR;
 extern int POS[3], NPROCX, NPROCY, FREE_SURF, BOUNDARY;
 extern char MISFIT_LOG_FILE[STRING_SIZE];
 extern char *FILEINP1;
@@ -186,6 +188,13 @@ struct visco_sh_exact_optimizer_boundary exact_optimizer_boundary;
 struct visco_sh_exact_step_scaling exact_step_scaling;
 float **exact_update_mask=NULL;
 float exact_w_primary=0.0f, exact_w_rho=0.0f, exact_w_q=0.0f;
+/* SH-PRECOND-01 state (contract docs/sh_precond_01_contract.md). */
+struct visco_sh_exact_precond_request exact_precond_request;
+float **exact_energy=NULL, **exact_precond=NULL, **exact_receiver_term=NULL;
+float **exact_work_primary=NULL, **exact_work_rho=NULL, **exact_work_q=NULL;
+float exact_previous_alpha=0.0f, exact_initial_alpha=0.0f;
+double exact_receiver_x_min=0.0, exact_receiver_x_max=0.0;
+int exact_receiver_extent_valid=0, exact_k;
 struct visco_sh_exact_trial_state_request exact_trial_state;
 struct visco_sh_exact_trial_objective_request exact_trial_objective;
 struct visco_sh_exact_line_search_request exact_line_search;
@@ -262,6 +271,20 @@ if(OPT_STEP_SCALING==0){
              OPT_WEIGHT_Q==0.0f),
             "Exact viscoelastic SH FWI: OPT_WEIGHT_* must be finite, >= 0 and not all zero.");
 }
+/* SH-PRECOND-01 controls (records 128-131). */
+exact_sh_require_collective_success(
+        OPT_PRECOND<0 || OPT_PRECOND>2,
+        "Exact viscoelastic SH FWI: OPT_PRECOND must be 0, 1 or 2.");
+exact_sh_require_collective_success(
+        OPT_PRECOND>0 && OPT_STEP_SCALING==0,
+        "Exact viscoelastic SH FWI: OPT_PRECOND requires OPT_STEP_SCALING 1 or 2.");
+exact_sh_require_collective_success(
+        !isfinite(OPT_PRECOND_EPS) || OPT_PRECOND_EPS<=0.0f || OPT_PRECOND_EPS>1.0f,
+        "Exact viscoelastic SH FWI: OPT_PRECOND_EPS must be finite, > 0 and <= 1.");
+exact_sh_require_config_int("OPT_ALPHA_ADAPT",OPT_ALPHA_ADAPT,0,1,0);
+exact_sh_require_collective_success(
+        !isfinite(OPT_ALPHA_ADAPT_FACTOR) || OPT_ALPHA_ADAPT_FACTOR<1.0f,
+        "Exact viscoelastic SH FWI: OPT_ALPHA_ADAPT_FACTOR must be finite and >= 1.");
 
 /* Exact C8c activation currently supports steepest descent only.  Abort
    before loading or changing any model state for unsupported optimizers. */
@@ -402,6 +425,16 @@ if (SEISMO && (READREC!=2)){
    acq.recswitch = ivector(1,ntr);
    acq.recpos_loc = splitrec(acq.recpos,&ntr_loc, ntr, acq.recswitch);
    ntr_glob=ntr;
+   if(ntr_glob>=1){
+      /* SH-PRECOND-01: global receiver-column extent for mode 2. */
+      exact_receiver_x_min=(double)acq.recpos[1][1];
+      exact_receiver_x_max=(double)acq.recpos[1][1];
+      for(exact_k=2;exact_k<=ntr_glob;exact_k++){
+         if((double)acq.recpos[1][exact_k]<exact_receiver_x_min) exact_receiver_x_min=(double)acq.recpos[1][exact_k];
+         if((double)acq.recpos[1][exact_k]>exact_receiver_x_max) exact_receiver_x_max=(double)acq.recpos[1][exact_k];
+      }
+      exact_receiver_extent_valid=1;
+   }
    ntr=ntr_loc;
    
 }
@@ -490,6 +523,25 @@ if(OPT_STEP_SCALING!=0){
             visco_sh_exact_build_update_mask(exact_update_mask,NX,NY,
                     POS[1],POS[2],NPROCX,NPROCY,FW,FREE_SURF,BOUNDARY),
             "Exact SH update-mask construction failed.");
+}
+exact_sh_require_collective_success(
+        OPT_PRECOND==2 && !(exact_receiver_extent_valid &&
+                            exact_receiver_x_min<exact_receiver_x_max),
+        "Exact viscoelastic SH FWI: OPT_PRECOND = 2 requires at least two distinct receiver columns.");
+if(OPT_PRECOND!=0){
+    /* SH-PRECOND-01: forward energy, preconditioner and work fields. */
+    exact_energy = matrix(1,NY,1,NX);
+    exact_precond = matrix(1,NY,1,NX);
+    exact_work_primary = matrix(1,NY,1,NX);
+    exact_work_rho = matrix(1,NY,1,NX);
+    exact_work_q = matrix(1,NY,1,NX);
+    if(OPT_PRECOND==2){
+        exact_receiver_term = matrix(1,NY,1,NX);
+        exact_sh_require_collective_success(
+                visco_sh_exact_build_receiver_line_term(exact_receiver_term,NX,NY,
+                        POS[1],POS[2],exact_receiver_x_min,exact_receiver_x_max),
+                "Exact SH receiver-line term construction failed.");
+    }
 }
 
 /* memory for source position definition */
@@ -592,6 +644,7 @@ FC=FC_END;
 
 iter=1;
 misfit_history = (struct fwi_misfit_history){0};
+exact_previous_alpha=0.0f;   /* SH-PRECOND-01: per-stage alpha history */
 /* --------------------------------------
  * Begin of Full Waveform iteration loop
  * -------------------------------------- */
@@ -854,6 +907,15 @@ exact_objective_request.nrec_global=ntr_glob;
 exact_objective_request.hin=1;
 exact_objective_request.dtinv_help=DTINV_help;
 exact_objective_request.source_energy=NULL;
+if(OPT_PRECOND!=0){
+    /* SH-PRECOND-01: energy of the forward runs of this gradient only. */
+    for(exact_j=1;exact_j<=NY;exact_j++){
+        for(exact_i=1;exact_i<=NX;exact_i++){
+            exact_energy[exact_j][exact_i]=0.0f;
+        }
+    }
+    exact_objective_request.source_energy=exact_energy;
+}
 exact_objective_request.receiver_energy=NULL;
 exact_objective_request.request_send=req_send;
 exact_objective_request.request_receive=req_rec;
@@ -893,8 +955,26 @@ exact_status=visco_sh_exact_build_steepest_subtractive_step(
     exact_step_scaling.weight_primary=exact_w_primary;
     exact_step_scaling.weight_rho=exact_w_rho;
     exact_step_scaling.weight_q=exact_w_q;
+    if(OPT_PRECOND==0){
     exact_status=visco_sh_exact_build_scaled_steepest_step(
             &exact_optimizer_boundary,&exact_step_scaling);
+    } else {
+        memset(&exact_precond_request,0,sizeof(exact_precond_request));
+        exact_precond_request.precond_mode=OPT_PRECOND;
+        exact_precond_request.nx=NX;
+        exact_precond_request.ny=NY;
+        exact_precond_request.epsilon=OPT_PRECOND_EPS;
+        exact_precond_request.source_energy=exact_energy;
+        exact_precond_request.receiver_term=exact_receiver_term;
+        exact_precond_request.update_mask=exact_update_mask;
+        exact_precond_request.precond=exact_precond;
+        exact_sh_require_collective_success(
+                visco_sh_exact_build_illumination_precond(&exact_precond_request),
+                "Exact SH illumination preconditioner construction failed.");
+        exact_status=visco_sh_exact_build_preconditioned_step(
+                &exact_optimizer_boundary,&exact_step_scaling,exact_precond,
+                exact_work_primary,exact_work_rho,exact_work_q);
+    }
 }
 exact_sh_require_collective_success(exact_status,
         "Exact SH optimizer-boundary construction failed.");
@@ -905,6 +985,10 @@ if(OPT_DIAG_OUT==1){
     exact_sh_write_diag_field(exact_step_primary,INVMAT1==1 ? "step_vs" : "step_mu",nstage,iter);
     exact_sh_write_diag_field(exact_step_rho,"step_rho",nstage,iter);
     exact_sh_write_diag_field(exact_step_q,"step_qs",nstage,iter);
+    if(OPT_PRECOND!=0){
+        exact_sh_write_diag_field(exact_energy,"energy",nstage,iter);
+        exact_sh_write_diag_field(exact_precond,"precond",nstage,iter);
+    }
 }
 
 opteps_vs=0.0;
@@ -947,6 +1031,7 @@ exact_trial_objective.dt=DT;
 exact_trial_objective.frequencies_hz=FL;
 exact_trial_objective.peta=exact_peta;
 exact_trial_objective.objective=exact_objective_request;
+exact_trial_objective.objective.source_energy=NULL;
 exact_trial_objective.objective.material=&exact_trial_material;
 exact_trial_objective.objective.grad_primary=NULL;
 exact_trial_objective.objective.grad_rho=NULL;
@@ -955,7 +1040,12 @@ exact_trial_objective.objective.grad_q=NULL;
 memset(&exact_line_search,0,sizeof(exact_line_search));
 exact_line_search.trial_objective=exact_trial_objective;
 exact_line_search.base_objective=L2sum;
-exact_line_search.initial_alpha=EPS_SCALE;
+exact_initial_alpha=visco_sh_exact_initial_alpha(EPS_SCALE,OPT_ALPHA_ADAPT,
+        OPT_ALPHA_ADAPT_FACTOR,iter,exact_previous_alpha);
+if((OPT_ALPHA_ADAPT==1)&&(MYID==0)){
+    printf("Exact SH initial alpha: iteration %d alpha_start %e\n",iter,exact_initial_alpha);
+}
+exact_line_search.initial_alpha=exact_initial_alpha;
 exact_line_search.scale_factor=SCALEFAC;
 exact_line_search.max_retries=STEPMAX;
 exact_status=step_length_est_sh_visc_exact(
@@ -984,6 +1074,7 @@ exact_sh_require_collective_success(exact_status,
         "Exact SH accepted Base material rebuild failed.");
 
 eps_scale=exact_line_search_result.selected_alpha;
+exact_previous_alpha=exact_line_search_result.selected_alpha;
 opteps_vp=eps_scale;
 step3=0;
 epst1[1]=0.0f;
@@ -1097,6 +1188,12 @@ free_matrix(exact_step_primary,1,NY,1,NX);
 free_matrix(exact_step_rho,1,NY,1,NX);
 free_matrix(exact_step_q,1,NY,1,NX);
 if(exact_update_mask!=NULL) free_matrix(exact_update_mask,1,NY,1,NX);
+if(exact_energy!=NULL) free_matrix(exact_energy,1,NY,1,NX);
+if(exact_precond!=NULL) free_matrix(exact_precond,1,NY,1,NX);
+if(exact_receiver_term!=NULL) free_matrix(exact_receiver_term,1,NY,1,NX);
+if(exact_work_primary!=NULL) free_matrix(exact_work_primary,1,NY,1,NX);
+if(exact_work_rho!=NULL) free_matrix(exact_work_rho,1,NY,1,NX);
+if(exact_work_q!=NULL) free_matrix(exact_work_q,1,NY,1,NX);
 free_matrix(exact_trial_primary,1,NY,1,NX);
 free_matrix(exact_trial_rho,1,NY,1,NX);
 free_matrix(exact_trial_q,1,NY,1,NX);
