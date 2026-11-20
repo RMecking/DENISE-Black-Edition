@@ -90,6 +90,8 @@ extern int Q_PARAMETERIZATION_MODE;
 extern float Q_APPROX_FMIN, Q_APPROX_FMAX, Q_APPROX_DF;
 extern int OPT_STEP_SCALING, OPT_DIAG_OUT;
 extern float OPT_WEIGHT_PRIMARY, OPT_WEIGHT_RHO, OPT_WEIGHT_Q;
+extern int OPT_PRECOND, OPT_ALPHA_ADAPT;
+extern float OPT_PRECOND_EPS, OPT_ALPHA_ADAPT_FACTOR;
 
 /* definition of local variables */
 char s[120];
@@ -498,6 +500,19 @@ int  c=0, lineno=0, l;
 	    break;
 	 case 127 :
 	   fscanf(fp_in,"%s =%i",s,&OPT_DIAG_OUT);
+	    break;
+	 /* SH-PRECOND-01: optional, read in order; absent records keep defaults */
+	 case 128 :
+	   fscanf(fp_in,"%s =%i",s,&OPT_PRECOND);
+	    break;
+	 case 129 :
+	   fscanf(fp_in,"%s =%f",s,&OPT_PRECOND_EPS);
+	    break;
+	 case 130 :
+	   fscanf(fp_in,"%s =%i",s,&OPT_ALPHA_ADAPT);
+	    break;
+	 case 131 :
+	   fscanf(fp_in,"%s =%f",s,&OPT_ALPHA_ADAPT_FACTOR);
 	    break;
 	 default:
 	    break;

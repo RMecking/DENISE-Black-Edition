@@ -1295,6 +1295,52 @@ int visco_sh_exact_build_update_mask(float **mask, int nx, int ny,
         int pos_x, int pos_y, int nprocx, int nprocy,
         int fw, int free_surf, int boundary);
 
+/* SH-PRECOND-01 (docs/sh_precond_01_contract.md): illumination
+ * preconditioner P = 1/(W + eps*W_max) in front of the SH-OPT-SCALE-01 class
+ * scaling, and the adaptive initial step of the unchanged line search. */
+struct visco_sh_exact_precond_request {
+   int precond_mode;        /* 1 source energy, 2 source energy x receiver line */
+   int nx, ny;
+   float epsilon;           /* stabilisation, 0 < epsilon <= 1 */
+   float **source_energy;   /* W_s >= 0, summed over all shots */
+   float **receiver_term;   /* R > 0; read in mode 2 only */
+   float **update_mask;     /* exactly 0.0f or 1.0f */
+   float **precond;         /* output P */
+};
+
+/* Shared binary32 arithmetic of contract 2.1, inlined so that the forward
+ * loop in sh_visc.c needs no new link-time dependency. */
+static inline void visco_sh_exact_energy_step(float **energy, float **field,
+                                              int nx, int ny) {
+    int i, j;
+    float value;
+
+    for (j = 1; j <= ny; ++j) {
+        for (i = 1; i <= nx; ++i) {
+            value = field[j][i];
+            energy[j][i] += value * value;
+        }
+    }
+}
+
+void visco_sh_exact_accumulate_energy(float **energy, float **field,
+                                      int nx, int ny);
+
+int visco_sh_exact_build_receiver_line_term(float **term, int nx, int ny,
+        int pos_x, int pos_y, double x_min, double x_max);
+
+int visco_sh_exact_build_illumination_precond(
+        const struct visco_sh_exact_precond_request *request);
+
+int visco_sh_exact_build_preconditioned_step(
+        const struct visco_sh_exact_optimizer_boundary *boundary,
+        const struct visco_sh_exact_step_scaling *scaling,
+        float **precond, float **work_primary, float **work_rho,
+        float **work_q);
+
+float visco_sh_exact_initial_alpha(float eps_scale, int adaptive,
+        float factor, int iteration, float previous_alpha);
+
 int visco_sh_exact_build_trial_parameter_state(
         const struct visco_sh_exact_trial_state_request *request);
 
