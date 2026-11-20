@@ -425,6 +425,91 @@ they are historical frozen evidence superseded by the subsequently verified
 implementation. The essential physical-Q update lifecycle was delivered by
 C8c/B5, so no new mandatory M6.3d phase is required.
 
+## SH-MPI receiver safety (PR #107): CLOSED / CANONICAL
+
+**POST-MERGE VERIFIED @ `d4693e1165c6d5d0cfe0bb8adc4cd4a79e4166fa`**, the
+normal GitHub merge commit of
+[PR #107](https://github.com/RMecking/DENISE-Black-Edition/pull/107). Its
+ordered parents are `e5136b6b86aa4a6ef1483a85aed9dc637dde69b3` (the PR #106
+merge) and feature head `813bbe441989b068174cb367f04f6300a9f290b5`; its tree
+is `1ab5f65f6aff5c9e7171c9fb1296f6fd622a1aff`, identical to the tested head
+tree. Hosted CI run `44536166183` on that head completed SUCCESS. This is a
+recorded closeout identity, not a live-HEAD field.
+
+The change is production-only: eleven `src/SH/` paths of the active exact
+viscoelastic SH-FWI path (nine modified, two new private headers). Ranks
+without local receivers skip receiver access but still take part in every
+collective status decision and halo phase. A receiver error on any rank ends
+in a common `err()` -> `MPI_Abort`, and `READREC=2` revalidates receiver
+ownership after every receiver switch. The PR #106 B3 misfit history and B4
+empty-range allocators are retained; the transposed reverse halo order
+(H^T -> V^T) and the discrete GSLS/CPML arithmetic are unchanged. Feature
+commit `813bbe4` restored two frozen M6.3c static source contracts that had
+failed the first Hosted run (`44506982432` on `aba191c`), without changing
+the receiver-safety behaviour; the red intermediate commit stays in history.
+
+The independent **INTEGRATION PASS** (2026-11-18) is private evidence and
+holds only in its tested scope: physical Q, 32x32 cells, FD4, `FREE_SURF=0`,
+160 time steps, one GSLS mechanism, one shot group, two shots and six
+receivers per shot. Static receiver ownership (6/0 and 3/3) was run on 2x1
+and 1x2; dynamic `READREC=2` ownership (6/0 -> 0/6) on 1x2 only. Two
+collective-abort cases completed the block. Against 1x1, traces and start
+objectives were identical and the maximum relative raw-gradient deviation was
+`4.45e-7` (limit `5e-5`). That run used the original candidate tree
+`47ce849996b96b088811841ee8cdbb63670bfe38` (`aba191c`), not the merged tree.
+It carries over to `1ab5f65` only through an independent static equivalence
+review of the `813bbe4` repair (PASS WITH NOTES) and a 177/177 focused native
+M6.3c and B3/B4 block; the MPI receiver-safety and abort cases were not rerun
+on `1ab5f65`. The MPI receiver-safety regression is not in the repository;
+Hosted CI checked builds and non-regression only. Further decompositions,
+multiple shot groups, replay, scaling and deep runtime faults are not
+qualified. Continuing runtime and error-path protection of the C5–C7 operator
+paths (not their locked exactness) remains **OPEN**. This closeout adds no
+general FWI, free-surface/CPML-envelope or scaling qualification beyond the
+M6.3/C8c and C7d claims above.
+
+Separately open and not part of this closeout: in
+`tests/utilities/legacy_bugfix/`, `cases.inc` and `cases.json` are committed
+with CRLF line endings although `.gitattributes` declares `eol=lf`, so
+checkouts report them as modified; `.gitattributes`, `memory_cases.c`,
+`memory_sh.c` and `su_reader.c` are committed with mixed line endings. This
+independent EOL maintenance item is not changed here.
+
+## SH-OPT-SCALE-01 (PR #108): CLOSED / CANONICAL
+
+**POST-MERGE VERIFIED @ `eed08e1dba9a0df083991b6993ee8b5f5cbe0b4b`**, the
+normal GitHub merge commit of
+[PR #108](https://github.com/RMecking/DENISE-Black-Edition/pull/108). Its
+ordered parents are `d4693e1165c6d5d0cfe0bb8adc4cd4a79e4166fa` (the PR #107
+merge) and feature head `c7c4e685727358290667c0d0d51c2aa25c3580ab`; its tree
+is `17f153d17549d236d89e1a45bf1272e178be5464`, identical to the tested head
+tree. Hosted CI run `44627075299` on that head completed SUCCESS. This is a
+recorded closeout identity, not a live-HEAD field.
+
+The change touches exactly twelve paths: six production paths
+(`include/fd.h`, `include/globvar.h`, `src/Makefile`, `src/read_par.c`,
+`src/SH/FWI_SH_visc.c` and the new `src/SH/visco_sh_exact_step_scaling.c`),
+the contract `docs/sh_opt_scale_01_contract.md` and five new test files.
+Numerically it changes only the search direction at the exact viscoelastic SH
+optimizer boundary; it also adds configuration checks. Optional `denise.inp`
+records 123–127 select a masked per-class RMS (`OPT_STEP_SCALING=1`) or MAX
+(`=2`) scaling with class weights. Only in these two modes does a CPML update
+mask zero the step in CPML cells, and each class becomes active from iteration
+`INV_VS_ITER`/`INV_RHO_ITER`/`INV_QS_ITER` of the stage. `OPT_DIAG_OUT`
+optionally writes raw gradients and steps. The default mode 0 keeps the
+previous behaviour (`p = g` bitwise; files with 119 or 122 records behave as
+at `d4693e1`). Forward modelling, the C5–C7 gradients, objective, line search
+and trial construction are unchanged.
+
+The independent SCIENTIFIC-VERIFICATION (PASS WITH NOTES) is private evidence
+and holds only in its tested scope: oracles O1–O9 202/202, the existing M6.3c
+block (290 passed, 2 xfailed), and mode 0 against the `d4693e1` binary on a
+32x32 fixture with `ITERMAX=2`, 119/122/127 records and 1 and 2 ranks
+(bitwise-identical models). Its non-blocking notes V1–V9 are carried forward
+to the pilot instructions or a later delta. This closeout makes no claim of
+full realistic FWI qualification, inversion quality, convergence or scaling;
+the SH-FWI pilot remains open.
+
 ## Current high-level roadmap
 
 Only the ordering and high-level intent below are frozen; the M8, M9, and M10
