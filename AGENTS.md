@@ -104,6 +104,34 @@ A task packet defines **what** is authorized: scope and files/categories, techni
 
 Use brief durable internal progress checkpoints (`task state`, exact worktree/HEAD, done/next, test evidence, unresolved issues, no invented PASS), particularly before context/quota/device changes. A checkpoint is neither a scientific acceptance report nor a Git publication/commit permit. Preserve existing worktrees and recovery rules. Reserve full sealed evidence packages for scientific reference freezes/qualifications, substantive independent reviews, Content Locks and publication closures, or another contractually required event; do not generate a fresh nested manifest-and-seal archive for every local typo or ordinary intermediate checkpoint.
 
+## Integration focus and work-in-progress limits
+
+Owner decision 2026-11-21; planning context in `docs/roadmap.md`.
+
+- **Program first.** Every work package names, before it starts, the
+  capability that will afterwards be selectable in the published `denise`
+  binary and the benchmark-ladder case on which it will be shown. Private
+  candidates, references and reports are not roadmap progress until integrated.
+- **WIP limit.** At most two implementation strands run concurrently (one SH,
+  one PSV/RTM), plus at most one research sandbox.
+- **Time-boxed sandbox.** A sandbox question runs for at most one week, then is
+  integrated, parked or dropped. Sandbox work records what was run and the
+  exact SHA; it needs no contract, permit, ledger or per-step independent
+  review, and its results stay labelled EXPLORATORY.
+- **Proportionate integration gate.** Integration into the program requires a
+  J/JT dot-product test, a gradient check against central differences, a
+  regression against the previous state, the benchmark-ladder result and one
+  independent review of the diff. Interval enclosures and evidence below FP32
+  resolution are not integration criteria unless a task packet explicitly
+  demands them for a stated scientific reason.
+- **One operator family per task.** Nonlinear FWI uses the program's
+  velocity-stress kernels with exact adjoint; linearized tasks (RTM, LSRTM,
+  the RFWI inner problem) use the M9 Born operator. New operator families need
+  an Owner decision.
+
+These rules do not relax scientific correctness, Content Lock, publication or
+safety boundaries elsewhere in this file.
+
 ## Scientific workflow
 
 ### Performance / implementation optimization
