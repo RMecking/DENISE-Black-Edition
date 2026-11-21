@@ -87,7 +87,7 @@ Prioritize analytic/dispersion/MMS and algebraic gates locally before committing
 
 This candidate integrates the complete user-approved handover proposals
 `M9L_ROADMAP.md`, `ROADMAP_STATUS_INSERT.md` and
-`DENISE_HAUPTCHAT_UEBERGABE.md` from `C:/Users/rebme/Downloads/`.
+`DENISE_HAUPTCHAT_UEBERGABE.md` from `<USERPROFILE>/Downloads/`.
 The user explicitly confirmed the unsuffixed files in place of the task's
 `(1)` filenames. They are proposals, not previously published repository content.
 RAW SHA256 identities:

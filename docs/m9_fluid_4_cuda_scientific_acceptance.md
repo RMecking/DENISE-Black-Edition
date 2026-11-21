@@ -45,7 +45,7 @@ GPU results. See the [status ledger](modernization_status.md).
 
 Supporting reports belong to `DENISE — SCIENTIFIC-VERIFICATION`, thread
 `01a09e28-ff24-7410-99b2-2f6db6b21459`. Their actual external artifact root is
-`C:/Users/rebme/.codex/visualizations/2026/09/14/01a09e28-ff24-7410-99b2-2f6db6b21459/`.
+`<USERPROFILE>/.codex/visualizations/2026/09/14/01a09e28-ff24-7410-99b2-2f6db6b21459/`.
 Identifiers below mean subdirectory plus `REPORT.md` under that root; these
 are local external records, not GitHub-hosted or committed evidence files.
 

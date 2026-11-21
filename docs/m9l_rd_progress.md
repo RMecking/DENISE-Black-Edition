@@ -139,7 +139,7 @@ identity; online REAL-02A metadata/extracted text was additionally inspected.
 
 For the following table, each name is a directory under the retained evidence
 root `/DENISE/Reports/Scientific-Verification/` (local mirror
-`C:/Users/rebme/Dropbox/DENISE/Reports/Scientific-Verification/`). Read its
+`<USERPROFILE>/Dropbox/DENISE/Reports/Scientific-Verification/`). Read its
 `REPORT.md`; the listed identity is its `review-manifest.json`, authenticated
 against `review-manifest.seal.json` and every listed member. Each report is a
 verified manifest member. Candidate manifests/composite deltas are specified
@@ -196,10 +196,10 @@ Additional original sources, separately authenticated:
   No final delivery seal covering those two later reports was independently
   reauthenticated; do not promote the pre-recovery seal to final PASS.
 - **R3A:** original Owner task attachment
-  `C:/Users/rebme/.codex/attachments/41fc351f-1562-45eb-90cf-4f435fe4b288/Eingefügter Text.txt`,
+  `<USERPROFILE>/.codex/attachments/41fc351f-1562-45eb-90cf-4f435fe4b288/Eingefügter Text.txt`,
   SHA256 `fd0cd588a97d65c330a0d6e83b85aa598191bdf5693f46f6ef999ca665d7b712`.
 - **R3B:** original Owner task attachment
-  `C:/Users/rebme/.codex/attachments/1c4ad3e7-b8f6-4874-8867-68f3603ae57a/Eingefügter Text.txt`,
+  `<USERPROFILE>/.codex/attachments/1c4ad3e7-b8f6-4874-8867-68f3603ae57a/Eingefügter Text.txt`,
   SHA256 `47b4b8bd151975871334b43974bc0d362438f754579c0c7e9884f90314ca0cc8`.
   R3A/R3B are authorization identities, not scientific result manifests.
 - **R3AP:** original independent pre-output HOLD,
@@ -209,7 +209,7 @@ Additional original sources, separately authenticated:
   JSON seal and eight members verified. A later corrected-delta verdict is not
   covered by this original review identity.
 - **R3BC:** unaccepted analysis candidate,
-  `C:/Users/rebme/.codex/visualizations/2026/09/24/01a0d4ba-0697-7530-b8d4-0619bdf6284c/M9L-REAL-03B-20261020/REPORT.md`;
+  `<USERPROFILE>/.codex/visualizations/2026/09/24/01a0d4ba-0697-7530-b8d4-0619bdf6284c/M9L-REAL-03B-20261020/REPORT.md`;
   `candidate-manifest.json` SHA256
   `0e38c108738b5e4f86ca2c161abbf57a16ebd7413237344aaf29200342c1c095`,
   JSON seal and 26 members verified. Candidate integrity is not independent PASS.
@@ -231,7 +231,7 @@ reports) authenticate locally. Final R3AF numerical candidate manifest is
 R3BF reviews the original R3BC candidate manifest already indexed above.
 No numerical experiment was repeated for this documentary update.
 
-New Owner packets are under `C:/Users/rebme/.codex/attachments/`, each named
+New Owner packets are under `<USERPROFILE>/.codex/attachments/`, each named
 `Eingefügter Text.txt` in the indicated directory. These authenticate task
 scope only, not an execution or scientific PASS:
 
