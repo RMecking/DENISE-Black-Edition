@@ -510,6 +510,54 @@ to the pilot instructions or a later delta. This closeout makes no claim of
 full realistic FWI qualification, inversion quality, convergence or scaling;
 the SH-FWI pilot remains open.
 
+## CUDA link and -0.0f association fix (PR #111): CLOSED / CANONICAL
+
+**POST-MERGE VERIFIED @ `a14e53080e78ffe8c34852fdae8f3d536afc80a6`**, the
+normal GitHub merge commit of
+[PR #111](https://github.com/RMecking/DENISE-Black-Edition/pull/111). Its
+ordered parents are `86fd2bf6097890f99966b7e630a8c4aae3823354` (the PR #110
+merge) and feature head `585cc89447040cf84fcd5ad28e8c6f0063561cbf`; its tree
+is `a2f7c2163463473f4a421268dfa32c5288e5a9cd`, identical to the tested and
+content-locked head tree. Hosted CI run `44844240728` on that head completed
+SUCCESS. This is a recorded closeout identity, not a live-HEAD field.
+
+The change touches exactly three paths and only the optional CUDA build:
+
+- `src/CUDA/m9_elastic_host.c`: privately renames the four FD8 Taylor8 forward
+  entry points added in PR #103. Without this, `make -C src denise_cuda`
+  failed with a multiple-definition link error. All 19 global symbols of
+  `elastic_psv_born.o` are now privately renamed in the M9 host bridge.
+- `src/PSV/psv_cuda_exact_fwi.c`: the active CUDA exact-visco P/SV adapter now
+  checks that the five production gradient matrices are still zero (the
+  existing one-source contract) and assigns the downloaded FP32 gradient
+  instead of adding it onto `+0.0f`. Tiny negative FP64 gradients that
+  underflow to `-0.0f` (observed on a 300x200, 1.2 s case) had become `+0.0f`,
+  and the unchanged bitwise association hash aborted the run as a false
+  positive. The CUDA report gains a diagnostic `fp32_negative_zero` count.
+  Apart from the sign of zero cells in the gradient matrices, the gradient
+  values and accepted models are bit-identical, because maxima, norms and
+  `base - alpha*(+-0)` are sign-of-zero invariant.
+- `tests/physics/test_m8e2c5_cuda_active_fwi.py`: adds a regression case that
+  provably produces `-0.0f` cells.
+
+The CPU binary `bin/denise` is byte-identical between `86fd2bf` and the head.
+
+The delta SCIENTIFIC-VERIFICATION (PASS, delta scope) was performed in the
+authoring session and accepted by the owner as the gate. It is therefore not
+independent in the sense of `AGENTS.md`. It ran on a fresh `git archive` of
+base and head (WSL, CUDA 12.8, sm_86) and is private evidence that holds only
+in that scope:
+
+- `denise_cuda` fails to link at base and builds at the head;
+- `test_m8e2c5_cuda_active_fwi.py`: 14 passed;
+- the new test fails against the base adapter with the original error;
+- a `--fmad=false` build also produces `-0.0f` cells and completes;
+- M9e-1 to M9e-4 CUDA files: 196 passed.
+
+Hosted CI skips CUDA by policy, so these local runs are the CUDA evidence.
+Other GPU architectures (for example sm_120) are not qualified. This closeout
+widens no exact-visco P/SV CUDA envelope (one GPU, one rank, FD4, one source).
+
 ## Current high-level roadmap
 
 **2026-11-21 — forward planning moved.** The proposed integration roadmap
