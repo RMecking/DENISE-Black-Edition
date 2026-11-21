@@ -512,6 +512,13 @@ the SH-FWI pilot remains open.
 
 ## Current high-level roadmap
 
+**2026-11-21 — forward planning moved.** The proposed integration roadmap
+(project audit, benchmark ladder, work packages towards a usable
+PSV/SH-FWI/RFWI/RTM program) is [`docs/roadmap.md`](roadmap.md), pending Owner
+acceptance. The milestone text below is retained as the historical ledger; it
+no longer sets priorities. The pointer grants no execution or publication
+authority.
+
 Only the ordering and high-level intent below are frozen; the M8, M9, and M10
 designs are not implementation contracts.
 
