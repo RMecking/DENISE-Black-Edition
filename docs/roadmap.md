@@ -200,23 +200,42 @@ späterer Integrationsschritt (nach I-3).
 **Sandbox vor A-3 (RFWI-SANDBOX-01, 21.11.2026, EXPLORATORY).** Der
 Python-SH-Prototyp hat den Reflektor+Linse-Fall als Inversion gerechnet
 (73×81 Knoten, eine Geometrie, rauschfrei, gleicher Löser für Daten und
-Inversion). Befund: Auf reinen Reflexionsdaten liegt nur die variable
-Projektion klar über ihrer Nullkontrolle (Laufzeitfehler des Hintergrunds
-0,273 → 0,037 ms, Nullkontrolle 0,015 ms). Die alternierende Form erreicht
-0,055 ms bei einer Nullkontrolle von 0,054 ms. Die konventionelle FWI senkt den
-Misfit um drei Größenordnungen, ohne den Hintergrund zu verbessern. Der
-reduzierte Gradient stimmt mit zentralen Differenzen auf 10⁻⁹ überein, ohne
-impliziten Term liegt er 40 % daneben. Folgerungen für A-3:
+Inversion). Ein Nachlauf mit gleichem Optimierer auf beiden Seiten
+(RFWI-SANDBOX-01b) hat den ersten Befund abgeschwächt. Laufzeitfehler des
+Hintergrunds in ms, Start 0,273, je 12 Hintergrundschritte:
 
-1. Variable Projektion mit implizitem Term ist die Zielformulierung (E-8).
-2. Die Nullkontrolle ist festes Prüfkriterium.
-3. Reflexionen legen die Laufzeit fest, nicht die Tiefenverteilung der
-   Geschwindigkeit. Regularisierung oder Skalentrennung zwischen Bild und
-   Hintergrund ist vor dem Bau von A-3 festzulegen.
+| Formulierung, Optimierer | Linsenfall | Nullkontrolle | Datenmisfit (relativ) |
+|---|---:|---:|---:|
+| Variable Projektion, L-BFGS | 0,038 | 0,017 | 2e-5 |
+| Variable Projektion, steilster Abstieg | 0,050 (schwankt 0,016–0,058) | 0,026 | 6e-5 |
+| Alternierend, steilster Abstieg | 0,055 | 0,054 | 6e-4 |
+| Alternierend, L-BFGS (Speicher je Bild geleert) | 0,129 | 0,049 | 7e-4 |
 
-Vorbehalt: In der Sandbox liefen die beiden Formulierungen mit verschiedenen
-Optimierern. Ein Wiederholungslauf mit gleichem Optimierer ist beauftragt
-(RFWI-SANDBOX-01b); sein Ergebnis wird hier nachgetragen.
+Beide Formulierungen bauen rund 80 % des Laufzeitfehlers ab. Mit steilstem
+Abstieg auf beiden Seiten ist der Laufzeitfehler im Linsenfall praktisch
+gleich; der Vorsprung der variablen Projektion im ersten Lauf kam zum Teil vom
+L-BFGS. Für die variable Projektion sprechen danach: eine Drift in der
+Nullkontrolle, die halb bis ein Drittel so groß ist, ein 10- bis 30-fach
+kleinerer Datenmisfit, ein festes Zielfunktional mit prüfbarem Gradienten
+(Übereinstimmung mit zentralen Differenzen auf 10⁻⁹; ohne impliziten Term 40 %
+daneben) und die Verträglichkeit mit L-BFGS, das der alternierenden Form
+schadet. Dagegen steht die zwei- bis dreifache Rechenzeit je Schritt. Die
+konventionelle FWI senkt auf reinen Reflexionsdaten den Misfit um drei
+Größenordnungen, ohne den Hintergrund zu verbessern. Je Variante lief nur ein
+Lauf; Unterschiede von 0,01 ms liegen in der Schwankung zwischen Schritten.
+Folgerungen für A-3:
+
+1. Variable Projektion mit implizitem Term ist die Zielformulierung (E-8),
+   begründet mit Zielfunktional, kleinerer Nulldrift und L-BFGS-Verträglichkeit,
+   nicht mit einem besseren Laufzeitfehler im Testfall.
+2. Die alternierende Form bleibt als billigere Vergleichsvariante im Treiber;
+   ob sich der Mehraufwand der variablen Projektion lohnt, zeigt erst B4.
+3. Die Nullkontrolle ist festes Prüfkriterium: Der Restfehler eines Verfahrens
+   wird gegen seine eigene Drift im Kontrollfall gelesen.
+4. Reflexionen legen die Laufzeit fest, nicht die Tiefenverteilung der
+   Geschwindigkeit (der Geschwindigkeitsfehler im Zielbereich unterscheidet
+   sich zwischen den Verfahren nicht). Regularisierung oder Skalentrennung
+   zwischen Bild und Hintergrund ist vor dem Bau von A-3 festzulegen.
 
 ### Integrationsstände
 
@@ -321,7 +340,7 @@ Entschieden von der Ownerin am 2026-11-21.
 | E-5 | Leitplanken 2–4 als Arbeitsregel in `AGENTS.md` übernehmen? | Ja. |
 | E-6 | Reihenfolge RFWI: PSV auf M9 zuerst, SH danach (A-3 vor A-4)? | Ja. |
 | E-7 | Filterstelle für Frequenzstufen in P-1? | Köhns Semantik: Filter auf Quellsignal und beobachtete Daten (Strang PSV). |
-| E-8 | Formulierung der RFWI in A-3? | Variable Projektion mit implizitem Term statt der am 10.11. gewählten alternierenden Form, auf Grundlage von RFWI-SANDBOX-01; Wiederholung mit gleichem Optimierer beauftragt. |
+| E-8 | Formulierung der RFWI in A-3? | Variable Projektion mit implizitem Term statt der am 10.11. gewählten alternierenden Form, auf Grundlage von RFWI-SANDBOX-01 und 01b (Begründung: festes Zielfunktional, kleinere Nulldrift, L-BFGS-Verträglichkeit). |
 
 ## 10. Externes Audit vom 21.11.2026
 
