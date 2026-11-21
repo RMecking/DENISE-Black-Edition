@@ -706,3 +706,74 @@ def test_partial_production_residual_upload_fails_closed_and_destroys(
         for name in PHYSICAL_FIELDS
     )
     assert not list((case / "model").glob("accepted_stage_*"))
+
+
+def _set_parameters(directory: Path, **updates: int | float | str) -> None:
+    path = directory / "denise.inp"
+    lines = path.read_text(encoding="ascii").splitlines()
+    found = set()
+    for index, line in enumerate(lines):
+        key = line.split("=", 1)[0].strip()
+        if key in updates and not line.lstrip().startswith("#"):
+            lines[index] = f"{key} ={updates[key]}"
+            found.add(key)
+    assert found == set(updates)
+    path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+
+def test_cuda_active_iteration_keeps_negative_zero_gradient_cells(
+    tmp_path: Path, repository_root: Path, denise_binary: Path,
+    cuda_denise_binary: Path, mpiexec: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: FP64 gradients that underflow to -0.0f must not abort.
+
+    A 300x200, 1.2 s case leaves cells far from source and receivers whose
+    tiny negative FP64 physical gradient becomes -0.0f.  Adding it onto the
+    +0.0f-initialised production matrix produced +0.0f and the bitwise
+    association hash aborted the run.
+    """
+    config = ViscoPSVOracleConfig(
+        nx=300, ny=200, time_s=1.2, dt_s=0.0008,
+        source_x_m=1500.0, source_y_m=150.0,
+        receivers_m=tuple((200.0 + 50.0 * k, 120.0) for k in range(53)),
+    )
+    truth_directory = tmp_path / "truth"
+    _prepare_observed(
+        truth_directory, q_mode=1, config=config,
+        repository_root=repository_root, denise_binary=denise_binary,
+        mpiexec=mpiexec,
+    )
+    fwi_directory = tmp_path / "fwi"
+    _write_case(
+        fwi_directory, config=config, model=_reference_model(config), mode=1,
+        observed=truth_directory,
+    )
+    _configure_cuda_envelope(fwi_directory, 1)
+    _set_parameters(fwi_directory, EPS_SCALE="0.002", STEPMAX=3)
+    report_path = fwi_directory / "jacobian" / "gradient.cuda_active_fwi.json"
+    monkeypatch.setenv("DENISE_PSV_BACKEND", "cuda")
+    monkeypatch.setenv("DENISE_PSV_EXACT_SEGMENTS", "4")
+    monkeypatch.setenv("DENISE_PSV_EXACT_VISCO_GRADIENT", "1")
+    monkeypatch.setenv("DENISE_CUDA_PSV_EXACT_FWI_REPORT_FILE", str(report_path))
+    result = run_denise(
+        repository_root=repository_root, case_directory=fwi_directory,
+        denise_binary=cuda_denise_binary, mpiexec=mpiexec, ranks=1,
+        configuration={"gate": "M8e-2C5-negative-zero"},
+        timeout_seconds=300.0,
+    )
+    assert result.returncode == 0, result_summary(result)
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["complete"] is True
+    fields = report["fields"]
+    assert sum(fields[name]["fp32_negative_zero"] for name in PHYSICAL_FIELDS) > 0
+    assert all(
+        fields[name]["download_fp32_fnv1a64"]
+        == fields[name]["production_matrix_fnv1a64"]
+        for name in PHYSICAL_FIELDS
+    )
+    active_report = json.loads(
+        (fwi_directory / "jacobian" / "gradient.active_fwi.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert active_report["accepted_objective"] < active_report["base_objective"]

@@ -30,6 +30,7 @@ static struct {
     double field_sum[CUDA_PHYSICAL_FIELDS];
     double field_absmax[CUDA_PHYSICAL_FIELDS];
     size_t field_nonzero[CUDA_PHYSICAL_FIELDS];
+    size_t field_negative_zero[CUDA_PHYSICAL_FIELDS];
     int field_finite[CUDA_PHYSICAL_FIELDS];
 } cuda_fwi;
 
@@ -91,11 +92,16 @@ static void summarize_fields(double *field[CUDA_PHYSICAL_FIELDS],size_t cells) {
         cuda_fwi.field_hash[f]=hash_bytes(field[f],cells*sizeof(double));
         cuda_fwi.field_sum[f]=cuda_fwi.field_absmax[f]=0.0;
         cuda_fwi.field_nonzero[f]=0;
+        cuda_fwi.field_negative_zero[f]=0;
         cuda_fwi.field_finite[f]=1;
         for(p=0;p<cells;++p) {
             double value=field[f][p],absolute=fabs(value);
             if(!isfinite(value)) cuda_fwi.field_finite[f]=0;
+            float single=(float)value;
             if(value!=0.0) ++cuda_fwi.field_nonzero[f];
+            /* FP32 values as associated with the production matrices; tiny
+             * negative FP64 values underflow to -0.0f here. */
+            if(single==0.0f&&signbit(single)) ++cuda_fwi.field_negative_zero[f];
             cuda_fwi.field_sum[f]+=value;
             if(absolute>cuda_fwi.field_absmax[f])
                 cuda_fwi.field_absmax[f]=absolute;
@@ -193,12 +199,14 @@ static void write_report(void) {
     for(f=0;f<CUDA_PHYSICAL_FIELDS;++f)
         fprintf(stream,
             "    \"%s\": {\"finite\": %s, \"nonzero\": %zu, "
+            "\"fp32_negative_zero\": %zu, "
             "\"sum\": %.17g, \"absmax\": %.17g, "
             "\"fnv1a64\": \"%016llx\", "
             "\"download_fp32_fnv1a64\": \"%016llx\", "
             "\"production_matrix_fnv1a64\": \"%016llx\"}%s\n",
             name[f],cuda_fwi.field_finite[f]?"true":"false",
-            cuda_fwi.field_nonzero[f],cuda_fwi.field_sum[f],
+            cuda_fwi.field_nonzero[f],cuda_fwi.field_negative_zero[f],
+            cuda_fwi.field_sum[f],
             cuda_fwi.field_absmax[f],
             (unsigned long long)cuda_fwi.field_hash[f],
             (unsigned long long)cuda_fwi.download_fp32_hash[f],
@@ -469,18 +477,27 @@ int denise_cuda_psv_exact_fwi_finish(
         }
     cuda_fwi.active=0;
     if(destroy_context()!=0) goto cleanup;
-    for(j=1;j<=NY;++j) for(i=1;i<=NX;++i) {
-        p=(size_t)(j-1)*NX+(i-1);
-        request->fwi->waveconv[j][i]+=(float)field[0][p];
-        request->fwi->waveconv_u[j][i]+=(float)field[1][p];
-        request->fwi->waveconv_rho[j][i]+=(float)field[2][p];
-        request->fwi->waveconv_qp_exact[j][i]+=(float)field[3][p];
-        request->fwi->waveconv_qs_exact[j][i]+=(float)field[4][p];
-    }
     {
         float **production[CUDA_PHYSICAL_FIELDS]={request->fwi->waveconv,
             request->fwi->waveconv_u,request->fwi->waveconv_rho,
             request->fwi->waveconv_qp_exact,request->fwi->waveconv_qs_exact};
+        /* The one-source CUDA gradient is the whole shot gradient: the
+         * production matrices must still hold their zero initialisation.
+         * Assigning (instead of adding onto +0.0f) keeps exact -0.0f
+         * gradient values bit-identical to the CUDA download. */
+        for(f=0;f<CUDA_PHYSICAL_FIELDS;++f)
+            for(j=1;j<=NY;++j) for(i=1;i<=NX;++i)
+                if(production[f][j][i]!=0.0f) {
+                    adapter_failure(
+                        "production %s gradient matrix is not zero before CUDA association",
+                        suffix[f]);
+                    goto cleanup;
+                }
+        for(f=0;f<CUDA_PHYSICAL_FIELDS;++f)
+            for(j=1;j<=NY;++j) for(i=1;i<=NX;++i) {
+                p=(size_t)(j-1)*NX+(i-1);
+                production[f][j][i]=(float)field[f][p];
+            }
         for(f=0;f<CUDA_PHYSICAL_FIELDS;++f) {
             uint64_t direct=UINT64_C(1469598103934665603);
             uint64_t associated=UINT64_C(1469598103934665603);
