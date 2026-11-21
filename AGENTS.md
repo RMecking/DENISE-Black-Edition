@@ -60,6 +60,14 @@ are authoritative; chat history is not.
 - `DENISE — REPO-OPS`: mechanical commit/push/remote/PR/CI/merge work after
   scientific/content acceptance and explicit Content Lock / publication
   authorization; no scientific or product decisions or changes.
+- `DENISE — PROJECT COORDINATION`: optional role, active only while the Owner
+  has explicitly assigned it. Keeps the work-in-progress and package overview,
+  hand-overs, dependencies, benchmark status and documentation consistent with
+  the roadmap, and drafts task packets. It grants no Owner permit, changes no
+  scientific target, replaces no independent `SCIENTIFIC-VERIFICATION`, signs
+  no Content Lock and publishes or merges only as `REPO-OPS` under explicit
+  Owner authority. It is not a standing supervisor of other workers; which
+  session currently holds it belongs in a hand-over note, not in this file.
 
 ## Worker continuity
 
@@ -123,11 +131,24 @@ Owner decision 2026-11-21; planning context in `docs/roadmap.md`.
   regression against the previous state, the benchmark-ladder result and one
   independent review of the diff. Interval enclosures and evidence below FP32
   resolution are not integration criteria unless a task packet explicitly
-  demands them for a stated scientific reason.
+  demands them for a stated scientific reason. Each check applies where it is
+  relevant to the scientific path that changed; a documentation-only change
+  needs none of them.
+- **Risk-adaptive physical check.** Dot-product and gradient tests verify that
+  forward and adjoint are consistent, not that the forward is physically
+  right. A package that changes an operator, boundary or material treatment
+  adds exactly one independent physical reference case (arrival/dispersion,
+  interface reflection, absorption, or image position/amplitude), fixed before
+  candidate outputs on at most one page. Workflow-only packages (shot loops,
+  stage control, I/O) do not. A scientific choice that defines the objective
+  (for example where a data filter acts) is fixed by the Owner before
+  candidate outputs, not chosen by the implementing worker.
 - **One operator family per task.** Nonlinear FWI uses the program's
   velocity-stress kernels with exact adjoint; linearized tasks (RTM, LSRTM,
   the RFWI inner problem) use the M9 Born operator. New operator families need
-  an Owner decision.
+  an Owner decision. The M9 Born operator is elastic; it is not the derivative
+  of the viscoelastic forward, and the two are not chained without an explicit
+  consistency argument.
 
 These rules do not relax scientific correctness, Content Lock, publication or
 safety boundaries elsewhere in this file.
@@ -237,6 +258,11 @@ must not remove required node IDs, hide empty-selection failures (including with
   explicit authorization and exact target validation.
 - Preserve dirty worktrees and unrelated user files.
 - Stage only intended paths; never use `git add .` or `git add -A`.
+- The repository is public. Do not write local account names, user-profile
+  paths, private e-mail addresses or host names into tracked files, commit
+  messages or PR texts; use neutral placeholders such as `<USERPROFILE>`.
+  Commit with the GitHub noreply address. The research journal and private
+  evidence packages stay outside the repository.
 - No publication or history-changing operation is allowed unless covered by
   explicit publication authority. Authority may be narrow single-step authority
   or Full Conditional Publication covering the complete declared mechanical
