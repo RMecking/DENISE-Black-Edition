@@ -1,8 +1,9 @@
 # DENISE Black Edition — Integrations-Roadmap
 
 **Stand:** 2026-11-21 · **Basis:** `modernization@86fd2bf` · **Status:** aus dem
-Projekt-Audit vom 21.11.2026; die Owner-Entscheidungen E-1 bis E-6 sind am
-21.11.2026 getroffen (Abschnitt 9). Noch nicht veröffentlicht.
+Projekt-Audit vom 21.11.2026; die Owner-Entscheidungen E-1 bis E-7 sind am
+21.11.2026 getroffen (Abschnitt 9). Veröffentlicht mit PR #114; nach einem
+externen Architektur-Audit vom selben Tag präzisiert (Abschnitt 10).
 Dieses Dokument gibt Orientierung. Es erteilt keine Ausführungs-, Commit- oder
 Publikationsfreigabe und ändert keinen bestehenden Scientific Contract, HOLD
 oder Content Lock ([AGENTS.md](../AGENTS.md) gilt unverändert).
@@ -90,13 +91,23 @@ Strukturelle Ursachen:
    Gradient gegen zentrale Differenzen, Regression gegen den vorherigen Stand,
    Ergebnis auf der Benchmark-Leiter, ein unabhängiger Review des Diffs.
    Intervall-Einschließungen und Nachweise unterhalb der FP32-Auflösung sind
-   kein Integrationskriterium.
+   kein Integrationskriterium. Die Prüfungen gelten für den jeweils geänderten
+   wissenschaftlichen Pfad. Punktprodukt- und Gradiententest prüfen nur die
+   Konsistenz von Forward und Adjoint, nicht die Physik des Forwards: Ändert
+   ein Paket Operator, Rand oder Material, kommt genau ein unabhängiger
+   physikalischer Referenzfall hinzu (Ankunft/Dispersion, Grenzflächen-
+   reflexion, Absorption oder Bildamplitude/-ort), vorab auf höchstens einer
+   Seite festgelegt. Reine Workflow-Pakete brauchen das nicht.
 5. **Eine Operatorfamilie je Aufgabe.** Nichtlineare FWI: der
    Velocity-Stress-Kern des Programms mit exaktem Adjoint (SH und PSV, CPU-MPI
    und CUDA). Linearisierte Aufgaben (RTM, LSRTM, RFWI-Innenproblem): der
    M9-Born-Operator. FD8, A2-Kontakt und Taylor/Holberg werden Optionen dieser
    Kerne, keine eigenen Programme. Weitere Lösungswege können später
-   hinzukommen; zunächst genügt ein Weg je FWI/RTM (E-1).
+   hinzukommen; zunächst genügt ein Weg je FWI/RTM (E-1). Die Wahl des
+   Velocity-Stress-Kerns als Träger gilt für P-1 bis P-3 und ist **vorläufig
+   bis K-6**: Erst der Codevergleich mit dem privaten Holberg8/A2-Pfad
+   entscheidet, ob dessen Bausteine als Option in diesen Kern passen, als
+   eigenes Modul bleiben oder einen begrenzten Umbau verlangen.
 6. **Legacy bleibt Vergleichsbasis**, wird nicht gelöscht und nicht verändert.
 
 ## 4. Benchmark-Leiter
@@ -121,12 +132,12 @@ Zeitangaben sind Schätzungen aus dem bisherigen Tempo, keine Zusagen.
 
 | Paket | Inhalt |
 |---|---|
-| K-1 | PR #112 (SH-L-BFGS) und PR #113 (Ledger zu PR #111) abschließen. PR #111 (CUDA-Link, −0.0-Gradienten) ist seit dem 21.11. gemergt. |
-| K-2 | T1a (privater FD8-Born-Pfad) mit S3/S4 abschließen, weil es fast fertig ist. Danach ruht die Taylor8-Linie (Abschnitt 7). |
+| K-1 | **Erledigt 21.11.:** PR #111 (CUDA-Link, −0.0-Gradienten), #112 (SH-L-BFGS) und #113 (Ledger) sind gemergt. |
+| K-2 | **Nicht gelandet, geparkt:** T1a (privater FD8-Born-Pfad) wurde als PR #115 vorgelegt; die Hosted-CI war rot, der PR ist ohne Merge geschlossen, der Zweig `claude/t1a-fd8-born-private` bleibt erhalten. Die zwei roten Tests (`test_m63c_distributed_objective_directional_fd`, Fall `b2_corner-2-2-3-physical-4-0-0`; `test_psv_viscoelastic_rheology::test_m43_selected_mpi_reproducibility[SV-1-2]`) scheitern beim Auswerten der MPI-Programmausgabe. Ursache offen; ein Zusammenhang mit dem Kandidaten ist weder belegt noch ausgeschlossen. Die Case-3-Qualifikation des eingefrorenen Kandidaten bleibt bestehen. Die Taylor8-Linie ruht (Abschnitt 7). |
 | K-3 | RFWI-C-FD4 mit Statusnotiz schließen: Referenz INCOMPLETE, geparkt. Die zwei Quellenbefunde (W², 0/0) in den Prototyp übernehmen. |
-| K-4 | Forschungsjournal, Forschungsprioritäten und Marmousi-Roadmap von `F:` ins Repo übernehmen. Ledger auf PR #110–#112 bringen. |
+| K-4 | Forschungsprioritäten ins Repo übernehmen (`docs/research_priorities.md`). Das Forschungsjournal bleibt auf Owner-Entscheidung privat. Ledger auf den Stand der gemergten PRs bringen. |
 | K-5 | Fertige Performance-Prototypen integrieren: Allokator-Versatz, visko-PSV-Zeilenschleife (beide bytegleich), SH-Checkpoint/Replay. |
-| K-6 | Lesender Codevergleich PHYSICAL01/Holberg8 gegen den Programmkern (ein bis zwei Tage) als Grundlage für E-1 und P-4. |
+| K-6 | Lesender Codevergleich PHYSICAL01/Holberg8 gegen den Programmkern, **jetzt** und nicht erst vor P-4, damit P-1 bis P-3 nicht auf einer ungeprüften Kernwahl aufbauen. Verglichen werden Felder und Staggering, Update-, Quell- und Empfängerzeitpunkte, FD-Koeffizienten, elastische und viskoelastische Zustandsgrößen samt Q-Abbildung, Material- und Dichtemittelung, A2-Kontakt, CPML-Profile und -Speicher, Halos, Forward- und Adjoint-Tape, FP32-/GPU-Operationen, Parameter- und Modellformat. Ergebnis je Zeile: identisch, kompatibel nach Adapter, Physik-Differenz oder unbekannt; dazu eine Entscheidungsvorlage. Kein Rückport von Adjungierten aus einer anderen Diskretisierung ohne eigenen Nachweis. |
 
 ### Strang SH — vom Pilot zu Felddaten
 
@@ -151,16 +162,38 @@ Zeitangaben sind Schätzungen aus dem bisherigen Tempo, keine Zusagen.
 P-1 ist das wichtigste Einzelpaket der Roadmap. Es macht aus einem
 verifizierten Ein-Schuss-Demonstrator eine benutzbare FWI.
 
+**Gefilterte Zielfunktion (E-7).** Für P-1 gilt Köhns `TIME_FILT`-Semantik:
+Der Stufenfilter B wirkt einmal auf das Quellsignal und einmal auf die
+eingelesenen beobachteten Daten. Zielfunktion je Stufe:
+Φ(m) = ½ Σ_s ‖F_s(m; B·s) − B·d_s‖². Der bestehende exakte Adjoint liefert
+dafür bereits den exakten Gradienten; eine Filter-Transponierte ist nicht
+nötig. Wirkt später ein Operator im Datenraum (Zeitfenster T, Offset-Maske M in
+S-2), lautet die Zielfunktion ½ Σ_s ‖M T (F_s − B·d_s)‖² mit der Reihenfolge
+Filter, Fenster, Maske, und die Adjoint-Quelle enthält (M T)ᵀ(M T) angewandt
+auf das Residuum. Filterung des Quellsignals und Filterung im Datenraum sind
+verschiedene diskrete Experimente und werden nicht stillschweigend getauscht.
+
 ### Strang Abbildung — RTM → LSRTM → RFWI auf einem Operator
 
 Das Innenproblem der Reflexions-FWI ist eine LSRTM. Die drei Stufen bauen
 deshalb aufeinander auf und laufen alle auf dem M9-Born-Operator.
 
+**Geltungsbereich.** Der M9-Born-Operator ist **elastisch**, FD4, in (λ, μ)
+bei fester Dichte. Die exakte PSV-FWI des PSV-Strangs ist **viskoelastisch**
+in (Vp, Vs, ρ, Qp, Qs). J und Jᵀ des M9-Operators sind nicht die Ableitung des
+viskoelastischen Forwards. A-1 bis A-3 sind deshalb ausdrücklich eine
+**elastische** RTM/LSRTM/RFWI mit fester Dichte und eigenem elastischem
+Zielfunktional: Hintergrundmodellierung, Born-Linearisierung und reduzierter
+Gradient beziehen sich auf denselben M9-Graphen. Der elastische Hintergrund
+wird nicht mit dem visko-PSV-Gradienten verkettet. Eine viskoelastische RFWI
+braucht einen zum visko-Forward passenden Born-Pfad und ist ein eigener,
+späterer Integrationsschritt (nach I-3).
+
 | Paket | Fähigkeit im Programm | Nachweis |
 |---|---|---|
-| A-1 | RTM-Modus mit Beleuchtungskompensation und Impedanz-Parametrisierung des Bildes (unterdrückt langwellige Rückstreuartefakte) | B4 gegen A2.5-Rohbild |
+| A-1 | RTM-Modus mit Beleuchtungskompensation und Impedanz-Parametrisierung des Bildes (unterdrückt langwellige Rückstreuartefakte) | B4 gegen A2.5-Rohbild; dazu ein eigener, vorab festgelegter Punkt- oder Reflektorfall für Bildort und relative Amplitude |
 | A-2 | LSRTM (CGLS, beleuchtungs-vorkonditioniert, 10–20 Iterationen) | B4: Auflösung, Amplituden, Quell-/Zielenergie |
-| A-3 | RFWI v1, datenraum-alternierend (Owner-Entscheidung vom 10.11.): Bild aus A-2, Demigration mit J, Tomographie-Kernel aus zwei Feldpaaren, Hintergrund-Update mit L-BFGS | B4-Variante ohne tiefe Frequenzen, Start mit falschem Hintergrund; Vergleich mit konventioneller FWI |
+| A-3 | Elastische RFWI v1 auf M9 mit fester Dichte, datenraum-alternierend (Owner-Entscheidung vom 10.11.): Bild aus A-2, Demigration mit J, Tomographie-Kernel aus zwei Feldpaaren, Hintergrund-Update mit L-BFGS | B4-Variante ohne tiefe Frequenzen, Start mit falschem Hintergrund; Vergleich mit konventioneller FWI |
 | A-4 | SH-Born-Tangente im SH-Kern und SH-RFWI mit demselben Treiber | Reflektor+Linse-Test aus dem Prototyp, dann LVZ und Hohlraum |
 | A-5 | SH-RTM/RFWI auf dem Feldprofil | B5 |
 
@@ -181,10 +214,11 @@ Gradientenprüfung mit zentralen Differenzen genügt.
 
 Jeweils an ein Paket gebunden, damit sie im Programm landen.
 
-- **Exakter visko-Adjoint als Alleinstellung** (P-1, A-2). Q-kompensierte RTM
-  und LSRTM sind mit dem exakten visko-Adjoint stabil formulierbar, ohne die
-  instabile Amplitudenverstärkung üblicher Q-RTM. Gleiches gilt für
-  Qp/Qs-Inversion mit physikalischem Q.
+- **Exakter visko-Adjoint als Alleinstellung** (P-1). Qp/Qs-Inversion mit
+  physikalischem Q steht mit P-1 zur Verfügung. Q-kompensierte RTM und LSRTM
+  wären mit einem exakten visko-Adjoint stabil formulierbar, ohne die
+  instabile Amplitudenverstärkung üblicher Q-RTM; sie setzen aber einen
+  viskoelastischen Born-Pfad voraus, den es noch nicht gibt (nach I-3).
 - **A2-Fluid/Festkörper-Abschluss** (P-4). Der private Befund (tiefer Vs-Fehler
   −10,6 % statt −1,1 %) ist ein eigenständiges, publizierbares Ergebnis.
 - **Mehrparameter-Kopplung** (P-2). Die Diagnose vom 2.11. zeigt 49 %
@@ -218,8 +252,16 @@ Nicht verworfen, aber erst nach I-3 wieder zu bewerten:
 - MPI-Overlap, Legacy-FD8-Ablösung (M9L-7), 3D, anisotrope FWI.
 - Unsicherheitsquantifizierung und ML-Priors (Abschnitt 8).
 
-Historische HOLDs (M9L-4G, 5P-P3, REAL-02D, Check 7) bleiben unverändert
-bestehen und blockieren keinen Punkt dieser Roadmap.
+Historische HOLDs bleiben unverändert bestehen. Sie halten keine Arbeit dieser
+Roadmap auf, sperren aber weiterhin ihre ursprünglichen Aussagen und können
+Voraussetzungen neuer Aussagen offen lassen:
+
+| HOLD | Wirkung auf diese Roadmap |
+|---|---|
+| M9L-4G (GN, τ=0,0001, Line Search erschöpft) | Sperrt den eingefrorenen GN-Erfolg, nicht SD/L-BFGS in P-1/P-2. Bei Wiederverwendung des GN-Codes bleibt der HOLD sichtbar. |
+| M9L-5P-P3 (relative Vollbildamplitude, 10 %) | Stammt aus dem privaten Taylor8-Pfad und belegt keinen Fehler des M9-FD4-Operators. Er zeigt aber, dass Bildamplituden nicht qualifiziert sind: A-1 braucht einen eigenen Amplituden- und Ortsnachweis. Ein J/Jᵀ-Punktprodukt oder ein gutes kompensiertes Bild ist kein nachträglicher P3-PASS. |
+| REAL-02D (Dreischussbild unvollständig) | Kein Beleg für einen Operatorfehler, aber auch kein Mehrschuss-RTM-Nachweis für diesen Pfad. |
+| Legacy Check 7 / A3.0 (FD8/L0-Adjoint, CPML) | Widerlegt weder den M9-FD4- noch den exakten visko-FD4-Pfad. Relevant für K-6, P-4/P-5 und jede Wiederverwendung des Legacy-FD8- oder CPML-Adjoints. |
 
 ## 8. Ausblick: aktuelle Forschungstrends
 
@@ -261,3 +303,23 @@ Entschieden von der Ownerin am 2026-11-21.
 | E-4 | Welche Felddaten für B5? | SH-Profil der Ownerin. Für PSV bleibt Marmousi-II der Referenzfall. |
 | E-5 | Leitplanken 2–4 als Arbeitsregel in `AGENTS.md` übernehmen? | Ja. |
 | E-6 | Reihenfolge RFWI: PSV auf M9 zuerst, SH danach (A-3 vor A-4)? | Ja. |
+| E-7 | Filterstelle für Frequenzstufen in P-1? | Köhns Semantik: Filter auf Quellsignal und beobachtete Daten (Strang PSV). |
+
+## 10. Externes Audit vom 21.11.2026
+
+Ein externes Architektur- und Wissenschaftsaudit (Urteil: CONDITIONAL GO) hat
+die Richtung bestätigt und Präzisierungen empfohlen. Die Ownerin hat sie als
+Empfehlung behandelt und Folgendes übernommen:
+
+- Kernwahl E-1 vorläufig bis K-6; K-6 vorgezogen (Leitplanke 5, Phase 0).
+- Filterstelle vorab von der Ownerin festgelegt statt vom Worker gewählt (E-7).
+  Abweichend vom Audit-Vorschlag (Filter im Datenraum mit Transponierter) gilt
+  für P-1 Köhns Semantik; die Datenraum-Formel gilt für Fenster und Maske.
+- Integrations-Gate risikoadaptiv ergänzt, auf einen Referenzfall je Paket
+  begrenzt (Leitplanke 4).
+- Strang Abbildung ausdrücklich elastisch abgegrenzt.
+- Wirkung der historischen HOLDs je Befund benannt (Abschnitt 7).
+- Rolle „Project Coordination" in `AGENTS.md`.
+
+Nächster vorgesehener Audit-Zeitpunkt: wenn der Kandidatenbericht zu P-1 und
+das Ergebnis des SH-Pilots r6 vorliegen, vor dem nächsten Content Lock.
