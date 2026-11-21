@@ -92,6 +92,7 @@ extern int OPT_STEP_SCALING, OPT_DIAG_OUT;
 extern float OPT_WEIGHT_PRIMARY, OPT_WEIGHT_RHO, OPT_WEIGHT_Q;
 extern int OPT_PRECOND, OPT_ALPHA_ADAPT;
 extern float OPT_PRECOND_EPS, OPT_ALPHA_ADAPT_FACTOR;
+extern int OPT_LBFGS, OPT_LBFGS_M;
 
 /* definition of local variables */
 char s[120];
@@ -513,6 +514,13 @@ int  c=0, lineno=0, l;
 	    break;
 	 case 131 :
 	   fscanf(fp_in,"%s =%f",s,&OPT_ALPHA_ADAPT_FACTOR);
+	    break;
+	 /* SH-LBFGS-01: optional, read in order; absent records keep defaults */
+	 case 132 :
+	   fscanf(fp_in,"%s =%i",s,&OPT_LBFGS);
+	    break;
+	 case 133 :
+	   fscanf(fp_in,"%s =%i",s,&OPT_LBFGS_M);
 	    break;
 	 default:
 	    break;

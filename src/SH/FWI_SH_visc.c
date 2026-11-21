@@ -150,6 +150,7 @@ extern int OPT_STEP_SCALING, OPT_DIAG_OUT;
 extern float OPT_WEIGHT_PRIMARY, OPT_WEIGHT_RHO, OPT_WEIGHT_Q;
 extern int OPT_PRECOND, OPT_ALPHA_ADAPT;
 extern float OPT_PRECOND_EPS, OPT_ALPHA_ADAPT_FACTOR;
+extern int OPT_LBFGS, OPT_LBFGS_M;
 extern int POS[3], NPROCX, NPROCY, FREE_SURF, BOUNDARY;
 extern char MISFIT_LOG_FILE[STRING_SIZE];
 extern char *FILEINP1;
@@ -194,6 +195,13 @@ float **exact_energy=NULL, **exact_precond=NULL, **exact_receiver_term=NULL;
 float **exact_work_primary=NULL, **exact_work_rho=NULL, **exact_work_q=NULL;
 float exact_previous_alpha=0.0f, exact_initial_alpha=0.0f;
 double exact_receiver_x_min=0.0, exact_receiver_x_max=0.0;
+/* SH-LBFGS-01: limited-memory BFGS direction. */
+struct visco_sh_exact_lbfgs exact_lbfgs;
+struct visco_sh_exact_lbfgs_request exact_lbfgs_request;
+struct visco_sh_exact_lbfgs_report exact_lbfgs_report;
+double exact_lbfgs_sigma[3];
+static const char *exact_lbfgs_action_names[4]={"sd_empty","sd_reset","sd_fallback","lbfgs"};
+static const char *exact_lbfgs_pair_names[3]={"none","stored","skipped"};
 int exact_receiver_extent_valid=0, exact_k;
 struct visco_sh_exact_trial_state_request exact_trial_state;
 struct visco_sh_exact_trial_objective_request exact_trial_objective;
@@ -285,6 +293,17 @@ exact_sh_require_config_int("OPT_ALPHA_ADAPT",OPT_ALPHA_ADAPT,0,1,0);
 exact_sh_require_collective_success(
         !isfinite(OPT_ALPHA_ADAPT_FACTOR) || OPT_ALPHA_ADAPT_FACTOR<1.0f,
         "Exact viscoelastic SH FWI: OPT_ALPHA_ADAPT_FACTOR must be finite and >= 1.");
+/* SH-LBFGS-01 controls (records 132-133). */
+exact_sh_require_config_int("OPT_LBFGS",OPT_LBFGS,0,1,0);
+exact_sh_require_collective_success(
+        OPT_LBFGS_M<1 || OPT_LBFGS_M>VISCO_SH_EXACT_LBFGS_MAX_MEMORY,
+        "Exact viscoelastic SH FWI: OPT_LBFGS_M must be in 1..20.");
+exact_sh_require_collective_success(
+        OPT_LBFGS==1 && OPT_STEP_SCALING!=1,
+        "Exact viscoelastic SH FWI: OPT_LBFGS requires OPT_STEP_SCALING = 1.");
+exact_sh_require_collective_success(
+        OPT_LBFGS==1 && INVMAT1!=1,
+        "Exact viscoelastic SH FWI: OPT_LBFGS requires INVMAT1 = 1.");
 
 /* Exact C8c activation currently supports steepest descent only.  Abort
    before loading or changing any model state for unsupported optimizers. */
@@ -544,6 +563,14 @@ if(OPT_PRECOND!=0){
     }
 }
 
+memset(&exact_lbfgs,0,sizeof(exact_lbfgs));
+if(OPT_LBFGS==1){
+    /* SH-LBFGS-01: pair storage for OPT_LBFGS_M pairs. */
+    exact_sh_require_collective_success(
+            visco_sh_exact_lbfgs_init(&exact_lbfgs,NX,NY,OPT_LBFGS_M),
+            "Exact SH L-BFGS initialisation failed.");
+}
+
 /* memory for source position definition */
 acq.srcpos1=fmatrix(1,8,1,1);
 
@@ -645,6 +672,18 @@ FC=FC_END;
 iter=1;
 misfit_history = (struct fwi_misfit_history){0};
 exact_previous_alpha=0.0f;   /* SH-PRECOND-01: per-stage alpha history */
+if(OPT_LBFGS==1){
+    /* SH-LBFGS-01: freeze class scales and clear the memory per stage. */
+    exact_sh_require_collective_success(
+            visco_sh_exact_lbfgs_begin_stage(&exact_lbfgs,exact_base_primary,
+                    exact_base_rho,exact_base_q,exact_update_mask),
+            "Exact SH L-BFGS stage start failed.");
+    visco_sh_exact_lbfgs_get_sigma(&exact_lbfgs,exact_lbfgs_sigma);
+    if(MYID==0){
+        printf("Exact SH L-BFGS: stage %d sigma %e %e %e\n",nstage,
+               exact_lbfgs_sigma[0],exact_lbfgs_sigma[1],exact_lbfgs_sigma[2]);
+    }
+}
 /* --------------------------------------
  * Begin of Full Waveform iteration loop
  * -------------------------------------- */
@@ -978,6 +1017,39 @@ exact_status=visco_sh_exact_build_steepest_subtractive_step(
 }
 exact_sh_require_collective_success(exact_status,
         "Exact SH optimizer-boundary construction failed.");
+if(OPT_LBFGS==1){
+    /* SH-LBFGS-01: replace the fallback direction in exact_step_* when the
+       memory holds usable pairs (contract section 3.3). */
+    memset(&exact_lbfgs_request,0,sizeof(exact_lbfgs_request));
+    exact_lbfgs_request.nx=NX;
+    exact_lbfgs_request.ny=NY;
+    exact_lbfgs_request.base_primary=exact_base_primary;
+    exact_lbfgs_request.base_rho=exact_base_rho;
+    exact_lbfgs_request.base_q=exact_base_q;
+    exact_lbfgs_request.grad_primary=exact_grad_primary;
+    exact_lbfgs_request.grad_rho=exact_grad_rho;
+    exact_lbfgs_request.grad_q=exact_grad_q;
+    exact_lbfgs_request.update_mask=exact_update_mask;
+    exact_lbfgs_request.precond=(OPT_PRECOND>0) ? exact_precond : NULL;
+    exact_lbfgs_request.weight_primary=exact_w_primary;
+    exact_lbfgs_request.weight_rho=exact_w_rho;
+    exact_lbfgs_request.weight_q=exact_w_q;
+    exact_lbfgs_request.step_primary=exact_step_primary;
+    exact_lbfgs_request.step_rho=exact_step_rho;
+    exact_lbfgs_request.step_q=exact_step_q;
+    exact_sh_require_collective_success(
+            visco_sh_exact_lbfgs_step(&exact_lbfgs,&exact_lbfgs_request,
+                    &exact_lbfgs_report),
+            "Exact SH L-BFGS direction failed.");
+    if(MYID==0){
+        printf("Exact SH L-BFGS: stage %d iteration %d action %s pair %s pairs %d curvature %e gamma %e descent %e kappa %e\n",
+               nstage,iter,exact_lbfgs_action_names[exact_lbfgs_report.action],
+               exact_lbfgs_pair_names[exact_lbfgs_report.pair],
+               exact_lbfgs_report.pairs_used,exact_lbfgs_report.curvature,
+               exact_lbfgs_report.gamma,exact_lbfgs_report.descent,
+               exact_lbfgs_report.kappa);
+    }
+}
 if(OPT_DIAG_OUT==1){
     exact_sh_write_diag_field(exact_grad_primary,INVMAT1==1 ? "grad_vs" : "grad_mu",nstage,iter);
     exact_sh_write_diag_field(exact_grad_rho,"grad_rho",nstage,iter);
@@ -1194,6 +1266,7 @@ if(exact_receiver_term!=NULL) free_matrix(exact_receiver_term,1,NY,1,NX);
 if(exact_work_primary!=NULL) free_matrix(exact_work_primary,1,NY,1,NX);
 if(exact_work_rho!=NULL) free_matrix(exact_work_rho,1,NY,1,NX);
 if(exact_work_q!=NULL) free_matrix(exact_work_q,1,NY,1,NX);
+visco_sh_exact_lbfgs_free(&exact_lbfgs);
 free_matrix(exact_trial_primary,1,NY,1,NX);
 free_matrix(exact_trial_rho,1,NY,1,NX);
 free_matrix(exact_trial_q,1,NY,1,NX);

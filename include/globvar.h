@@ -18,6 +18,8 @@ float OPT_WEIGHT_PRIMARY = 1.0f, OPT_WEIGHT_RHO = 1.0f, OPT_WEIGHT_Q = 1.0f;
 /* SH-PRECOND-01 optional records 128-131 (defaults = 8ca5738 behaviour) */
 int OPT_PRECOND = 0, OPT_ALPHA_ADAPT = 0;
 float OPT_PRECOND_EPS = 0.005f, OPT_ALPHA_ADAPT_FACTOR = 2.0f;
+/* SH-LBFGS-01 optional records 132-133 (defaults = 86fd2bf behaviour) */
+int OPT_LBFGS = 0, OPT_LBFGS_M = 5;
 float ANGLE;
 float REFREC[4] = {0.0, 0.0, 0.0, 0.0}, FPML;
 int SEISMO, NDT, NSRC = 1, SEIS_FORMAT, FREE_SURF, READMOD, READREC, SRCREC, FW = 0;
