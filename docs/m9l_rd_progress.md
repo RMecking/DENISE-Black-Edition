@@ -22,6 +22,21 @@ replicated-material boundary. The old Born API remains periodic FD4. The
 published header/source and foundation tests were inspected, not executed.
 This is not published FD8 state/material J/JT, active FWI or RTM support.
 
+**T1a private landing (M9L-RTM-REFERENCE-02, 2026-11-21).** The private,
+opt-in FD8 state/CPML/material Born J/J^T sources
+(`src/PSV/elastic_psv_fd8_{state,cpml_state,material}_private.h`, the
+`DENISE_M9L2A_PRIVATE` include hook at the end of `elastic_psv_born.c`, and the
+`tests/utilities/m9l{2a,2b,3,5p}_*_harness.c` private translation units) are
+landed byte-identically (LF-normalized) from the Case-3-qualified candidate
+`lib_physical.so` `6131e0d7…` (source freeze `26747da9…`). Without
+`DENISE_M9L2A_PRIVATE` the ordinary translation unit is unchanged; no installed
+header, ABI or FD4 behaviour changes. The Case-3 evidence (Stage N 54/54, F3,
+P) transfers only via the source identity and the separately authorized
+bitwise native-output identity check (T1a-S2); it covers the frozen discrete
+Case-3 scope only. This remains **not** public FD8 J/J^T and **no** FWI/RTM
+product support. `tests/physics/test_m9l_fd8_born_private_smoke.py` is an
+integration smoke, not a scientific gate.
+
 The subsequent private Taylor8 line develops from that Forward arithmetic
 graph through augmented-state adjoints, material derivatives, restricted
 optimization and migration. Its source/candidate identities are frozen by

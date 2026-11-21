@@ -1670,3 +1670,9 @@ int denise_elastic_psv_forward_fd8_nonlinear_v1(
     if(!result)memcpy(data,temporary,c->data_count*sizeof(float));
     free(temporary);return result;
 }
+
+/* Private, opt-in integration surface. No installed header or existing ABI
+ * is changed; the ordinary FD4/FD8 translation unit is otherwise identical. */
+#ifdef DENISE_M9L2A_PRIVATE
+#include "elastic_psv_fd8_state_private.h"
+#endif
