@@ -9,7 +9,7 @@ Date: 2026-10-04.
 BASE / HEAD: `d66437ebe37bff82d95e24c1bff6d79f4e29660e`.
 Branch: `codex/m9-fluid-2-restricted-jjt`.
 Live `origin/modernization` matched BASE before work and at final verification.
-Worktree: `C:\Users\rebme\.codex\worktrees\m9-fluid-2-restricted-jjt\DENISE-Black-Edition`.
+Worktree: `<USERPROFILE>\.codex\worktrees\m9-fluid-2-restricted-jjt\DENISE-Black-Edition`.
 
 Production changes are confined to:
 - `src/PSV/elastic_psv_born.c`
@@ -202,11 +202,11 @@ No new unexpected production or scientific failures were observed. This task
 does not repair the unrelated repository-wide hosted-CI baseline.
 
 Evidence directory:
-`C:\Users\rebme\.codex\visualizations\2026\09\09\01a08808-9623-7c91-97c3-68cf57cc7dd7\m9-fluid-2`.
+`<USERPROFILE>\.codex\visualizations\2026\09\09\01a08808-9623-7c91-97c3-68cf57cc7dd7\m9-fluid-2`.
 It contains command logs, per-product metrics, exact BASE artifacts, reproduction
 instructions and the final manifest/work report.
 
-Local runtime: user vialon; Ubuntu WSL2 kernel 6.18.40.1; GCC13; Open MPI4.1.6;
+Local runtime: local user account; Ubuntu WSL2 kernel 6.18.40.1; GCC13; Open MPI4.1.6;
 NumPy2.5.3; CUDA12.8.93; RTX3070 Laptop 8192MiB, sm86, driver591.44.
 Normal CPU `make -C libcseife -j4; make -C src -j4 denise` succeeds.
 CUDA libraries are opt-in and built by the existing published test fixture.
