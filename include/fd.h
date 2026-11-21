@@ -1341,6 +1341,54 @@ int visco_sh_exact_build_preconditioned_step(
 float visco_sh_exact_initial_alpha(float eps_scale, int adaptive,
         float factor, int iteration, float previous_alpha);
 
+/* SH-LBFGS-01 (docs/sh_lbfgs_01_contract.md): limited-memory BFGS direction
+ * in class-scaled variables with H0 = gamma * diag(w * P). */
+#define VISCO_SH_EXACT_LBFGS_MAX_MEMORY 20
+
+/* Opaque state: members are private to src/SH/visco_sh_exact_lbfgs.c.
+ * Zero-initialise before visco_sh_exact_lbfgs_init. */
+struct visco_sh_exact_lbfgs {
+   int initialised, stage_ready;
+   int nx, ny, memory;
+   int count, first, have_previous;
+   int previous_active[3];
+   double sigma[3];
+   float *pairs;      /* memory x (s, y) x 3 classes x nx*ny */
+   float *previous;   /* (base, gradient) x 3 classes x nx*ny */
+   double *work;      /* (q, r) x 3 classes x nx*ny */
+   double *rho, *sy, *alpha;
+};
+
+struct visco_sh_exact_lbfgs_request {
+   int nx, ny;                                    /* must equal init */
+   float **base_primary, **base_rho, **base_q;    /* current base m_k */
+   float **grad_primary, **grad_rho, **grad_q;    /* raw gradient g_k at m_k */
+   float **update_mask;                           /* exactly 0.0f or 1.0f */
+   float **precond;                               /* P_k, or NULL: P == 1 */
+   float weight_primary, weight_rho, weight_q;    /* effective weights */
+   float **step_primary, **step_rho, **step_q;    /* in: fallback; out */
+};
+
+struct visco_sh_exact_lbfgs_report {
+   int action;          /* 0 sd_empty, 1 sd_reset, 2 sd_fallback, 3 lbfgs */
+   int pair;            /* 0 none, 1 stored, 2 skipped */
+   int pairs_used;
+   double curvature, gamma, descent, kappa;
+   double sigma[3];
+};
+
+int visco_sh_exact_lbfgs_init(struct visco_sh_exact_lbfgs *lbfgs,
+                              int nx, int ny, int memory);
+void visco_sh_exact_lbfgs_free(struct visco_sh_exact_lbfgs *lbfgs);
+int visco_sh_exact_lbfgs_begin_stage(struct visco_sh_exact_lbfgs *lbfgs,
+        float **base_primary, float **base_rho, float **base_q,
+        float **update_mask);
+void visco_sh_exact_lbfgs_get_sigma(const struct visco_sh_exact_lbfgs *lbfgs,
+                                    double sigma[3]);
+int visco_sh_exact_lbfgs_step(struct visco_sh_exact_lbfgs *lbfgs,
+        const struct visco_sh_exact_lbfgs_request *request,
+        struct visco_sh_exact_lbfgs_report *report);
+
 int visco_sh_exact_build_trial_parameter_state(
         const struct visco_sh_exact_trial_state_request *request);
 
