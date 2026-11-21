@@ -1,7 +1,7 @@
 # DENISE Black Edition — Integrations-Roadmap
 
 **Stand:** 2026-11-21 · **Basis:** `modernization@86fd2bf` · **Status:** aus dem
-Projekt-Audit vom 21.11.2026; die Owner-Entscheidungen E-1 bis E-7 sind am
+Projekt-Audit vom 21.11.2026; die Owner-Entscheidungen E-1 bis E-8 sind am
 21.11.2026 getroffen (Abschnitt 9). Veröffentlicht mit PR #114; nach einem
 externen Architektur-Audit vom selben Tag präzisiert (Abschnitt 10).
 Dieses Dokument gibt Orientierung. Es erteilt keine Ausführungs-, Commit- oder
@@ -193,13 +193,30 @@ späterer Integrationsschritt (nach I-3).
 |---|---|---|
 | A-1 | RTM-Modus mit Beleuchtungskompensation und Impedanz-Parametrisierung des Bildes (unterdrückt langwellige Rückstreuartefakte) | B4 gegen A2.5-Rohbild; dazu ein eigener, vorab festgelegter Punkt- oder Reflektorfall für Bildort und relative Amplitude |
 | A-2 | LSRTM (CGLS, beleuchtungs-vorkonditioniert, 10–20 Iterationen) | B4: Auflösung, Amplituden, Quell-/Zielenergie |
-| A-3 | Elastische RFWI v1 auf M9 mit fester Dichte, datenraum-alternierend (Owner-Entscheidung vom 10.11.): Bild aus A-2, Demigration mit J, Tomographie-Kernel aus zwei Feldpaaren, Hintergrund-Update mit L-BFGS | B4-Variante ohne tiefe Frequenzen, Start mit falschem Hintergrund; Vergleich mit konventioneller FWI |
+| A-3 | Elastische RFWI v1 auf M9 mit fester Dichte als **variable Projektion** (E-8): das Bild ist die LSRTM-Lösung aus A-2 zum jeweiligen Hintergrund, die Zielfunktion hängt nur vom Hintergrund ab, der reduzierte Gradient enthält den impliziten Term (Abhängigkeit des Bildes vom Hintergrund); Hintergrund-Update mit L-BFGS. Die alternierende Form (ein Hintergrundschritt bei festem Bild) läuft als billigere Vergleichsvariante mit. | Reduzierter Gradient gegen zentrale Differenzen; **Nullkontrolle** als festes Kriterium (derselbe Lauf mit wahrem Hintergrund gleich Startmodell: das Ergebnis muss klar über diesem Drift liegen); B4-Variante ohne tiefe Frequenzen, Start mit falschem Hintergrund; Vergleich mit konventioneller FWI |
 | A-4 | SH-Born-Tangente im SH-Kern und SH-RFWI mit demselben Treiber | Reflektor+Linse-Test aus dem Prototyp, dann LVZ und Hohlraum |
 | A-5 | SH-RTM/RFWI auf dem Feldprofil | B5 |
 
-Vor A-3 steht ein kurzer Sandbox-Schritt (Tage, nicht Wochen): der
-Python-Prototyp rechnet den Reflektor+Linse-Fall einmal als Inversion durch.
-Gradientenprüfung mit zentralen Differenzen genügt.
+**Sandbox vor A-3 (RFWI-SANDBOX-01, 21.11.2026, EXPLORATORY).** Der
+Python-SH-Prototyp hat den Reflektor+Linse-Fall als Inversion gerechnet
+(73×81 Knoten, eine Geometrie, rauschfrei, gleicher Löser für Daten und
+Inversion). Befund: Auf reinen Reflexionsdaten liegt nur die variable
+Projektion klar über ihrer Nullkontrolle (Laufzeitfehler des Hintergrunds
+0,273 → 0,037 ms, Nullkontrolle 0,015 ms). Die alternierende Form erreicht
+0,055 ms bei einer Nullkontrolle von 0,054 ms. Die konventionelle FWI senkt den
+Misfit um drei Größenordnungen, ohne den Hintergrund zu verbessern. Der
+reduzierte Gradient stimmt mit zentralen Differenzen auf 10⁻⁹ überein, ohne
+impliziten Term liegt er 40 % daneben. Folgerungen für A-3:
+
+1. Variable Projektion mit implizitem Term ist die Zielformulierung (E-8).
+2. Die Nullkontrolle ist festes Prüfkriterium.
+3. Reflexionen legen die Laufzeit fest, nicht die Tiefenverteilung der
+   Geschwindigkeit. Regularisierung oder Skalentrennung zwischen Bild und
+   Hintergrund ist vor dem Bau von A-3 festzulegen.
+
+Vorbehalt: In der Sandbox liefen die beiden Formulierungen mit verschiedenen
+Optimierern. Ein Wiederholungslauf mit gleichem Optimierer ist beauftragt
+(RFWI-SANDBOX-01b); sein Ergebnis wird hier nachgetragen.
 
 ### Integrationsstände
 
@@ -304,6 +321,7 @@ Entschieden von der Ownerin am 2026-11-21.
 | E-5 | Leitplanken 2–4 als Arbeitsregel in `AGENTS.md` übernehmen? | Ja. |
 | E-6 | Reihenfolge RFWI: PSV auf M9 zuerst, SH danach (A-3 vor A-4)? | Ja. |
 | E-7 | Filterstelle für Frequenzstufen in P-1? | Köhns Semantik: Filter auf Quellsignal und beobachtete Daten (Strang PSV). |
+| E-8 | Formulierung der RFWI in A-3? | Variable Projektion mit implizitem Term statt der am 10.11. gewählten alternierenden Form, auf Grundlage von RFWI-SANDBOX-01; Wiederholung mit gleichem Optimierer beauftragt. |
 
 ## 10. Externes Audit vom 21.11.2026
 
