@@ -1,7 +1,7 @@
 # DENISE Black Edition — Integrations-Roadmap
 
 **Stand:** 2026-11-21 · **Basis:** `modernization@86fd2bf` · **Status:** aus dem
-Projekt-Audit vom 21.11.2026; die Owner-Entscheidungen E-1 bis E-8 sind am
+Projekt-Audit vom 21.11.2026; die Owner-Entscheidungen E-1 bis E-12 sind am
 21.11.2026 getroffen (Abschnitt 9). Veröffentlicht mit PR #114; nach einem
 externen Architektur-Audit vom selben Tag präzisiert (Abschnitt 10).
 Dieses Dokument gibt Orientierung. Es erteilt keine Ausführungs-, Commit- oder
@@ -103,11 +103,12 @@ Strukturelle Ursachen:
    und CUDA). Linearisierte Aufgaben (RTM, LSRTM, RFWI-Innenproblem): der
    M9-Born-Operator. FD8, A2-Kontakt und Taylor/Holberg werden Optionen dieser
    Kerne, keine eigenen Programme. Weitere Lösungswege können später
-   hinzukommen; zunächst genügt ein Weg je FWI/RTM (E-1). Die Wahl des
-   Velocity-Stress-Kerns als Träger gilt für P-1 bis P-3 und ist **vorläufig
-   bis K-6**: Erst der Codevergleich mit dem privaten Holberg8/A2-Pfad
-   entscheidet, ob dessen Bausteine als Option in diesen Kern passen, als
-   eigenes Modul bleiben oder einen begrenzten Umbau verlangen.
+   hinzukommen; zunächst genügt ein Weg je FWI/RTM (E-1). Der Codevergleich
+   K-6 (21.11.2026) hat die Wahl des Velocity-Stress-Kerns als Träger der
+   nichtlinearen FWI bestätigt: Der private Holberg8/A2-Pfad ist eine
+   elastische Erweiterung des M9-Born-Operators, kein zweiter FWI-Kern. FD8
+   und der Wasserkontakt kommen über einen begrenzten Umbau in den
+   Programmkern (Strang PSV, E-9).
 6. **Legacy bleibt Vergleichsbasis**, wird nicht gelöscht und nicht verändert.
 
 ## 4. Benchmark-Leiter
@@ -137,7 +138,7 @@ Zeitangaben sind Schätzungen aus dem bisherigen Tempo, keine Zusagen.
 | K-3 | RFWI-C-FD4 mit Statusnotiz schließen: Referenz INCOMPLETE, geparkt. Die zwei Quellenbefunde (W², 0/0) in den Prototyp übernehmen. |
 | K-4 | Forschungsprioritäten ins Repo übernehmen (`docs/research_priorities.md`). Das Forschungsjournal bleibt auf Owner-Entscheidung privat. Ledger auf den Stand der gemergten PRs bringen. |
 | K-5 | Fertige Performance-Prototypen integrieren: Allokator-Versatz, visko-PSV-Zeilenschleife (beide bytegleich), SH-Checkpoint/Replay. |
-| K-6 | Lesender Codevergleich PHYSICAL01/Holberg8 gegen den Programmkern, **jetzt** und nicht erst vor P-4, damit P-1 bis P-3 nicht auf einer ungeprüften Kernwahl aufbauen. Verglichen werden Felder und Staggering, Update-, Quell- und Empfängerzeitpunkte, FD-Koeffizienten, elastische und viskoelastische Zustandsgrößen samt Q-Abbildung, Material- und Dichtemittelung, A2-Kontakt, CPML-Profile und -Speicher, Halos, Forward- und Adjoint-Tape, FP32-/GPU-Operationen, Parameter- und Modellformat. Ergebnis je Zeile: identisch, kompatibel nach Adapter, Physik-Differenz oder unbekannt; dazu eine Entscheidungsvorlage. Kein Rückport von Adjungierten aus einer anderen Diskretisierung ohne eigenen Nachweis. |
+| K-6 | **Erledigt 21.11.:** lesender Codevergleich PHYSICAL01/Holberg8 gegen den Programmkern. Im Inneren passen beide zusammen (Staggering, Update-Reihenfolge, Holberg8-Koeffizienten, CPML-Rekursion, Checkpoint/Replay, Zielfunktion). Physikalisch verschieden sind Viskoelastizität und Q (nur Programm), der Wasserkontakt mit doppeltem Grenzknoten (nur privat), die Ränder und die CPML-Profilwerte. Der private Pfad ist elastisch in (λ, μ) bei fester Dichte, läuft auf einem Rang mit fester Geometrie und stammt aus `src/PSV/elastic_psv_born.c`. Die A2-Tabelle ist an Holberg8 gebunden. Alles Lesebefund, nichts gebaut oder gerechnet. Folgen: Strang PSV und E-9 bis E-12. |
 
 ### Strang SH — vom Pilot zu Felddaten
 
@@ -155,9 +156,10 @@ Zeitangaben sind Schätzungen aus dem bisherigen Tempo, keine Zusagen.
 |---|---|---|
 | P-1 | Mehrschuss und Frequenzstufen im exakten visko-PSV-Pfad, CPU-MPI und CUDA | B3 elastisch und mit Q gegen Legacy |
 | P-2 | L-BFGS mit Klassenskalierung und Beleuchtungs-Vorkonditionierer (Bausteine aus dem SH-Strang wiederverwenden) | B3: Modellfehler nach Tiefe |
-| P-3 | Freie Oberfläche und STF im exakten Pfad | Landmodell, B3 mit freier Oberfläche |
-| P-4 | Fluid/Festkörper-Kontakt (A2-Abschluss) aus PHYSICAL01 in den Programmkern | B3: Tiefenwirkung Vs wie im privaten A2-Vergleich |
-| P-5 | FD-Ordnung 8 als Option des exakten Pfads, wenn B3 bei 5 Hz und darüber Dispersion oder Kosten als Engpass zeigt | B3 höhere Stufen, Kosten je Wellenlänge |
+| P-3 | Freie Oberfläche (eben) und STF im exakten Pfad | Landmodell, B3 mit freier Oberfläche |
+| P-4 | FD-Ordnung 8 (Holberg) als Option des exakten Pfads, **vor** dem Wasserkontakt, weil die A2-Tabelle an Holberg8 gebunden ist (E-9). Bauweise: die vertikale und horizontale Ableitung im exakten Pfad werden ein austauschbarer Baustein (Innenstencil plus optionale Randtabelle), der Adjoint-Stencil eine Schleife über die Halbordnung; CPU und CUDA. | Punktprodukt und Gradient für FD8; **FD4 bitgleich zum Stand davor**; ein Dispersions-Referenzfall; B3 bei 5 Hz, Kosten je Wellenlänge |
+| P-5 | Fluid/Festkörper-Kontakt (A2-Abschluss) als Option des Programmkerns, zunächst **ebener Meeresboden** (E-10). Neu herzuleiten und zu prüfen: Transponierte der Randoperatoren im Programmlayout, Zusammenspiel mit den Speichervariablen, ρ- und Q-Gradient in den Grenzzeilen, fluidfeste Gradientenabbildung, MPI über die Kontaktzeilen, Transponierte des OBC-Empfängers. | Punktprodukt und Gradient um die Grenze für alle fünf Klassen; „Kontakt aus" bitgleich zum Stand davor; Referenzfall Wasserschicht über Halbraum; B3: Tiefenwirkung Vs wie im privaten A2-Vergleich |
+| P-6 | **Topographie und variabler Meeresboden** (Owner-Anforderung vom 21.11., wichtig): Landdaten mit Geländerelief und nicht ebene Meeresböden im exakten Pfad. Vorab eine Sandbox zur Methodenwahl, siehe unten. | Referenzfall mit geneigter und gestufter Oberfläche gegen eine unabhängige Lösung; Gradient gegen zentrale Differenzen; Landmodell mit Relief |
 
 P-1 ist das wichtigste Einzelpaket der Roadmap. Es macht aus einem
 verifizierten Ein-Schuss-Demonstrator eine benutzbare FWI.
@@ -172,6 +174,48 @@ S-2), lautet die Zielfunktion ½ Σ_s ‖M T (F_s − B·d_s)‖² mit der Reihe
 Filter, Fenster, Maske, und die Adjoint-Quelle enthält (M T)ᵀ(M T) angewandt
 auf das Residuum. Filterung des Quellsignals und Filterung im Datenraum sind
 verschiedene diskrete Experimente und werden nicht stillschweigend getauscht.
+
+**Reihenfolge und Bauweise nach K-6 (E-9, E-10).** FD8 kommt vor dem
+Wasserkontakt. Beides wird über einen begrenzten Umbau eingeführt: Die
+räumliche Ableitung im exakten Pfad wird ein austauschbarer Baustein, so dass
+FD-Ordnung und Randabschluss Daten statt kopierter Code-Zweige sind und die
+Transponierte einmal je Baustein hergeleitet wird. Das greift in den einzigen
+verifizierten exakten PSV-Pfad ein; ohne Nachweis, dass FD4 danach bitgleich
+rechnet, wird nichts gemergt. Der private Pfad bleibt Vergleichsrechnung für
+den elastischen Grenzfall, nicht Träger und nicht Orakel; sein Jᵀ belegt nichts
+für den Programmkern.
+
+**Entwurfsauflage für P-4 und P-5.** Der Baustein darf einen ebenen
+Abschluss in fester Gitterzeile nicht fest verdrahten. Er muss so angelegt
+sein, dass die Lage der Grenzfläche später je Spalte variieren kann (P-6).
+
+**Topographie (P-6).** Vor dem Bau klärt eine Sandbox von höchstens einer
+Woche die Methode, zuerst für SH, weil der SH-Feldbenchmark B5 sie am ehesten
+braucht. Kandidaten: (i) Vakuum-Formulierung über die Materialmittelung, deren
+Adjoint aus den vorhandenen Materialabbildungen folgt; (ii) Bildmethode auf
+gestufter Oberfläche; (iii) gekrümmtes oder vertikal gestrecktes Gitter;
+(iv) eingebettete Randbedingung. Kriterien: Genauigkeit der Oberflächenwellen
+je Gitterpunkte pro Wellenlänge, exakter Adjoint mit vertretbarem Aufwand,
+MPI- und GPU-Tauglichkeit. Ob das SH-Feldprofil Relief hat, legt fest, ob
+die SH-Topographie vor S-5 fertig sein muss.
+
+**Offene Punkte aus K-6.**
+
+- *Fluidzellen im exakten Pfad:* Die Gradientenabbildung teilt durch μ² der
+  Zelle; für Zellen mit Vs = 0 wäre das 0/0 (Lesebefund, nicht ausgeführt).
+  P-1 prüft das Verhalten früh und repariert es nicht selbst; bis P-5 rechnet
+  B3 ohne Wasserschicht oder mit fester, aus der Inversion ausgenommener
+  Wasserschicht.
+- *Dichteversatz an der Grenzfläche (Zeilen 22/23 der privaten Modelle):*
+  Ob Konvention oder Fehler, ist ungeklärt. Wird vor P-5 lesend an den
+  Modelldateien geprüft, bevor B3-Datenbanken neu erzeugt werden (E-11).
+- *`abs()`-Wächter im CPML-Profil (`PML_pro.c`):* bleibt im Legacy-Pfad
+  unverändert, damit die Bitgleichheit zu Köhn hält, und wird dokumentiert.
+  Ein korrigiertes Profil nur für die exakten Pfade kommt frühestens mit P-4,
+  nicht während P-1 läuft (E-12).
+- *Privater Pfad im Strang Abbildung:* Als Erweiterung des M9-Born-Operators
+  wäre er der günstige Weg zu elastischer RTM/LSRTM mit Wasserschicht und
+  FD8. Zu bewerten, wenn A-1 ansteht.
 
 ### Strang Abbildung — RTM → LSRTM → RFWI auf einem Operator
 
@@ -243,8 +287,8 @@ Folgerungen für A-3:
 |---|---|---|
 | I-1 | Phase 0, S-1, S-2, P-1, P-2. Neues Cluster-Testpaket mit Parameterdateien für B1–B3. | 3–4 Wochen |
 | I-2 | S-3, S-4, P-3, A-1, A-2. | weitere 4–5 Wochen |
-| I-3 | P-4, A-3, A-4, S-5. | weitere 5–7 Wochen |
-| I-4 | P-5, A-5, danach Anisotropie (VTI vor TTI). | offen |
+| I-3 | P-4 (FD8), A-3, A-4, S-5. | weitere 5–7 Wochen |
+| I-4 | P-5 (Wasserkontakt, ebener Meeresboden), P-6 (Topographie, variabler Meeresboden), A-5, danach Anisotropie (VTI vor TTI). | offen |
 
 ## 6. Forschungsaspekte mit Aussicht
 
@@ -255,7 +299,7 @@ Jeweils an ein Paket gebunden, damit sie im Programm landen.
   wären mit einem exakten visko-Adjoint stabil formulierbar, ohne die
   instabile Amplitudenverstärkung üblicher Q-RTM; sie setzen aber einen
   viskoelastischen Born-Pfad voraus, den es noch nicht gibt (nach I-3).
-- **A2-Fluid/Festkörper-Abschluss** (P-4). Der private Befund (tiefer Vs-Fehler
+- **A2-Fluid/Festkörper-Abschluss** (P-5). Der private Befund (tiefer Vs-Fehler
   −10,6 % statt −1,1 %) ist ein eigenständiges, publizierbares Ergebnis.
 - **Mehrparameter-Kopplung** (P-2). Die Diagnose vom 2.11. zeigt 49 %
   Vp-Blockanteil in der Vs-L-BFGS-Richtung. Kandidaten: Block-Vorkonditionierung
@@ -279,12 +323,12 @@ Jeweils an ein Paket gebunden, damit sie im Programm landen.
 Nicht verworfen, aber erst nach I-3 wieder zu bewerten:
 
 - Taylor8-Zertifizierungslinie nach T1a (REAL-06B, ZMR, Case-3-Folgen, R2/R3).
-  Wiederaufnahme nur über P-5: als FD8-Option der Programmkerne mit wählbaren
+  Wiederaufnahme nur über P-4: als FD8-Option der Programmkerne mit wählbaren
   Koeffizienten (Taylor oder Holberg), wenn B3/B4 Dispersion oder Kosten als
   Engpass zeigen. Der T1a-Code für J/Jᵀ wird dann wiederverwendet; die
   Einschließungskette wird nicht fortgesetzt.
 - Intervall-Einschließungen und Referenzbanken für RFWI-C-FD4.
-- K1-Nullmoden-Analyse, sofern P-4 den A2-Abschluss übernimmt.
+- K1-Nullmoden-Analyse, sofern P-5 den A2-Abschluss übernimmt.
 - MPI-Overlap, Legacy-FD8-Ablösung (M9L-7), 3D, anisotrope FWI.
 - Unsicherheitsquantifizierung und ML-Priors (Abschnitt 8).
 
@@ -335,12 +379,16 @@ Entschieden von der Ownerin am 2026-11-21.
 |---|---|---|
 | E-1 | Eine Operatorfamilie je Aufgabe (Leitplanke 5)? | Ja. Zunächst ein Weg je FWI/RTM; weitere Lösungen können später hinzukommen. Details nach K-6. |
 | E-2 | Codex-Strang RFWI-C-FD4 schließen und Codex auf P-1 oder A-1/A-2 ansetzen? | Ja. |
-| E-3 | Taylor8-Linie nach T1a ruhen lassen? | Ja. Wiederaufnahme nur über P-5 (Abschnitt 7). |
+| E-3 | Taylor8-Linie nach T1a ruhen lassen? | Ja. Wiederaufnahme nur über P-4 (Abschnitt 7). |
 | E-4 | Welche Felddaten für B5? | SH-Profil der Ownerin. Für PSV bleibt Marmousi-II der Referenzfall. |
 | E-5 | Leitplanken 2–4 als Arbeitsregel in `AGENTS.md` übernehmen? | Ja. |
 | E-6 | Reihenfolge RFWI: PSV auf M9 zuerst, SH danach (A-3 vor A-4)? | Ja. |
 | E-7 | Filterstelle für Frequenzstufen in P-1? | Köhns Semantik: Filter auf Quellsignal und beobachtete Daten (Strang PSV). |
 | E-8 | Formulierung der RFWI in A-3? | Variable Projektion mit implizitem Term statt der am 10.11. gewählten alternierenden Form, auf Grundlage von RFWI-SANDBOX-01 und 01b (Begründung: festes Zielfunktional, kleinere Nulldrift, L-BFGS-Verträglichkeit). |
+| E-9 | Reihenfolge und Bauweise nach K-6? | FD8 (P-4) vor Wasserkontakt (P-5); begrenzter Umbau mit austauschbarem Ableitungsbaustein; der private Pfad wird nicht Träger. |
+| E-10 | Genügt für den Wasserkontakt ein ebener Meeresboden? | Für das Benchmarking vorerst ja. Variable Meeresböden und vor allem Landdaten mit Topographie sind als eigenes Paket P-6 verlangt. |
+| E-11 | Dichteversatz an der Grenzfläche? | Noch nicht entschieden; erst lesend klären. |
+| E-12 | `abs()`-Wächter im CPML-Profil? | Legacy unverändert und dokumentiert; korrigiertes Profil nur für die exakten Pfade, frühestens mit P-4. |
 
 ## 10. Externes Audit vom 21.11.2026
 
@@ -348,7 +396,8 @@ Ein externes Architektur- und Wissenschaftsaudit (Urteil: CONDITIONAL GO) hat
 die Richtung bestätigt und Präzisierungen empfohlen. Die Ownerin hat sie als
 Empfehlung behandelt und Folgendes übernommen:
 
-- Kernwahl E-1 vorläufig bis K-6; K-6 vorgezogen (Leitplanke 5, Phase 0).
+- Kernwahl E-1 vorläufig bis K-6; K-6 vorgezogen und am selben Tag erledigt:
+  Kernwahl bestätigt (Leitplanke 5, Phase 0).
 - Filterstelle vorab von der Ownerin festgelegt statt vom Worker gewählt (E-7).
   Abweichend vom Audit-Vorschlag (Filter im Datenraum mit Transponierter) gilt
   für P-1 Köhns Semantik; die Datenraum-Formel gilt für Fenster und Maske.
