@@ -1,7 +1,7 @@
 # DENISE Black Edition — Integrations-Roadmap
 
 **Stand:** 2026-11-21 · **Basis:** `modernization@86fd2bf` · **Status:** aus dem
-Projekt-Audit vom 21.11.2026; die Owner-Entscheidungen E-1 bis E-12 sind am
+Projekt-Audit vom 21.11.2026; die Owner-Entscheidungen E-1 bis E-14 sind am
 21.11.2026 getroffen (Abschnitt 9). Veröffentlicht mit PR #114; nach einem
 externen Architektur-Audit vom selben Tag präzisiert (Abschnitt 10).
 Dieses Dokument gibt Orientierung. Es erteilt keine Ausführungs-, Commit- oder
@@ -119,9 +119,10 @@ gegen Köhn `b07d81d` und gegen den vorherigen Stand. Kennzahlen: Datenmisfit
 
 | Stufe | Fall | Vorhanden |
 |---|---|---|
-| B1 | SH, LVZ-Pilotmodell (Freeze r5) | Eingaben, Legacy- und Modern-Läufe |
+| B1 | SH, LVZ-Pilotmodell (Freeze r6) | Eingaben, Legacy- und Modern-Läufe. **Erste Zahl (r6, 21.11., Stand `67dd7ae`):** Vs-Modellfehler relativ zum Start nach 60 Iterationen 0,53–0,57 mit L-BFGS gegen 0,82–0,83 mit steilstem Abstieg; Fehler in der Lockerungszone 0,23–0,25 gegen 0,57. Eine Frequenzstufe. |
 | B2 | SH, synth-A-Hohlraum (Paper III) | 5 von 79 Wahrheitsschüssen |
-| B3 | PSV, Marmousi-II OBC, 5+2 Schüsse, 2,5/3,5/5 Hz, elastisch und mit Q | Banken, Legacy- und private Modern-Ergebnisse |
+| B3 | PSV, Marmousi-II OBC, 5+2 Schüsse, 2,5/3,5/5 Hz, elastisch und mit Q. Der Fall hat Wasserschicht, freie Oberfläche und FD8 und ist mit dem exakten Pfad erst nach P-3, P-4 und P-5 rechenbar. | Banken, Legacy- und private Modern-Ergebnisse |
+| B3-S | PSV, Marmousi-II **ohne Wasserschicht** (E-13): Wasserzeilen abgeschnitten, CPML an allen vier Seiten, FD4, L=1, homogenes Qp = Qs = 80, invertiert werden Vp und Vs, eine gemeinsame Datenbank für beide Programme. Kleine Fassung: 5 Trainingsschüsse und 1 Kontrollschuss, 2 Hz und 3,5 Hz, je 4 Iterationen. PSV-Stufe der Leiter, bis B3 rechenbar ist. Nicht mit früheren Marmousi-Läufen vergleichbar, nur modern gegen Köhn auf demselben Fall. | von P-1 aufzubauen |
 | B4 | RTM/LSRTM/RFWI, Marmousi-II, 100 Schüsse (A2-Kampagne), Variante ohne tiefe Frequenzen und mit kurzen Offsets | A2-Daten und Rohbild |
 | B5 | Felddaten: ein SH-Profil der Ownerin. Für PSV/RTM bleibt Marmousi-II (B3/B4) der Referenzfall; ein PSV-Felddatensatz ist vorerst nicht vorgesehen (E-4). | Profil von der Ownerin zu benennen |
 
@@ -135,7 +136,7 @@ Zeitangaben sind Schätzungen aus dem bisherigen Tempo, keine Zusagen.
 |---|---|
 | K-1 | **Erledigt 21.11.:** PR #111 (CUDA-Link, −0.0-Gradienten), #112 (SH-L-BFGS) und #113 (Ledger) sind gemergt. |
 | K-2 | **Nicht gelandet, geparkt:** T1a (privater FD8-Born-Pfad) wurde als PR #115 vorgelegt; die Hosted-CI war rot, der PR ist ohne Merge geschlossen, der Zweig `claude/t1a-fd8-born-private` bleibt erhalten. Die zwei roten Tests (`test_m63c_distributed_objective_directional_fd`, Fall `b2_corner-2-2-3-physical-4-0-0`; `test_psv_viscoelastic_rheology::test_m43_selected_mpi_reproducibility[SV-1-2]`) scheitern beim Auswerten der MPI-Programmausgabe. Ursache offen; ein Zusammenhang mit dem Kandidaten ist weder belegt noch ausgeschlossen. Die Case-3-Qualifikation des eingefrorenen Kandidaten bleibt bestehen. Die Taylor8-Linie ruht (Abschnitt 7). |
-| K-3 | RFWI-C-FD4 mit Statusnotiz schließen: Referenz INCOMPLETE, geparkt. Die zwei Quellenbefunde (W², 0/0) in den Prototyp übernehmen. |
+| K-3 | **Erledigt 21.11.:** RFWI-C-FD4 mit Statusnotiz geschlossen (Referenz INCOMPLETE, geparkt). Die zwei Quellenbefunde (W², 0/0) sind im Prototyp behoben (RFWI-SANDBOX-01). |
 | K-4 | Forschungsprioritäten ins Repo übernehmen (`docs/research_priorities.md`). Das Forschungsjournal bleibt auf Owner-Entscheidung privat. Ledger auf den Stand der gemergten PRs bringen. |
 | K-5 | Fertige Performance-Prototypen integrieren: Allokator-Versatz, visko-PSV-Zeilenschleife (beide bytegleich), SH-Checkpoint/Replay. |
 | K-6 | **Erledigt 21.11.:** lesender Codevergleich PHYSICAL01/Holberg8 gegen den Programmkern. Im Inneren passen beide zusammen (Staggering, Update-Reihenfolge, Holberg8-Koeffizienten, CPML-Rekursion, Checkpoint/Replay, Zielfunktion). Physikalisch verschieden sind Viskoelastizität und Q (nur Programm), der Wasserkontakt mit doppeltem Grenzknoten (nur privat), die Ränder und die CPML-Profilwerte. Der private Pfad ist elastisch in (λ, μ) bei fester Dichte, läuft auf einem Rang mit fester Geometrie und stammt aus `src/PSV/elastic_psv_born.c`. Die A2-Tabelle ist an Holberg8 gebunden. Alles Lesebefund, nichts gebaut oder gerechnet. Folgen: Strang PSV und E-9 bis E-12. |
@@ -144,8 +145,8 @@ Zeitangaben sind Schätzungen aus dem bisherigen Tempo, keine Zusagen.
 
 | Paket | Fähigkeit im Programm | Nachweis |
 |---|---|---|
-| S-1 | L-BFGS und Vs-zuerst-Hierarchie (PR #112) | B1: Pilot r6, LVZ in der Tiefe |
-| S-2 | Frequenzstufen (`TIME_FILT`), Zeitfenster, Offset-Mute im exakten Pfad; Filter und Fenster als lineare Operatoren mit ihrer Transponierten im Adjoint-Quellterm | B1 mehrstufig, B2 |
+| S-1 | **Erledigt 21.11.:** L-BFGS und Vs-zuerst-Hierarchie (PR #112) | B1: Pilot r6 besteht erstmals alle Pilotkriterien; L-BFGS erreicht in Iteration 9 das Niveau, für das steilster Abstieg 60 Iterationen brauchte. Restproblem: Dichte-Crosstalk im Arm mit freier Dichte (vorgemerkt für S-4). |
+| S-2 | Frequenzstufen (`TIME_FILT`), Zeitfenster um Picks (`TIMEWIN` = 1 mit `TWIN-` und `TWIN+`) und Offset-Mute im exakten Pfad, nach den Festlegungen E-7 und E-14 | Gradient gegen zentrale Differenzen mit aktivem Filter, zweiseitigem Fenster und Maske; bitgleich mit allen Schaltern aus; B1 mehrstufig gegen r6, B2 |
 | S-3 | Quellsignalschätzung (`INV_STF`) je Schuss und Stufe; alternativ quellunabhängiger Misfit | B2 mit Ricker-Wahrheit und Spike-Start |
 | S-4 | Spurnormierung, robuste Misfits (normierte Kreuzkorrelation, Envelope) | B2, dann B5 |
 | S-5 | Erste Felddaten-SH-FWI | B5 |
@@ -154,7 +155,7 @@ Zeitangaben sind Schätzungen aus dem bisherigen Tempo, keine Zusagen.
 
 | Paket | Fähigkeit im Programm | Nachweis |
 |---|---|---|
-| P-1 | Mehrschuss und Frequenzstufen im exakten visko-PSV-Pfad, CPU-MPI und CUDA | B3 elastisch und mit Q gegen Legacy |
+| P-1 | Mehrschuss und Frequenzstufen im exakten visko-PSV-Pfad, CPU-MPI und CUDA. Stand 21.11.: Kandidat lokal; Mehrschuss-Gradient gleich Summe der Einzelschüsse, Gradient gegen zentrale Differenzen für alle fünf Klassen, vier MPI-Aufteilungen bytegleich, zwei Stufen mit akzeptierten Schritten. CPU und GPU sind bytegleich, wenn CUDA ohne FMA-Kontraktion baut (E-13). Offen: B3-S. | B3-S elastisch mit Q-Hintergrund gegen Legacy |
 | P-2 | L-BFGS mit Klassenskalierung und Beleuchtungs-Vorkonditionierer (Bausteine aus dem SH-Strang wiederverwenden) | B3: Modellfehler nach Tiefe |
 | P-3 | Freie Oberfläche (eben) und STF im exakten Pfad | Landmodell, B3 mit freier Oberfläche |
 | P-4 | FD-Ordnung 8 (Holberg) als Option des exakten Pfads, **vor** dem Wasserkontakt, weil die A2-Tabelle an Holberg8 gebunden ist (E-9). Bauweise: die vertikale und horizontale Ableitung im exakten Pfad werden ein austauschbarer Baustein (Innenstencil plus optionale Randtabelle), der Adjoint-Stencil eine Schleife über die Halbordnung; CPU und CUDA. | Punktprodukt und Gradient für FD8; **FD4 bitgleich zum Stand davor**; ein Dispersions-Referenzfall; B3 bei 5 Hz, Kosten je Wellenlänge |
@@ -174,6 +175,30 @@ S-2), lautet die Zielfunktion ½ Σ_s ‖M T (F_s − B·d_s)‖² mit der Reihe
 Filter, Fenster, Maske, und die Adjoint-Quelle enthält (M T)ᵀ(M T) angewandt
 auf das Residuum. Filterung des Quellsignals und Filterung im Datenraum sind
 verschiedene diskrete Experimente und werden nicht stillschweigend getauscht.
+
+**Präzisierungen nach der Prüfung des Legacy-Codes (E-14), für PSV und SH gleich.**
+
+- *Letztes Zeitsample:* Köhns Filterroutine erreicht das letzte Sample jeder
+  Spur nicht. In einem kleinen SH-Testfall mit 12-Hz-Tiefpass trug dieses
+  eine ungefilterte Sample rund 80 % der Zielfunktion. Die Filterroutine
+  bleibt unverändert; bei aktivem `TIME_FILT` geht das letzte Zeitsample aber
+  weder in die Zielfunktion noch in die Adjoint-Quelle ein. Ohne Filter
+  ändert sich nichts.
+- *Vergleich mit Köhn:* Der Misfit wird für beide Programme mit derselben
+  Auswertung ohne das letzte Sample gemessen. Köhns internes J enthält das
+  Artefakt weiter und wird nicht direkt übernommen.
+- *Zeitfenster:* Immer um die Zeiten der Pickdatei (`TIMEWIN` = 1); ein
+  konstantes Fenster entsteht über eine Pickdatei mit gleichen Zeiten.
+  `TIMEWIN` = 2 bleibt im exakten Pfad abgewiesen. `TWIN-` und `TWIN+` sind
+  Zeiten in Sekunden als Abstand zum Pick: volles Gewicht zwischen
+  Pick − `TWIN-` und Pick + `TWIN+`, davor und danach Gauß-Abfall mit `GAMMA`
+  (Form aus der DENISE-layerstrip-Fassung der Ownerin von 2021). Im
+  Legacy-Pfad wirkt `TWIN-` weiterhin nicht.
+- *Fenster im Gradienten:* exakt, also mit dem Quadrat des Gewichts. Köhns
+  Adjoint-Quelle gewichtet nur einfach und passt damit nicht zu seiner
+  eigenen Zielfunktion; das wird im exakten Pfad nicht übernommen.
+- *Später:* Eine Korrektur des Filter-Versatzes für alle Pfade wäre ein
+  eigenes Bugfix-Paket, weil sie die Bitgleichheit zu Köhn aufhebt.
 
 **Reihenfolge und Bauweise nach K-6 (E-9, E-10).** FD8 kommt vor dem
 Wasserkontakt. Beides wird über einen begrenzten Umbau eingeführt: Die
@@ -237,7 +262,7 @@ späterer Integrationsschritt (nach I-3).
 |---|---|---|
 | A-1 | RTM-Modus mit Beleuchtungskompensation und Impedanz-Parametrisierung des Bildes (unterdrückt langwellige Rückstreuartefakte) | B4 gegen A2.5-Rohbild; dazu ein eigener, vorab festgelegter Punkt- oder Reflektorfall für Bildort und relative Amplitude |
 | A-2 | LSRTM (CGLS, beleuchtungs-vorkonditioniert, 10–20 Iterationen) | B4: Auflösung, Amplituden, Quell-/Zielenergie |
-| A-3 | Elastische RFWI v1 auf M9 mit fester Dichte als **variable Projektion** (E-8): das Bild ist die LSRTM-Lösung aus A-2 zum jeweiligen Hintergrund, die Zielfunktion hängt nur vom Hintergrund ab, der reduzierte Gradient enthält den impliziten Term (Abhängigkeit des Bildes vom Hintergrund); Hintergrund-Update mit L-BFGS. Die alternierende Form (ein Hintergrundschritt bei festem Bild) läuft als billigere Vergleichsvariante mit. | Reduzierter Gradient gegen zentrale Differenzen; **Nullkontrolle** als festes Kriterium (derselbe Lauf mit wahrem Hintergrund gleich Startmodell: das Ergebnis muss klar über diesem Drift liegen); B4-Variante ohne tiefe Frequenzen, Start mit falschem Hintergrund; Vergleich mit konventioneller FWI |
+| A-3 | Elastische RFWI v1 auf M9 mit fester Dichte auf der **reduzierten Zielfunktion** (E-8): Das Bild ist die LSRTM-Lösung aus A-2 zum jeweiligen Hintergrund, und jeder Hintergrundschritt wird mit neu geschätztem Bild geprüft. Der Gradient ohne impliziten Term ist der Standard, solange innere und äußere Zielfunktion gleich sind; der implizite Term (Abhängigkeit des Bildes vom Hintergrund) wird als Schalter gebaut und ist Pflicht, sobald sie verschieden sind (andere Gewichte, starke Dämpfung, laufzeitartiger Misfit für den Hintergrund). Hintergrund-Update mit L-BFGS. | Gradient gegen zentrale Differenzen mit auskonvergiertem Bild bei gleicher Zielfunktion und mit implizitem Term bei verschiedener; **Nullkontrolle** als festes Kriterium (derselbe Lauf mit wahrem Hintergrund gleich Startmodell: das Ergebnis muss klar über diesem Drift liegen); B4-Variante ohne tiefe Frequenzen, Start mit falschem Hintergrund; Vergleich mit konventioneller FWI |
 | A-4 | SH-Born-Tangente im SH-Kern und SH-RFWI mit demselben Treiber | Reflektor+Linse-Test aus dem Prototyp, dann LVZ und Hohlraum |
 | A-5 | SH-RTM/RFWI auf dem Feldprofil | B5 |
 
@@ -269,11 +294,16 @@ Größenordnungen, ohne den Hintergrund zu verbessern. Je Variante lief nur ein
 Lauf; Unterschiede von 0,01 ms liegen in der Schwankung zwischen Schritten.
 Folgerungen für A-3:
 
-1. Variable Projektion mit implizitem Term ist die Zielformulierung (E-8),
-   begründet mit Zielfunktional, kleinerer Nulldrift und L-BFGS-Verträglichkeit,
-   nicht mit einem besseren Laufzeitfehler im Testfall.
-2. Die alternierende Form bleibt als billigere Vergleichsvariante im Treiber;
-   ob sich der Mehraufwand der variablen Projektion lohnt, zeigt erst B4.
+1. Maßstab ist die reduzierte Zielfunktion (E-8): Ein Hintergrundschritt gilt
+   nur, wenn der Datenfehler mit neu geschätztem Bild gefallen ist. Eine
+   Mischform (Schritt wie alternierend, dann Bild neu schätzen und Schritt
+   prüfen) erreichte im Testfall das Niveau der variablen Projektion mit
+   L-BFGS (0,037 ms, Nullkontrolle 0,020 ms) bei 13 Bildschätzungen für 12
+   Schritte.
+2. Der implizite Term war im Testfall klein (2 bis 18 % des expliziten
+   Anteils), weil innere und äußere Zielfunktion gleich waren. Bei
+   verschiedenen Zielfunktionen lag er in den Prototyp-Tests bei 13 bis
+   700 %; dort ist er Pflicht, und die Mischform ist dort nicht geprüft.
 3. Die Nullkontrolle ist festes Prüfkriterium: Der Restfehler eines Verfahrens
    wird gegen seine eigene Drift im Kontrollfall gelesen.
 4. Reflexionen legen die Laufzeit fest, nicht die Tiefenverteilung der
@@ -384,11 +414,13 @@ Entschieden von der Ownerin am 2026-11-21.
 | E-5 | Leitplanken 2–4 als Arbeitsregel in `AGENTS.md` übernehmen? | Ja. |
 | E-6 | Reihenfolge RFWI: PSV auf M9 zuerst, SH danach (A-3 vor A-4)? | Ja. |
 | E-7 | Filterstelle für Frequenzstufen in P-1? | Köhns Semantik: Filter auf Quellsignal und beobachtete Daten (Strang PSV). |
-| E-8 | Formulierung der RFWI in A-3? | Variable Projektion mit implizitem Term statt der am 10.11. gewählten alternierenden Form, auf Grundlage von RFWI-SANDBOX-01 und 01b (Begründung: festes Zielfunktional, kleinere Nulldrift, L-BFGS-Verträglichkeit). |
+| E-8 | Formulierung der RFWI in A-3? | Reduzierte Zielfunktion (variable Projektion) statt der am 10.11. gewählten alternierenden Form, auf Grundlage von RFWI-SANDBOX-01 und 01b. Präzisiert am 21.11.: Annahmeprüfung mit neu geschätztem Bild immer; impliziter Term als Schalter, Pflicht bei verschiedenen Zielfunktionen. |
 | E-9 | Reihenfolge und Bauweise nach K-6? | FD8 (P-4) vor Wasserkontakt (P-5); begrenzter Umbau mit austauschbarem Ableitungsbaustein; der private Pfad wird nicht Träger. |
 | E-10 | Genügt für den Wasserkontakt ein ebener Meeresboden? | Für das Benchmarking vorerst ja. Variable Meeresböden und vor allem Landdaten mit Topographie sind als eigenes Paket P-6 verlangt. |
 | E-11 | Dichteversatz an der Grenzfläche? | Noch nicht entschieden; erst lesend klären. |
 | E-12 | `abs()`-Wächter im CPML-Profil? | Legacy unverändert und dokumentiert; korrigiertes Profil nur für die exakten Pfade, frühestens mit P-4. |
+| E-13 | Benchmark und CUDA-Build für P-1? | Festkörperfassung B3-S als PSV-Stufe der Leiter. `--fmad=false` wird Standard für die CUDA-Objekte des exakten PSV-Pfads, wenn der gemessene Laufzeitverlust höchstens 15 % beträgt; die Toleranz bleibt unverändert. |
+| E-14 | Filter-Spurende und Zeitfenster im exakten Pfad? | Letztes Zeitsample bei aktivem Filter aus Zielfunktion und Adjoint-Quelle; Vergleich mit Köhn entsprechend ausgewertet. Fenster nur um Picks, `TWIN-` als Zeit vor dem Pick mit Gauß-Flanke, Fenster exakt im Gradienten. |
 
 ## 10. Externes Audit vom 21.11.2026
 
