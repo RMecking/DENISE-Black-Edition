@@ -11,6 +11,7 @@ float Q_APPROX_DF, FC_SPIKE_1, FC_SPIKE_2;
 int Q_PARAMETERIZATION_MODE, NDT, SEISMO, IDXI, IDYI, DTINV, SNAP;
 int INV_STF, EPRECOND, NTDTINV, NXNYI, NT, QUELLART, ORDER_SPIKE;
 int LNORM, N_ORDER, TIMEWIN, OFFSET_MUTE, TRKILL;
+int TIME_FILT;   /* SH-S2: read by the shot preflight; 0 (tentative, -fcommon) */
 
 float *vector(int nl, int nh) {
     float *base = (float *)calloc((size_t)(nh - nl + 1), sizeof(float));

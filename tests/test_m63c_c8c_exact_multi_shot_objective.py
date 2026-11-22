@@ -11,6 +11,8 @@ import subprocess
 
 import pytest
 
+from tests.utilities.sh_s2_link import S2_LINK_SOURCES
+
 
 PRODUCTION_GRADIENT_SOURCES = (
     "src/SH/grad_obj_sh_visc_exact.c",
@@ -140,6 +142,7 @@ def _build_harness(
         "src/q_parameterization.c",
         "src/splitsrc.c",
         "src/wavelet.c",
+        *S2_LINK_SOURCES,
     )
     command = [
         compiler,

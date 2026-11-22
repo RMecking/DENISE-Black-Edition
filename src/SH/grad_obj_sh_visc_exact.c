@@ -2,6 +2,7 @@
 
 #include "fd.h"
 #include "exact_sh_receivers.h"
+#include "exact_sh_data_ops.h"
 
 static int exact_multi_preflight(
         const struct visco_sh_exact_multi_shot_request *request) {
@@ -25,9 +26,9 @@ static int exact_multi_preflight(
             (NX < 1) || (NY < 1) || (L < 1) ||
             ((INVMAT1 != 1) && (INVMAT1 != 3)) ||
             (DTINV != 1) || (LNORM != 2) || (GRAD_FORM != 2) ||
-            (N_ORDER != 0) || (TIMEWIN != 0) || (OFFSET_MUTE != 0) ||
+            (N_ORDER != 0) || !exact_sh_s2_config_valid() ||
             (TRKILL != 0) || (SEISMO != 1) || (EPRECOND != 0) ||
-            (SWS_TAPER_CIRCULAR_PER_SHOT != 0) || (TIME_FILT != 0) ||
+            (SWS_TAPER_CIRCULAR_PER_SHOT != 0) ||
             (INV_STF != 0) || (QUELLTYPB == 0) || (READREC < 0) ||
             (READREC > 2) || (request->ns < 1))
         return -1;
@@ -106,6 +107,7 @@ int visco_sh_exact_objective_gradient(
     int nshots, ishot, nsrc_local, nrec_local, nrec_global, source_columns;
     int nt, shot_status, status = -1;
     double objective = 0.0;
+    double *data_weight = NULL;
 
     shot_status = (result == NULL) ? -1 : exact_multi_preflight(request);
     shot_status = exact_sh_collective_status(MPI_COMM_WORLD,
@@ -178,6 +180,34 @@ int visco_sh_exact_objective_gradient(
 
         inseis(ishot, request->legacy_fwi_seismogram->sectionread,
                nrec_global, request->ns, 2, request->iter);
+        /* SH-S2: stage filter on source and observed data, data weights. */
+        shot_status = exact_sh_s2_filter_shot(request->acquisition->signals,
+                nsrc_local, request->legacy_fwi_seismogram->sectionread,
+                nrec_global, request->ns);
+        if (shot_status == 0)
+            shot_status = exact_sh_s2_shot_weights(request->acquisition, ishot,
+                    nrec_local, nrec_global, request->ns, &data_weight);
+        shot_status = exact_sh_collective_status(MPI_COMM_WORLD,
+                "objective-gradient SH-S2 data operators", shot_status);
+        if (shot_status != 0) {
+            free(data_weight);
+            data_weight = NULL;
+            if (request->acquisition->signals != NULL) {
+                free_matrix(request->acquisition->signals, 1, nsrc_local,
+                            1, request->ns);
+                request->acquisition->signals = NULL;
+            }
+            if (request->acquisition->srcpos_loc != NULL) {
+                free_matrix(request->acquisition->srcpos_loc, 1, 8,
+                            1, nsrc_local);
+                request->acquisition->srcpos_loc = NULL;
+            }
+            if (READREC == 2)
+                exact_multi_release_dynamic_receivers(
+                        request, nrec_local, nrec_global);
+            status = shot_status;
+            goto cleanup;
+        }
         exact_multi_map_observed(request->legacy_fwi_seismogram,
                                  request->acquisition, nrec_local, request->ns);
         exact_multi_zero_owned(shot_primary);
@@ -210,8 +240,11 @@ int visco_sh_exact_objective_gradient(
         shot_request.grad_primary = shot_primary;
         shot_request.grad_rho = shot_rho;
         shot_request.grad_q = shot_q;
+        shot_request.data_weight = data_weight;
         shot_status = visco_sh_exact_objective_gradient_shot(
                 &shot_request, &shot_result);
+        free(data_weight);
+        data_weight = NULL;
         if (shot_status == 0) {
             objective += shot_result.objective;
             exact_multi_add_owned(request->grad_primary, shot_primary);

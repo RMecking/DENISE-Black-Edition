@@ -11,6 +11,8 @@ import subprocess
 
 import pytest
 
+from tests.utilities.sh_s2_link import S2_LINK_SOURCES
+
 
 def _compact(text: str) -> str:
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
@@ -113,6 +115,7 @@ def line_search_binary(
         "src/SH/visco_sh_reverse_time_adjoint.c", "src/SH/matcopy_SH.c", "src/SH/matcopy_SH_adjoint.c",
         "src/SH/av_mu_SH.c", "src/SH/inv_rho_SH.c", "src/av_tau.c", "src/SH/prepare_update_s_visc_SH.c",
         "src/q_parameterization.c", "src/splitsrc.c", "src/wavelet.c", "src/calc_opt_step.c", "src/solvelin.c",
+        *S2_LINK_SOURCES,
     ]
     command = [
         compiler, "-std=c99", "-O1", "-g", "-fcommon", "-I", str(repository_root / "include"),

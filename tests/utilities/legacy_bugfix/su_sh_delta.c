@@ -17,6 +17,7 @@ float Q_APPROX_DF, FC_SPIKE_1, FC_SPIKE_2;
 int Q_PARAMETERIZATION_MODE, NDT, SEISMO, IDXI, IDYI, DTINV, SNAP;
 int INV_STF, EPRECOND, NTDTINV, NXNYI, NT, QUELLART, ORDER_SPIKE;
 int LNORM, N_ORDER, TIMEWIN, OFFSET_MUTE, TRKILL;
+int TIME_FILT;   /* SH-S2: read by the shot preflight; 0 */
 
 float *vector(int nl, int nh) {
     float *base = (float *)calloc((size_t)(nh - nl + 1), sizeof(float));
@@ -265,7 +266,7 @@ int main(int argc, char **argv) {
     QUELLTYP = 1; QUELLTYPB = 1; QUELLART = 1; topology(rank);
     NT = test->nsteps; nsteps = NT; DTINV = 1; NDT = 1; SEISMO = 1;
     SNAP = 0; INV_STF = 0; EPRECOND = 0; LNORM = 2; N_ORDER = 0;
-    TIMEWIN = 0; OFFSET_MUTE = 0; TRKILL = 0; IDXI = IDYI = 1;
+    TIMEWIN = 0; OFFSET_MUTE = 0; TRKILL = 0; TIME_FILT = 0; IDXI = IDYI = 1;
     NTDTINV = NT; NXNYI = NX * NY; TSNAP1 = TSNAP2 = TSNAPINC = 1.0f;
     source_i = test->source_i; source_j = test->source_j;
     receiver_i = test->receiver_i; receiver_j = test->receiver_j;
