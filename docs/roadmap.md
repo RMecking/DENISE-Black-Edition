@@ -1,8 +1,8 @@
 # DENISE Black Edition — Integrations-Roadmap
 
-**Stand:** 2026-11-21 · **Basis:** `modernization@86fd2bf` · **Status:** aus dem
-Projekt-Audit vom 21.11.2026; die Owner-Entscheidungen E-1 bis E-14 sind am
-21.11.2026 getroffen (Abschnitt 9). Veröffentlicht mit PR #114; nach einem
+**Stand:** 2026-11-22 · **Basis:** `modernization@b5df20b` · **Status:** aus dem
+Projekt-Audit vom 21.11.2026; die Owner-Entscheidungen E-1 bis E-16 sind am
+21. und 22.11.2026 getroffen (Abschnitt 9). Veröffentlicht mit PR #114; nach einem
 externen Architektur-Audit vom selben Tag präzisiert (Abschnitt 10).
 Dieses Dokument gibt Orientierung. Es erteilt keine Ausführungs-, Commit- oder
 Publikationsfreigabe und ändert keinen bestehenden Scientific Contract, HOLD
@@ -119,10 +119,10 @@ gegen Köhn `b07d81d` und gegen den vorherigen Stand. Kennzahlen: Datenmisfit
 
 | Stufe | Fall | Vorhanden |
 |---|---|---|
-| B1 | SH, LVZ-Pilotmodell (Freeze r6) | Eingaben, Legacy- und Modern-Läufe. **Erste Zahl (r6, 21.11., Stand `67dd7ae`):** Vs-Modellfehler relativ zum Start nach 60 Iterationen 0,53–0,57 mit L-BFGS gegen 0,82–0,83 mit steilstem Abstieg; Fehler in der Lockerungszone 0,23–0,25 gegen 0,57. Eine Frequenzstufe. |
+| B1 | SH, LVZ-Pilotmodell (Freeze r6) | Eingaben, Legacy- und Modern-Läufe. **Erste Zahl (r6, 21.11., Stand `67dd7ae`):** Vs-Modellfehler relativ zum Start nach 60 Iterationen 0,53–0,57 mit L-BFGS gegen 0,82–0,83 mit steilstem Abstieg; Fehler in der Lockerungszone 0,23–0,25 gegen 0,57. Eine Frequenzstufe. **Mehrstufig (r7, 22.11., Stand `4ca93d7`):** zwei gefilterte Stufen und eine Vollbandstufe zu je 20 Iterationen, ohne und mit Pickfenster. Vs-Modellfehler 0,58 und 0,60 (r6: 0,57). Das vorab festgelegte Nicht-Verschlechterungs-Kriterium gegen r6 ist am Q-Fehler **verfehlt** (0,39 und 0,29 bei Schwelle 0,24); alle Kriterien zur Korrektheit von Filter, Fenster, Mute und Reload sind erfüllt. In B1 startet Q im ausgewerteten Bereich am wahren Wert; der Q-Fehler misst dort nur Übersprechen. Für S-3 kommt eine Variante mit falschem Start-Q hinzu. |
 | B2 | SH, synth-A-Hohlraum (Paper III) | 5 von 79 Wahrheitsschüssen |
 | B3 | PSV, Marmousi-II OBC, 5+2 Schüsse, 2,5/3,5/5 Hz, elastisch und mit Q. Der Fall hat Wasserschicht, freie Oberfläche und FD8 und ist mit dem exakten Pfad erst nach P-3, P-4 und P-5 rechenbar. | Banken, Legacy- und private Modern-Ergebnisse |
-| B3-S | PSV, Marmousi-II **ohne Wasserschicht** (E-13): Wasserzeilen abgeschnitten, CPML an allen vier Seiten, FD4, L=1, homogenes Qp = Qs = 80, invertiert werden Vp und Vs, eine gemeinsame Datenbank für beide Programme. Kleine Fassung: 5 Trainingsschüsse und 1 Kontrollschuss, 2 Hz und 3,5 Hz, je 4 Iterationen. PSV-Stufe der Leiter, bis B3 rechenbar ist. Nicht mit früheren Marmousi-Läufen vergleichbar, nur modern gegen Köhn auf demselben Fall. | von P-1 aufzubauen |
+| B3-S | PSV, Marmousi-II **ohne Wasserschicht** (E-13): Wasserzeilen abgeschnitten, CPML an allen vier Seiten, FD4, L=1, homogenes Qp = Qs = 80, invertiert werden Vp und Vs, eine gemeinsame Datenbank für beide Programme. PSV-Stufe der Leiter, bis B3 rechenbar ist. Nicht mit früheren Marmousi-Läufen vergleichbar. Lauf nach E-16: Quellen und Empfänger unterhalb der oberen CPML, 5 Trainings- und 2 Kontrollschüsse, 2,5/3,5/5 Hz, je höchstens 25 Iterationen, Kriterien vorab eingefroren. | Kleine Fassung gerechnet (22.11., Kandidat lokal): CPU und CUDA nach acht Schritten bytegleich, Datenmisfit −18 % und −14 %, Modellfehler praktisch unverändert. Der Aufbau war ungeeignet (Quellen und Empfänger in der CPML, 4 Iterationen je Stufe); Lauf nach E-16 steht aus. |
 | B4 | RTM/LSRTM/RFWI, Marmousi-II, 100 Schüsse (A2-Kampagne), Variante ohne tiefe Frequenzen und mit kurzen Offsets | A2-Daten und Rohbild |
 | B5 | Felddaten: ein SH-Profil der Ownerin. Für PSV/RTM bleibt Marmousi-II (B3/B4) der Referenzfall; ein PSV-Felddatensatz ist vorerst nicht vorgesehen (E-4). | Profil von der Ownerin zu benennen |
 
@@ -146,8 +146,8 @@ Zeitangaben sind Schätzungen aus dem bisherigen Tempo, keine Zusagen.
 | Paket | Fähigkeit im Programm | Nachweis |
 |---|---|---|
 | S-1 | **Erledigt 21.11.:** L-BFGS und Vs-zuerst-Hierarchie (PR #112) | B1: Pilot r6 besteht erstmals alle Pilotkriterien; L-BFGS erreicht in Iteration 9 das Niveau, für das steilster Abstieg 60 Iterationen brauchte. Restproblem: Dichte-Crosstalk im Arm mit freier Dichte (vorgemerkt für S-4). |
-| S-2 | Frequenzstufen (`TIME_FILT`), Zeitfenster um Picks (`TIMEWIN` = 1 mit `TWIN-` und `TWIN+`) und Offset-Mute im exakten Pfad, nach den Festlegungen E-7 und E-14 | Gradient gegen zentrale Differenzen mit aktivem Filter, zweiseitigem Fenster und Maske; bitgleich mit allen Schaltern aus; B1 mehrstufig gegen r6, B2 |
-| S-3 | Quellsignalschätzung (`INV_STF`) je Schuss und Stufe; alternativ quellunabhängiger Misfit | B2 mit Ricker-Wahrheit und Spike-Start |
+| S-2 | **Integriert 22.11. (PR #120, `b5df20b`), mit begrenztem Anspruch (E-15):** Frequenzstufen (`TIME_FILT`), Zeitfenster um Picks (`TIMEWIN` = 1 mit `TWIN-` und `TWIN+`) und Offset-Mute im exakten Pfad, nach den Festlegungen E-7 und E-14 | Gradient gegen zentrale Differenzen mit aktivem Filter, zweiseitigem Fenster und Maske; bitgleich mit allen Schaltern aus; B1 mehrstufig gegen r6 (r7: Korrektheit belegt, Kriterium zur Q-Rekonstruktion verfehlt, keine Aussage dazu); B2 offen |
+| S-3 | Quellsignalschätzung (`INV_STF`) je Schuss und Stufe; alternativ quellunabhängiger Misfit | B2 mit Ricker-Wahrheit und Spike-Start. Vorab zu klären (Befund aus r7): Der erste Schritt jeder Stufe gibt jeder aktiven Parameterklasse dieselbe relative Schrittgröße, obwohl die Daten auf Q nur mit 1–4 % der Empfindlichkeit von Vs reagieren; daraus entsteht der größte Teil des Q-Übersprechens. Eine Änderung dieser Skalierung ist Produktionsverhalten und eine Owner-Entscheidung. |
 | S-4 | Spurnormierung, robuste Misfits (normierte Kreuzkorrelation, Envelope) | B2, dann B5 |
 | S-5 | Erste Felddaten-SH-FWI | B5 |
 
@@ -155,10 +155,10 @@ Zeitangaben sind Schätzungen aus dem bisherigen Tempo, keine Zusagen.
 
 | Paket | Fähigkeit im Programm | Nachweis |
 |---|---|---|
-| P-1 | Mehrschuss und Frequenzstufen im exakten visko-PSV-Pfad, CPU-MPI und CUDA. Stand 21.11.: Kandidat lokal; Mehrschuss-Gradient gleich Summe der Einzelschüsse, Gradient gegen zentrale Differenzen für alle fünf Klassen, vier MPI-Aufteilungen bytegleich, zwei Stufen mit akzeptierten Schritten. CPU und GPU sind bytegleich, wenn CUDA ohne FMA-Kontraktion baut (E-13). Offen: B3-S. | B3-S elastisch mit Q-Hintergrund gegen Legacy |
+| P-1 | Mehrschuss und Frequenzstufen im exakten visko-PSV-Pfad, CPU-MPI und CUDA. Stand 21.11.: Kandidat lokal; Mehrschuss-Gradient gleich Summe der Einzelschüsse, Gradient gegen zentrale Differenzen für alle fünf Klassen, vier MPI-Aufteilungen bytegleich, zwei Stufen mit akzeptierten Schritten. CPU und GPU sind bytegleich, wenn CUDA ohne FMA-Kontraktion baut (E-13); der Laufzeitverlust beträgt 4,3 %, der Build ohne FMA ist damit Standard. Stand 22.11.: letztes Sample nach E-14 umgesetzt (im PSV-Testfall 10,6 % der Zielfunktion). Offen: B3-S-Lauf und Forward-Vergleich nach E-16. | B3-S mit Q-Hintergrund; gegen Köhn ein Forward-Vergleich bei gleicher Dämpfung (E-16) |
 | P-2 | L-BFGS mit Klassenskalierung und Beleuchtungs-Vorkonditionierer (Bausteine aus dem SH-Strang wiederverwenden) | B3: Modellfehler nach Tiefe |
 | P-3 | Freie Oberfläche (eben) und STF im exakten Pfad | Landmodell, B3 mit freier Oberfläche |
-| P-4 | FD-Ordnung 8 (Holberg) als Option des exakten Pfads, **vor** dem Wasserkontakt, weil die A2-Tabelle an Holberg8 gebunden ist (E-9). Bauweise: die vertikale und horizontale Ableitung im exakten Pfad werden ein austauschbarer Baustein (Innenstencil plus optionale Randtabelle), der Adjoint-Stencil eine Schleife über die Halbordnung; CPU und CUDA. | Punktprodukt und Gradient für FD8; **FD4 bitgleich zum Stand davor**; ein Dispersions-Referenzfall; B3 bei 5 Hz, Kosten je Wellenlänge |
+| P-4 | FD-Ordnung 8 (Holberg) als Option des exakten Pfads, **vor** dem Wasserkontakt, weil die A2-Tabelle an Holberg8 gebunden ist (E-9). Bauweise: die vertikale und horizontale Ableitung im exakten Pfad werden ein austauschbarer Baustein (Innenstencil plus optionale Randtabelle), der Adjoint-Stencil eine Schleife über die Halbordnung; CPU und CUDA. In drei Schritten: erst die Kapselung mit FD4 bitgleich, dann FD8 mit eigener Transponierter, danach der Kontakt (P-5). | Punktprodukt und Gradient für FD8; **FD4 bitgleich zum Stand davor**; ein Dispersions-Referenzfall; B3 bei 5 Hz, Kosten je Wellenlänge |
 | P-5 | Fluid/Festkörper-Kontakt (A2-Abschluss) als Option des Programmkerns, zunächst **ebener Meeresboden** (E-10). Neu herzuleiten und zu prüfen: Transponierte der Randoperatoren im Programmlayout, Zusammenspiel mit den Speichervariablen, ρ- und Q-Gradient in den Grenzzeilen, fluidfeste Gradientenabbildung, MPI über die Kontaktzeilen, Transponierte des OBC-Empfängers. | Punktprodukt und Gradient um die Grenze für alle fünf Klassen; „Kontakt aus" bitgleich zum Stand davor; Referenzfall Wasserschicht über Halbraum; B3: Tiefenwirkung Vs wie im privaten A2-Vergleich |
 | P-6 | **Topographie und variabler Meeresboden** (Owner-Anforderung vom 21.11., wichtig): Landdaten mit Geländerelief und nicht ebene Meeresböden im exakten Pfad. Vorab eine Sandbox zur Methodenwahl, siehe unten. | Referenzfall mit geneigter und gestufter Oberfläche gegen eine unabhängige Lösung; Gradient gegen zentrale Differenzen; Landmodell mit Relief |
 
@@ -222,7 +222,9 @@ gestufter Oberfläche; (iii) gekrümmtes oder vertikal gestrecktes Gitter;
 (iv) eingebettete Randbedingung. Kriterien: Genauigkeit der Oberflächenwellen
 je Gitterpunkte pro Wellenlänge, exakter Adjoint mit vertretbarem Aufwand,
 MPI- und GPU-Tauglichkeit. Ob das SH-Feldprofil Relief hat, legt fest, ob
-die SH-Topographie vor S-5 fertig sein muss.
+die SH-Topographie vor S-5 fertig sein muss. Vorläufige Rangfolge nach dem
+externen Audit vom 22.11.: (i) nur als Negativkontrolle, (ii) als Basislinie,
+(iv) als bevorzugter Kandidat, (iii) als langfristige Option.
 
 **Offene Punkte aus K-6.**
 
@@ -421,6 +423,8 @@ Entschieden von der Ownerin am 2026-11-21.
 | E-12 | `abs()`-Wächter im CPML-Profil? | Legacy unverändert und dokumentiert; korrigiertes Profil nur für die exakten Pfade, frühestens mit P-4. |
 | E-13 | Benchmark und CUDA-Build für P-1? | Festkörperfassung B3-S als PSV-Stufe der Leiter. `--fmad=false` wird Standard für die CUDA-Objekte des exakten PSV-Pfads, wenn der gemessene Laufzeitverlust höchstens 15 % beträgt; die Toleranz bleibt unverändert. |
 | E-14 | Filter-Spurende und Zeitfenster im exakten Pfad? | Letztes Zeitsample bei aktivem Filter aus Zielfunktion und Adjoint-Quelle; Vergleich mit Köhn entsprechend ausgewertet. Fenster nur um Picks, `TWIN-` als Zeit vor dem Pick mit Gauß-Flanke, Fenster exakt im Gradienten. |
+| E-15 | S-2 integrieren, obwohl r7 das Kriterium K6 verfehlt hat? (22.11.) | Ja, mit begrenztem Anspruch: r7 bleibt nicht bestanden, K6 wird nicht umgedeutet. S-2 ist als Filter-, Fenster- und Mute-Funktion angenommen, ohne Aussage zur Q-Rekonstruktion. Ein Folgelauf mit festem Q in den gefilterten Stufen (r7b) ist Diagnose vor S-3, keine Merge-Bedingung. Künftig getrennt und jeweils vorab festgelegt: Kriterien zur Fähigkeit und Kriterien zur Rekonstruktionsgüte. |
+| E-16 | B3-S-Lauf und Vergleich mit Köhn für P-1? (22.11.) | Akquisition unterhalb der CPML, drei Stufen zu je höchstens 25 Iterationen, Kriterien vor dem Lauf eingefroren (Misfit sinkt je Stufe für Training und Kontrolle, Vs-Modellfehler sinkt, im oberen Tiefenband um mindestens 2 % des Startfehlers). Der Inversionsvergleich mit Köhn entfällt, weil sein Modellleser eine andere Dämpfung setzt und der Vergleich nichts aussagte; an seine Stelle tritt ein Forward-Vergleich bei gleicher Dämpfung mit vorab notierter Erwartung. |
 
 ## 10. Externes Audit vom 21.11.2026
 
@@ -439,5 +443,21 @@ Empfehlung behandelt und Folgendes übernommen:
 - Wirkung der historischen HOLDs je Befund benannt (Abschnitt 7).
 - Rolle „Project Coordination" in `AGENTS.md`.
 
-Nächster vorgesehener Audit-Zeitpunkt: wenn der Kandidatenbericht zu P-1 und
-das Ergebnis des SH-Pilots r6 vorliegen, vor dem nächsten Content Lock.
+### Audits vom 22.11.2026
+
+Zwei weitere externe Audits (beide CONDITIONAL GO) begleiteten S-2 und P-1.
+Übernommen:
+
+- S-2 wurde nicht vor dem Lauf auf der Benchmark-Leiter gemergt; r7 lief auf
+  dem offenen PR-Kopf mit vorab eingefrorenen Kriterien und einem Mute-Fall.
+- Nach dem verfehlten K6: Integration nur durch ausdrückliche
+  Owner-Entscheidung mit begrenztem Anspruch (E-15); Fähigkeit und
+  Rekonstruktionsgüte künftig als getrennte Kriterien.
+- Hypothesen zum Q-Übersprechen getrennt prüfen, nicht im selben Lauf mischen.
+- Rangfolge der Topographie-Methoden und Stufung von P-4 (Strang PSV).
+- Auftragspakete nennen vollständige, von einem Kommando ausgegebene Hashes.
+- Beim Forward-Vergleich mit Köhn Relaxationsfrequenz, Quellsignal und
+  Randschicht einzeln abgleichen; gleiches Q allein genügt nicht.
+
+Nächster vorgesehener Audit-Zeitpunkt: wenn der B3-S-Lauf nach E-16 und der
+Folgelauf r7b vorliegen, vor dem Content Lock für P-1.
