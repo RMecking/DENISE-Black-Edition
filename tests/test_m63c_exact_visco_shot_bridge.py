@@ -74,12 +74,20 @@ def test_frozen_preconditions_are_fail_fast(repository_root: Path):
         "LNORM!=2",
         "GRAD_FORM!=2",
         "N_ORDER!=0",
-        "TIMEWIN!=0",
-        "OFFSET_MUTE!=0",
         "TRKILL!=0",
         "SEISMO!=1",
     ):
         assert condition in source
+    # SH-S2 (docs/sh_s2_data_operators_contract.md): data weights are supplied
+    # exactly when TIME_FILT is 1 or TIMEWIN or OFFSET_MUTE is on, in both shot
+    # functions.
+    weight_rule = ("if(((TIME_FILT==1)||(TIMEWIN!=0)||(OFFSET_MUTE!=0))!="
+                   "(request->data_weight!=NULL))return-1;")
+    assert weight_rule in source
+    objective_shot = _compact(
+        _read(repository_root, "src/SH/obj_sh_visc_exact_shot.c")
+    )
+    assert weight_rule in objective_shot
 
 
 def test_material_and_q_mapping_use_prepared_production_fields(

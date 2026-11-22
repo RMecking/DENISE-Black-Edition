@@ -10,6 +10,8 @@ import subprocess
 
 import pytest
 
+from tests.utilities.sh_s2_link import S2_LINK_SOURCES
+
 
 def _read(root: Path, relative: str) -> str:
     return (root / relative).read_text(encoding="utf-8")
@@ -66,13 +68,13 @@ def test_multi_shot_frozen_preconditions_and_selection(repository_root: Path):
         "LNORM!=2",
         "GRAD_FORM!=2",
         "N_ORDER!=0",
-        "TIMEWIN!=0",
-        "OFFSET_MUTE!=0",
+        # SH-S2: TIME_FILT/TIMEWIN/OFFSET_MUTE are accepted within their
+        # validated ranges (docs/sh_s2_data_operators_contract.md).
+        "!exact_sh_s2_config_valid()",
         "TRKILL!=0",
         "SEISMO!=1",
         "EPRECOND!=0",
         "SWS_TAPER_CIRCULAR_PER_SHOT!=0",
-        "TIME_FILT!=0",
         "INV_STF!=0",
     ):
         assert condition in source
@@ -108,6 +110,7 @@ def multi_shot_harness(
         str(repository_root / "include"),
         str(repository_root / "tests/utilities/m63c_exact_visco_multi_shot_harness.c"),
         str(repository_root / "src/SH/grad_obj_sh_visc_exact.c"),
+        *(str(repository_root / source) for source in S2_LINK_SOURCES),
         "-o",
         str(executable),
         "-lm",

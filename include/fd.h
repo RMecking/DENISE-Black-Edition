@@ -411,6 +411,10 @@ struct visco_sh_exact_objective_shot_request {
    MPI_Request *request_receive;
 
    float **observed_vz;
+   /* SH-S2: diagonal data weights w[(i-1)*ns+(k-1)] of the time window and
+    * offset mask, or NULL (unweighted, the pre-S2 code path).  Required
+    * non-NULL exactly when TIME_FILT == 1, TIMEWIN != 0 or OFFSET_MUTE != 0. */
+   const double *data_weight;
 };
 
 struct visco_sh_exact_objective_shot_result {
@@ -438,6 +442,7 @@ struct visco_sh_exact_shot_request {
    float **observed_vz;
    double *receiver_cotangent;
    float **grad_primary, **grad_rho, **grad_q;
+   const double *data_weight;   /* SH-S2, as in the objective shot request */
 };
 
 struct visco_sh_exact_shot_result {
@@ -1252,6 +1257,16 @@ int visco_sh_exact_objective_gradient(
 int visco_sh_exact_objective(
         const struct visco_sh_exact_multi_shot_request *request,
         struct visco_sh_exact_multi_shot_result *result);
+
+/* SH-S2 data-space operators (src/SH/visco_sh_exact_data_operators.c),
+ * local, no MPI; contract docs/sh_s2_data_operators_contract.md. */
+int visco_sh_exact_read_picks(const char *prefix, int ishot, int ntr_glob,
+                              float *picks);
+int visco_sh_exact_data_weights(double *weight, int nrec_local, int ns,
+        int **recpos, int **recpos_loc, float source_x, float source_y,
+        float dh, float dt, int timewin, float gamma, float twin_minus,
+        float twin_plus, const float *picks, int offset_mute, float offsetc,
+        int mask_last_sample);
 
 /* Collective on MPI_COMM_WORLD with the normal model topology and Bsend
  * buffer installed. Physical Q is authoritative; no input Tau is accepted.

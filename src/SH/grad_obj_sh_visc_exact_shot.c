@@ -77,7 +77,7 @@ static double exact_shot_reference_sum(int mechanisms, const float *fl) {
 
 static int exact_shot_preflight(
         const struct visco_sh_exact_shot_request *request) {
-    extern int DTINV, LNORM, GRAD_FORM, N_ORDER, TIMEWIN, OFFSET_MUTE;
+    extern int DTINV, LNORM, GRAD_FORM, N_ORDER, TIMEWIN, OFFSET_MUTE, TIME_FILT;
     extern int TRKILL, NX, NY, NT, L, INVMAT1, SEISMO;
     if ((request == NULL) || (request->wave == NULL) ||
             (request->pml == NULL) || (request->material == NULL) ||
@@ -92,8 +92,12 @@ static int exact_shot_preflight(
             (request->nsrc_local < 0) || (NX < 1) || (NY < 1) ||
             (L < 1) || ((INVMAT1 != 1) && (INVMAT1 != 3)) ||
             (DTINV != 1) || (LNORM != 2) || (GRAD_FORM != 2) ||
-            (N_ORDER != 0) || (TIMEWIN != 0) || (OFFSET_MUTE != 0) ||
-            (TRKILL != 0) || (SEISMO != 1)) return -1;
+            (N_ORDER != 0) || (TRKILL != 0) || (SEISMO != 1)) return -1;
+    /* SH-S2: weights are supplied exactly when a data-space operator is on
+     * (window, mask, or the excluded last sample under TIME_FILT = 1). */
+    if (((TIME_FILT == 1) || (TIMEWIN != 0) || (OFFSET_MUTE != 0)) !=
+            (request->data_weight != NULL))
+        return -1;
     if (!exact_sh_local_receivers_valid(request->acquisition->recpos_loc,
             request->nrec_local, request->seismogram->sectionvz,
             request->observed_vz)) return -1;
@@ -159,14 +163,28 @@ int visco_sh_exact_objective_gradient_shot(
             rec_x[i] = request->acquisition->recpos_loc[1][i + 1];
             rec_y[i] = request->acquisition->recpos_loc[2][i + 1];
         }
-        for (n = 1; n < NT; ++n)
-            for (i = 0; i < request->nrec_local; ++i) {
-                double residual =
-                    request->seismogram->sectionvz[i + 1][n + 1] -
-                    request->observed_vz[i + 1][n + 1];
-                bar_receiver[(size_t)n * request->nrec_local + i] = residual;
-                local_objective += 0.5 * residual * residual;
-            }
+        if (request->data_weight == NULL) {
+            for (n = 1; n < NT; ++n)
+                for (i = 0; i < request->nrec_local; ++i) {
+                    double residual =
+                        request->seismogram->sectionvz[i + 1][n + 1] -
+                        request->observed_vz[i + 1][n + 1];
+                    bar_receiver[(size_t)n * request->nrec_local + i] = residual;
+                    local_objective += 0.5 * residual * residual;
+                }
+        } else {
+            /* SH-S2: J = 1/2 (w r)^2, adjoint source (M T)^T (M T) r = w^2 r. */
+            for (n = 1; n < NT; ++n)
+                for (i = 0; i < request->nrec_local; ++i) {
+                    double residual =
+                        request->seismogram->sectionvz[i + 1][n + 1] -
+                        request->observed_vz[i + 1][n + 1];
+                    double w = request->data_weight[(size_t)i * NT + n];
+                    double weighted = w * residual;
+                    bar_receiver[(size_t)n * request->nrec_local + i] = w * weighted;
+                    local_objective += 0.5 * weighted * weighted;
+                }
+        }
         if (request->receiver_cotangent != NULL)
             memcpy(request->receiver_cotangent, bar_receiver,
                    (size_t)NT * request->nrec_local * sizeof(*bar_receiver));

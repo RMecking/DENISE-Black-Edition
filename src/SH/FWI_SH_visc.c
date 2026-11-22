@@ -7,6 +7,7 @@
 
 #include "fd.h"
 #include "exact_sh_receivers.h"
+#include "exact_sh_data_ops.h"
 #include "fwi_misfit_history.h"
 
 static void exact_sh_require_collective_success(int local_status,
@@ -153,6 +154,9 @@ extern float OPT_PRECOND_EPS, OPT_ALPHA_ADAPT_FACTOR;
 extern int OPT_LBFGS, OPT_LBFGS_M;
 extern int POS[3], NPROCX, NPROCY, FREE_SURF, BOUNDARY;
 extern char MISFIT_LOG_FILE[STRING_SIZE];
+extern char PICKS_FILE[STRING_SIZE];
+extern float GAMMA, TWLENGTH_MINUS, TWLENGTH_PLUS, OFFSETC;
+extern int ORDER;
 extern char *FILEINP1;
 
 /* local variables */
@@ -346,11 +350,15 @@ for(nstage=1;nstage<=stagemax;nstage++){
     read_par_inv_silent(FP_stage,nstage,stagemax);
     exact_sh_require_config_int("LNORM",LNORM,2,2,nstage);
     exact_sh_require_config_int("EPRECOND",EPRECOND,0,0,nstage);
-    exact_sh_require_config_int("TIME_FILT",TIME_FILT,0,0,nstage);
-    exact_sh_require_config_int("TIMEWIN",TIMEWIN,0,0,nstage);
+    /* SH-S2: TIME_FILT 0/1, TIMEWIN 0/1, OFFSET_MUTE 0/1/2 with valid
+     * filter, window and mute parameters (docs/sh_s2_data_operators_contract.md). */
+    exact_sh_require_collective_success(!exact_sh_s2_config_valid(),
+            "Exact viscoelastic SH FWI: unsupported TIME_FILT/TIMEWIN/OFFSET_MUTE "
+            "control or parameter (TIME_FILT 0/1 with ORDER >= 1 and "
+            "0 <= FC_low < FC_high < 1/(2 DT); TIMEWIN 0/1 with GAMMA, TWIN-, "
+            "TWIN+ >= 0; OFFSET_MUTE 0/1/2 with OFFSETC > 0).");
     exact_sh_require_config_int("INV_STF",INV_STF,0,0,nstage);
     exact_sh_require_config_int("N_ORDER",N_ORDER,0,0,nstage);
-    exact_sh_require_config_int("OFFSET_MUTE",OFFSET_MUTE,0,0,nstage);
     exact_sh_require_config_int("SPATFILTER",SPATFILTER,0,0,nstage);
     exact_sh_require_config_int("ROWI",ROWI,0,0,nstage);
     exact_sh_require_config_int("NORMALIZE",NORMALIZE,0,0,nstage);
@@ -672,6 +680,29 @@ FC=FC_END;
 iter=1;
 misfit_history = (struct fwi_misfit_history){0};
 exact_previous_alpha=0.0f;   /* SH-PRECOND-01: per-stage alpha history */
+if(TIME_FILT!=0 || TIMEWIN!=0 || OFFSET_MUTE!=0){
+    /* SH-S2: report the stage's data operators; with READREC = 1 the pick
+     * files of every shot are read before the stage's first iteration. */
+    if(TIMEWIN==1 && READREC==1){
+        int exact_s2_shot, exact_s2_status=0;
+        float *exact_s2_picks=(float *)malloc((size_t)(ntr_glob+1)*sizeof(float));
+        if(exact_s2_picks==NULL) exact_s2_status=-2;
+        for(exact_s2_shot=1;exact_s2_status==0 &&
+                exact_s2_shot<=(RUN_MULTIPLE_SHOTS ? nsrc : 1);exact_s2_shot++)
+            exact_s2_status=visco_sh_exact_read_picks(PICKS_FILE,exact_s2_shot,
+                    ntr_glob,exact_s2_picks);
+        free(exact_s2_picks);
+        exact_sh_require_collective_success(exact_s2_status!=0,
+                "Exact viscoelastic SH FWI: TIMEWIN = 1 needs readable pick files "
+                "PICKS_FILE<shot>.dat with one value per receiver for every shot.");
+    }
+    if(MYID==0){
+        printf("Exact SH data operators: stage %d TIME_FILT %d FC_low %e FC_high %e "
+               "ORDER %d TIMEWIN %d GAMMA %e TWIN- %e TWIN+ %e OFFSET_MUTE %d OFFSETC %e\n",
+               nstage,TIME_FILT,FC_START,FC_END,ORDER,TIMEWIN,GAMMA,
+               TWLENGTH_MINUS,TWLENGTH_PLUS,OFFSET_MUTE,OFFSETC);
+    }
+}
 if(OPT_LBFGS==1){
     /* SH-LBFGS-01: freeze class scales and clear the memory per stage. */
     exact_sh_require_collective_success(

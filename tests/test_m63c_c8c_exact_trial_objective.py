@@ -11,6 +11,8 @@ import subprocess
 
 import pytest
 
+from tests.utilities.sh_s2_link import S2_LINK_SOURCES
+
 
 def _compact(text: str) -> str:
     text = re.sub(r"/\\*.*?\\*/", "", text, flags=re.DOTALL)
@@ -140,7 +142,8 @@ def b4b_binaries(
         str(repository_root / "src/SH/matcopy_SH_adjoint.c"), str(repository_root / "src/SH/av_mu_SH.c"),
         str(repository_root / "src/SH/inv_rho_SH.c"), str(repository_root / "src/av_tau.c"),
         str(repository_root / "src/SH/prepare_update_s_visc_SH.c"), str(repository_root / "src/q_parameterization.c"),
-        str(repository_root / "src/splitsrc.c"), str(repository_root / "src/wavelet.c"), "-lm",
+        str(repository_root / "src/splitsrc.c"), str(repository_root / "src/wavelet.c"),
+        *(str(repository_root / source) for source in S2_LINK_SOURCES), "-lm",
         "-Wl,--wrap=sh_visc", "-Wl,--wrap=splitsrc",
         "-Wl,--wrap=visco_sh_exact_objective_shot",
         "-Wl,--wrap=visco_sh_exact_objective_gradient_shot",
