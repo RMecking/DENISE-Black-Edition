@@ -363,6 +363,14 @@ Nicht verworfen, aber erst nach I-3 wieder zu bewerten:
 - K1-Nullmoden-Analyse, sofern P-5 den A2-Abschluss übernimmt.
 - MPI-Overlap, Legacy-FD8-Ablösung (M9L-7), 3D, anisotrope FWI.
 - Unsicherheitsquantifizierung und ML-Priors (Abschnitt 8).
+- Inversion nach Q (Owner-Entscheidung vom 23.11.): vorerst nebensächlich. Q gilt
+  als konstanter, für die Messung abgeschätzter Hintergrund und wird in den
+  Benchmarks nicht aktualisiert. Befunde dazu, zur späteren Verwendung: Im
+  ersten Schritt einer Stufe ist der Q-Schritt zu groß (Übersprechen, r7), in
+  den folgenden zu klein (B1 mit falschem konstantem Start-Q, 23.11.: Q-Fehler
+  nach 20 Vollband-Iterationen noch 98 % des Startfehlers bei richtiger
+  Richtung). Ein falsches, festes Q kostet beim Vs-Modellfehler wenig (0,586
+  gegen 0,575 mit freiem Q), beim Datenmisfit viel.
 
 Historische HOLDs bleiben unverändert bestehen. Sie halten keine Arbeit dieser
 Roadmap auf, sperren aber weiterhin ihre ursprünglichen Aussagen und können
@@ -425,7 +433,7 @@ Entschieden von der Ownerin am 2026-11-21.
 | E-14 | Filter-Spurende und Zeitfenster im exakten Pfad? | Letztes Zeitsample bei aktivem Filter aus Zielfunktion und Adjoint-Quelle; Vergleich mit Köhn entsprechend ausgewertet. Fenster nur um Picks, `TWIN-` als Zeit vor dem Pick mit Gauß-Flanke, Fenster exakt im Gradienten. |
 | E-15 | S-2 integrieren, obwohl r7 das Kriterium K6 verfehlt hat? (22.11.) | Ja, mit begrenztem Anspruch: r7 bleibt nicht bestanden, K6 wird nicht umgedeutet. S-2 ist als Filter-, Fenster- und Mute-Funktion angenommen, ohne Aussage zur Q-Rekonstruktion. Ein Folgelauf mit festem Q in den gefilterten Stufen (r7b) ist Diagnose vor S-3, keine Merge-Bedingung; er hat am 22.11. alle Kriterien erfüllt, ändert die Bewertung von r7 aber nicht. Empfohlenes Stufenschema bis S-3: Q erst in der Vollbandstufe freigeben. Künftig getrennt und jeweils vorab festgelegt: Kriterien zur Fähigkeit und Kriterien zur Rekonstruktionsgüte. |
 | E-16 | B3-S-Lauf und Vergleich mit Köhn für P-1? (22.11.) | Akquisition unterhalb der CPML, drei Stufen zu je höchstens 25 Iterationen, Kriterien vor dem Lauf eingefroren (Misfit sinkt je Stufe für Training und Kontrolle, Vs-Modellfehler sinkt, im oberen Tiefenband um mindestens 2 % des Startfehlers). Der Inversionsvergleich mit Köhn entfällt, weil sein Modellleser eine andere Dämpfung setzt und der Vergleich nichts aussagte; an seine Stelle tritt ein Forward-Vergleich bei gleicher Dämpfung mit vorab notierter Erwartung. |
-| E-17 | Quellsignalschätzung S-3 und Reihenfolge im SH-Strang? (23.11.) | Variable Projektion: Das Quellsignal wird bei jeder Auswertung der Zielfunktion neu geschätzt, als gewichtetes Kleinste-Quadrate-Problem mit denselben Gewichten wie die Zielfunktion; Köhns einmalige Schätzung je Stufe bleibt als Schalter. Ein Signal je Schuss, begrenzte Länge als Parameter, Regularisierung als Teil der Zielfunktion. Nachweis auf B1 mit unbekanntem Signal, weil B2 im exakten Pfad rund 355 GB je Schuss bräuchte. Parallel ein Eingabepaket B1 mit falschem Start-Q, darin die Klassengewichtung für Q als Arm. K-5 (Checkpoint/Replay für SH) folgt direkt nach S-3, vor S-4; es ist Voraussetzung für B2 und für Felddaten. Vp und Vs werden in den PSV-Benchmarks künftig unabhängig betrachtet. |
+| E-17 | Quellsignalschätzung S-3 und Reihenfolge im SH-Strang? (23.11.) | Variable Projektion: Das Quellsignal wird bei jeder Auswertung der Zielfunktion neu geschätzt, als gewichtetes Kleinste-Quadrate-Problem mit denselben Gewichten wie die Zielfunktion; Köhns einmalige Schätzung je Stufe bleibt als Schalter. Ein Signal je Schuss, begrenzte Länge als Parameter, Regularisierung als Teil der Zielfunktion. Nachweis auf B1 mit unbekanntem Signal, weil B2 im exakten Pfad rund 355 GB je Schuss bräuchte. Parallel ein Eingabepaket B1 mit falschem Start-Q, darin die Klassengewichtung für Q als Arm. K-5 (Checkpoint/Replay für SH) folgt direkt nach S-3, vor S-4; es ist Voraussetzung für B2 und für Felddaten. Das Signal kann in der Variante mit festem Signal je Stufe nur aus nahen Offsets geschätzt werden (`OFFSETC_STF`, Praxis der Ownerin). Ein robusteres Verfahren als die Wiener-Dekonvolution ist ausdrücklich gewünscht; der Schätzer im Zeitbereich ist der erste Schritt, der quellunabhängige Misfit (S-4) der zweite. Vp und Vs werden in den PSV-Benchmarks künftig unabhängig betrachtet. |
 
 ## 10. Externes Audit vom 21.11.2026
 
