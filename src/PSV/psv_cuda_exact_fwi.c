@@ -4,7 +4,7 @@
 #include <stdarg.h>
 #include <stdint.h>
 
-extern int NX,NY,NT,L,Q_PARAMETERIZATION_MODE;
+extern int NX,NY,NT,L,Q_PARAMETERIZATION_MODE,TIME_FILT;
 extern float *FL,Q_APPROX_FMIN,Q_APPROX_FMAX,Q_APPROX_DF;
 extern char JACOBIAN[STRING_SIZE];
 
@@ -18,7 +18,7 @@ static struct {
     struct denise_cuda_psv_adjoint_sweep_stats sweep;
     struct denise_cuda_psv_native_gradient_stats native;
     struct denise_cuda_psv_physical_gradient_stats physical;
-    int active,complete,segments,q_mode,trial_forwards,trial_failures;
+    int active,complete,segments,q_mode,trial_forwards,trial_failures,shot;
     size_t trial_trace_d2h_calls,trial_trace_d2h_bytes;
     size_t context_destroy_calls;
     float *raw_modeled_test;
@@ -27,6 +27,7 @@ static struct {
     uint64_t field_hash[CUDA_PHYSICAL_FIELDS];
     uint64_t download_fp32_hash[CUDA_PHYSICAL_FIELDS];
     uint64_t production_matrix_hash[CUDA_PHYSICAL_FIELDS];
+    uint64_t expected_sum_hash[CUDA_PHYSICAL_FIELDS];
     double field_sum[CUDA_PHYSICAL_FIELDS];
     double field_absmax[CUDA_PHYSICAL_FIELDS];
     size_t field_nonzero[CUDA_PHYSICAL_FIELDS];
@@ -127,6 +128,7 @@ static void write_report(void) {
         "  \"segments\": %d,\n"
         "  \"q_parameterization_mode\": %d,\n"
         "  \"base_objective\": %.17g,\n"
+        "  \"last_shot_index\": %d,\n"
         "  \"trial_forward_count\": %d,\n"
         "  \"trial_failure_count\": %d,\n"
         "  \"trial_trace_d2h_calls\": %zu,\n"
@@ -162,7 +164,7 @@ static void write_report(void) {
         "  \"map_synchronization_calls\": %zu,\n"
         "  \"fields\": {\n",
         cuda_fwi.complete?"true":"false",cuda_fwi.segments,cuda_fwi.q_mode,
-        cuda_fwi.base_objective,cuda_fwi.trial_forwards,cuda_fwi.trial_failures,
+        cuda_fwi.base_objective,cuda_fwi.shot,cuda_fwi.trial_forwards,cuda_fwi.trial_failures,
         cuda_fwi.trial_trace_d2h_calls,cuda_fwi.trial_trace_d2h_bytes,
         cuda_fwi.context_destroy_calls,
         cuda_fwi.forward.h2d_transfer_calls,cuda_fwi.forward.h2d_bytes,
@@ -203,7 +205,8 @@ static void write_report(void) {
             "\"sum\": %.17g, \"absmax\": %.17g, "
             "\"fnv1a64\": \"%016llx\", "
             "\"download_fp32_fnv1a64\": \"%016llx\", "
-            "\"production_matrix_fnv1a64\": \"%016llx\"}%s\n",
+            "\"production_matrix_fnv1a64\": \"%016llx\", "
+            "\"expected_sum_fnv1a64\": \"%016llx\"}%s\n",
             name[f],cuda_fwi.field_finite[f]?"true":"false",
             cuda_fwi.field_nonzero[f],cuda_fwi.field_negative_zero[f],
             cuda_fwi.field_sum[f],
@@ -211,6 +214,7 @@ static void write_report(void) {
             (unsigned long long)cuda_fwi.field_hash[f],
             (unsigned long long)cuda_fwi.download_fp32_hash[f],
             (unsigned long long)cuda_fwi.production_matrix_hash[f],
+            (unsigned long long)cuda_fwi.expected_sum_hash[f],
             f+1<CUDA_PHYSICAL_FIELDS?",":"");
     fprintf(stream,"  }\n}\n");
     fclose(stream);
@@ -386,6 +390,7 @@ int denise_cuda_psv_exact_fwi_finish(
             "finish has no owning CUDA context or calc_res_PSV residual");
     if(request->ntr!=cuda_fwi.config.ntr||request->ns!=cuda_fwi.config.nt)
         return adapter_failure("residual dimensions changed before CUDA reverse sweep");
+    cuda_fwi.shot=request->shot;
     cuda_fwi.base_objective=request->base_objective;
     cuda_fwi.q_mode=Q_PARAMETERIZATION_MODE;
     if(denise_cuda_psv_adjoint_prepare_zero(cuda_fwi.context)!=0) {
@@ -398,9 +403,11 @@ int denise_cuda_psv_exact_fwi_finish(
     }
     for(k=1;k<=request->ntr;++k) for(t=1;t<=request->ns;++t) {
         size_t sample=(size_t)(k-1)*request->ns+(size_t)(t-1);
-        production_residual[sample]=
+        /* The production source uses chronological physical samples. R4
+         * projects NT out only for filtered exact objectives/adjoints. */
+        production_residual[sample]=(TIME_FILT && t==request->ns) ? 0.0f :
             request->data->sectionvxdiff[k][request->ns-t+1];
-        production_residual[residual_elements+sample]=
+        production_residual[residual_elements+sample]=(TIME_FILT && t==request->ns) ? 0.0f :
             request->data->sectionvydiff[k][request->ns-t+1];
     }
     if(write_production_residual_diagnostic(production_residual,
@@ -481,7 +488,8 @@ int denise_cuda_psv_exact_fwi_finish(
         float **production[CUDA_PHYSICAL_FIELDS]={request->fwi->waveconv,
             request->fwi->waveconv_u,request->fwi->waveconv_rho,
             request->fwi->waveconv_qp_exact,request->fwi->waveconv_qs_exact};
-        /* The one-source CUDA gradient is the whole shot gradient: the
+        if(request->shot==1) {
+        /* The first CUDA shot is assigned directly: the
          * production matrices must still hold their zero initialisation.
          * Assigning (instead of adding onto +0.0f) keeps exact -0.0f
          * gradient values bit-identical to the CUDA download. */
@@ -508,11 +516,40 @@ int denise_cuda_psv_exact_fwi_finish(
             }
             cuda_fwi.download_fp32_hash[f]=direct;
             cuda_fwi.production_matrix_hash[f]=associated;
+            cuda_fwi.expected_sum_hash[f]=direct;
             if(direct!=associated) {
                 adapter_failure(
                     "production matrix association differs from direct CUDA %s download",
                     suffix[f]);
                 goto cleanup;
+            }
+        }
+        } else {
+            /* Subsequent shots use ascending FP32 addition. Keep a separately
+             * formed expected sum for the production-association check. */
+            for(f=0;f<CUDA_PHYSICAL_FIELDS;++f) {
+                uint64_t direct=UINT64_C(1469598103934665603);
+                uint64_t expected=UINT64_C(1469598103934665603);
+                uint64_t associated=UINT64_C(1469598103934665603);
+                for(j=1;j<=NY;++j) for(i=1;i<=NX;++i) {
+                    float value=(float)field[f][(size_t)(j-1)*NX+(i-1)];
+                    float sum=production[f][j][i]+value;
+                    if(!isfinite(sum)) {
+                        adapter_failure("non-finite multi-shot %s gradient sum",suffix[f]);
+                        goto cleanup;
+                    }
+                    expected=hash_float_value(expected,sum);
+                    production[f][j][i]+=value;
+                    direct=hash_float_value(direct,value);
+                    associated=hash_float_value(associated,production[f][j][i]);
+                }
+                cuda_fwi.download_fp32_hash[f]=direct;
+                cuda_fwi.production_matrix_hash[f]=associated;
+                cuda_fwi.expected_sum_hash[f]=expected;
+                if(expected!=associated) {
+                    adapter_failure("production matrix differs from expected %s shot sum",suffix[f]);
+                    goto cleanup;
+                }
             }
         }
     }

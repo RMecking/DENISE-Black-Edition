@@ -8,6 +8,7 @@
 extern int NX, NY, NXG, NYG, NT, FW, BOUNDARY, FREE_SURF, NPROCX, NPROCY, NDT;
 extern int MODE, L, INVMAT1, GRAD_FORM, FDORDER, Q_PARAMETERIZATION_MODE;
 extern int DTINV, LNORM, QUELLTYP, READMOD, NSRC, MYID_SHOT, POS[3], INDEX[5];
+extern int NCOLORS, RUN_MULTIPLE_SHOTS, TIME_FILT;
 extern float DT, DH, *FL, Q_APPROX_FMIN, Q_APPROX_FMAX, Q_APPROX_DF;
 extern char JACOBIAN[STRING_SIZE];
 extern MPI_Comm SHOT_COMM;
@@ -88,7 +89,8 @@ int visco_psv_exact_supported(void) {
     return MODE == 1 && L == 1 && INVMAT1 == 1 && GRAD_FORM == 2 &&
            FDORDER == 4 && !FREE_SURF && !BOUNDARY && FW > 0 &&
            NDT == 1 && DTINV == 1 && LNORM == 2 && READMOD == 1 &&
-           NSRC == 1 && NX >= halo && NY >= halo && NX >= FW && NY >= FW;
+           NSRC >= 1 && NCOLORS == 1 && (NSRC == 1 || RUN_MULTIPLE_SHOTS) &&
+           NX >= halo && NY >= halo && NX >= FW && NY >= FW;
 }
 
 int visco_psv_exact_enabled(void) {
@@ -101,7 +103,7 @@ void visco_psv_exact_begin(void) {
     int k;
     if (!visco_psv_exact_enabled()) return;
     if (!visco_psv_exact_supported())
-        err(" Exact visco PSV raw gradient supports one-source READMOD=1 L=1 FD4, INVMAT1=1, GRAD_FORM=2, NDT=DTINV=1, LNORM=2, CPML interior only, with local domains large enough for FD and CPML halos. ");
+        err(" Exact visco PSV raw gradient supports sequential-source NCOLORS=1 READMOD=1 L=1 FD4, INVMAT1=1, GRAD_FORM=2, NDT=DTINV=1, LNORM=2, CPML interior only, with local domains large enough for FD and CPML halos. ");
     /* The CUDA executable owns checkpoint/replay state in one persistent
      * device context.  Avoid allocating or arming the CPU implementation. */
     if (cuda_exact_fwi_selected()) return;
@@ -924,8 +926,9 @@ void visco_psv_exact_finish(
         for (t=t_end;t>=t_begin;t--) {
         /* calc_res_PSV() is authoritative. It stores chronological physical
          * sample t at reverse index NT-t+1. Production sample one is excluded
-         * from L2 and is not injected into the exact transpose. */
-        if (t>1) for (k=1;k<=ntr;k++) {
+         * from L2 and is not injected into the exact transpose. R4 also
+         * excludes physical sample NT when the source/data filter is active. */
+        if (t>1 && (!TIME_FILT || t<NT)) for (k=1;k<=ntr;k++) {
             i=acq->recpos_loc[1][k]; j=acq->recpos_loc[2][k]; p=cell(j,i);
             avx[p] += (double)data->sectionvxdiff[k][NT-t+1];
             avy[p] += (double)data->sectionvydiff[k][NT-t+1];

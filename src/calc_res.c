@@ -4,7 +4,7 @@
  *  ----------------------------------------------------------------------*/
 #include "fd.h"
 
-double calc_res(float **sectiondata, float **section, float **sectiondiff, float **sectiondiffold, int ntr, int ns, int LNORM, double L2, int itest, int sws, int swstestshot, int ntr_glob, int **recpos, int **recpos_loc, float **srcpos, int nsrc_glob, int ishot, int iter){
+static double calc_res_impl(float **sectiondata, float **section, float **sectiondiff, float **sectiondiffold, int ntr, int ns, int LNORM, double L2, int itest, int sws, int swstestshot, int ntr_glob, int **recpos, int **recpos_loc, float **srcpos, int nsrc_glob, int ishot, int iter, int exclude_last_sample){
 
 /* declaration of variables */
 extern float DT, DH, OFFSETC, FC, FC_START, FC_END, C_vp, C_rho, GAMMA, TWLENGTH_MINUS;
@@ -536,6 +536,12 @@ for(i=1;i<=ntr;i++){
      time_window(sectiondiff, picked_times, iter, ntr_glob,recpos_loc, ntr, ns, ishot);
    }    
 
+/* R4 projector acts AFTER all residual preprocessing/time windows.
+ * sectiondiff is reversed: index 1 is physical sample ns.  The explicit
+ * exact-PSV entry point alone selects this; observations/energy are intact. */
+if (exclude_last_sample)
+    for (i=1;i<=ntr;++i) sectiondiff[i][1]=0.0f;
+
 /* calculate objective functions */
 /* ----------------------------- */
 
@@ -639,3 +645,13 @@ if((LNORM==8)&&(GRAD_FORM==2)){
  
 return l2;
 } /* end of function */
+
+/* Compatibility entry: legacy and unfiltered callers retain every sample. */
+double calc_res(float **sectiondata, float **section, float **sectiondiff, float **sectiondiffold, int ntr, int ns, int LNORM, double L2, int itest, int sws, int swstestshot, int ntr_glob, int **recpos, int **recpos_loc, float **srcpos, int nsrc_glob, int ishot, int iter) {
+    return calc_res_impl(sectiondata,section,sectiondiff,sectiondiffold,ntr,ns,LNORM,L2,itest,sws,swstestshot,ntr_glob,recpos,recpos_loc,srcpos,nsrc_glob,ishot,iter,0);
+}
+
+/* Internal exact-PSV filtered contract (R4), selected by calc_res_PSV only. */
+double calc_res_filtered_exact_psv(float **sectiondata, float **section, float **sectiondiff, float **sectiondiffold, int ntr, int ns, int LNORM, double L2, int itest, int sws, int swstestshot, int ntr_glob, int **recpos, int **recpos_loc, float **srcpos, int nsrc_glob, int ishot, int iter) {
+    return calc_res_impl(sectiondata,section,sectiondiff,sectiondiffold,ntr,ns,LNORM,L2,itest,sws,swstestshot,ntr_glob,recpos,recpos_loc,srcpos,nsrc_glob,ishot,iter,1);
+}

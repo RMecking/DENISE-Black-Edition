@@ -34,13 +34,26 @@ IFLAGS=-I./../libcseife -I./../include
 NVCC ?= nvcc
 CUDA_ARCHS ?= 86
 CUDA_CXXFLAGS ?= -O2 -std=c++14
+# Shared PSV CUDA core: NoFMA covers denise_cuda MODE=0 forward and MODE=1
+# exact FWI, plus cuda_psv_forward and cuda_psv_fd4_l1 harness binaries.
+# Owner R7: both uses share this option; M9 objects/rules are independent.
+# The qualified 300x200 adapter measured +4.304% median NoFMA/FMA runtime.
+# Opt in to contraction with CUDA_PSV_FMAD=true.
+# Distinct object names prevent stale-cache reuse when this option changes.
+CUDA_PSV_FMAD ?= false
+ifneq ($(CUDA_PSV_FMAD),false)
+ifneq ($(CUDA_PSV_FMAD),true)
+$(error CUDA_PSV_FMAD must be exactly false or true)
+endif
+endif
 CUDA_GENCODE = $(foreach arch,$(CUDA_ARCHS),-gencode=arch=compute_$(arch),code=sm_$(arch))
 CUDA_BUILD_DIR = .cuda
 CUDA_BACKEND_OBJ = $(CUDA_BUILD_DIR)/denise_cuda_backend.o
 CUDA_HARNESS_OBJ = $(CUDA_BUILD_DIR)/cuda_foundation_harness.o
 CUDA_UTIL_OBJ = $(CUDA_BUILD_DIR)/util.o
 CUDA_FOUNDATION_BIN = $(EXEC)/denise_cuda_foundation
-CUDA_PSV_OBJ = $(CUDA_BUILD_DIR)/psv_fd4_l1.o
+CUDA_PSV_OBJ = $(CUDA_BUILD_DIR)/psv_fd4_l1_$(CUDA_PSV_FMAD).o
+CUDA_PSV_LINK_CONFIG = $(CUDA_BUILD_DIR)/psv_active_fmad.out
 CUDA_PSV_HARNESS_OBJ = $(CUDA_BUILD_DIR)/cuda_psv_fd4_l1_harness.o
 CUDA_PSV_CPU_OBJ = $(CUDA_BUILD_DIR)/update_v_PML_PSV.o \
 	$(CUDA_BUILD_DIR)/update_s_visc_PML_PSV.o \
@@ -370,8 +383,18 @@ $(CUDA_UTIL_OBJ): util.c | $(CUDA_BUILD_DIR)
 $(CUDA_FOUNDATION_BIN): $(CUDA_BACKEND_OBJ) $(CUDA_HARNESS_OBJ) $(CUDA_UTIL_OBJ)
 	$(NVCC) $(CUDA_CXXFLAGS) $(CUDA_GENCODE) -cudart shared $^ $(MPI_LINK_FLAGS) -lm -o $@
 
+.PHONY: cuda_psv_link_config_force
+cuda_psv_link_config_force:
+
+# An existing alternate object can be older than the selected binary.
+# Update only on option changes, so switching back still forces a relink.
+$(CUDA_PSV_LINK_CONFIG): cuda_psv_link_config_force | $(CUDA_BUILD_DIR)
+	@printf '%s\n' '$(CUDA_PSV_FMAD)' > $@.tmp
+	@cmp -s $@.tmp $@ || cp $@.tmp $@
+	@rm -f $@.tmp
+
 $(CUDA_PSV_OBJ): CUDA/psv_fd4_l1.cu ../include/denise_cuda_psv.h ../include/denise_cuda_psv_forward.h ../include/denise_cuda_backend.h | $(CUDA_BUILD_DIR)
-	$(NVCC) $(CUDA_CXXFLAGS) $(CUDA_GENCODE) -I./../include -c $< -o $@
+	$(NVCC) $(CUDA_CXXFLAGS) $(CUDA_GENCODE) --fmad=$(CUDA_PSV_FMAD) -I./../include -c $< -o $@
 
 $(CUDA_PSV_HARNESS_OBJ): ../tests/utilities/cuda_psv_fd4_l1_harness.c ../include/denise_cuda_psv.h | $(CUDA_BUILD_DIR)
 	$(CC) $(CFLAGS) -std=c99 $(IFLAGS) -c $< -o $@
@@ -397,14 +420,14 @@ $(CUDA_BUILD_DIR)/update_s_visc_PML_PSV.o: PSV/update_s_visc_PML_PSV.c | $(CUDA_
 $(CUDA_BUILD_DIR)/prepare_update_s_visc_PSV.o: PSV/prepare_update_s_visc_PSV.c | $(CUDA_BUILD_DIR)
 	$(CC) $(CFLAGS) -std=c99 $(IFLAGS) -c $< -o $@
 
-$(CUDA_PSV_BIN): $(CUDA_BACKEND_OBJ) $(CUDA_PSV_OBJ) $(CUDA_PSV_HARNESS_OBJ) $(CUDA_UTIL_OBJ) $(CUDA_PSV_CPU_OBJ)
-	$(NVCC) $(CUDA_CXXFLAGS) $(CUDA_GENCODE) -cudart shared $^ $(MPI_LINK_FLAGS) -lm -o $@
+$(CUDA_PSV_BIN): $(CUDA_BACKEND_OBJ) $(CUDA_PSV_OBJ) $(CUDA_PSV_HARNESS_OBJ) $(CUDA_UTIL_OBJ) $(CUDA_PSV_CPU_OBJ) $(CUDA_PSV_LINK_CONFIG)
+	$(NVCC) $(CUDA_CXXFLAGS) $(CUDA_GENCODE) -cudart shared $(filter-out $(CUDA_PSV_LINK_CONFIG),$^) $(MPI_LINK_FLAGS) -lm -o $@
 
-$(CUDA_DENISE_BIN): $(CUDA_DENISE_OBJ)
-	$(NVCC) $(CUDA_CXXFLAGS) $(CUDA_GENCODE) -cudart shared $(SFLAGS) $^ $(MPI_LINK_FLAGS) $(LFLAGS) -o $@
+$(CUDA_DENISE_BIN): $(CUDA_DENISE_OBJ) $(CUDA_PSV_LINK_CONFIG)
+	$(NVCC) $(CUDA_CXXFLAGS) $(CUDA_GENCODE) -cudart shared $(SFLAGS) $(filter-out $(CUDA_PSV_LINK_CONFIG),$^) $(MPI_LINK_FLAGS) $(LFLAGS) -o $@
 
-$(CUDA_FORWARD_BIN): $(CUDA_FORWARD_LINK_OBJ)
-	$(NVCC) $(CUDA_CXXFLAGS) $(CUDA_GENCODE) -cudart shared $(SFLAGS) $^ $(MPI_LINK_FLAGS) $(LFLAGS) -o $@
+$(CUDA_FORWARD_BIN): $(CUDA_FORWARD_LINK_OBJ) $(CUDA_PSV_LINK_CONFIG)
+	$(NVCC) $(CUDA_CXXFLAGS) $(CUDA_GENCODE) -cudart shared $(SFLAGS) $(filter-out $(CUDA_PSV_LINK_CONFIG),$^) $(MPI_LINK_FLAGS) $(LFLAGS) -o $@
 
 cuda_clean:
 	rm -rf $(CUDA_BUILD_DIR)
