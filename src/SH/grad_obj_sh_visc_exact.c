@@ -254,20 +254,21 @@ int visco_sh_exact_objective_gradient(
         free(data_weight);
         data_weight = NULL;
         if (shot_status == 0) {
-            /* SH-S3: Phi_s = D(v) + eps/2 |v|^2 from the estimator; the
-             * adjoint above used the forward of B v with the same weights. */
-            objective += visco_sh_exact_stf_active() ? stf_phi
-                                                     : shot_result.objective;
             if (visco_sh_exact_stf_active()) {
-                /* runtime cross-check of s = g * v (review V-7.5): data term
-                 * of the true forward with B v against the estimator's D */
+                /* SH-S3: Phi_s = D(v) + eps/2 |v|^2 from the estimator; the
+                 * adjoint above used the forward of B v with the same
+                 * weights.  Runtime cross-check of s = g * v (review V-7.5):
+                 * data term of the true forward with B v against D. */
                 extern int MYID;
                 double d_est = visco_sh_exact_stf_shot_data_term();
+                objective += stf_phi;
                 if (MYID == 0)
                     printf("Exact SH STF: shot %d D_forward %e D_estimator %e rel %e\n",
                            ishot, shot_result.objective, d_est,
                            fabs(shot_result.objective - d_est) /
                            (fabs(d_est) > 0.0 ? fabs(d_est) : 1.0));
+            } else {
+                objective += shot_result.objective;
             }
             exact_multi_add_owned(request->grad_primary, shot_primary);
             exact_multi_add_owned(request->grad_rho, shot_rho);
