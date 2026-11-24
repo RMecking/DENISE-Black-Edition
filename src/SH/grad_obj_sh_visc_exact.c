@@ -29,7 +29,8 @@ static int exact_multi_preflight(
             (N_ORDER != 0) || !exact_sh_s2_config_valid() ||
             (TRKILL != 0) || (SEISMO != 1) || (EPRECOND != 0) ||
             (SWS_TAPER_CIRCULAR_PER_SHOT != 0) ||
-            (INV_STF != 0) || (QUELLTYPB == 0) || (READREC < 0) ||
+            ((INV_STF != 0) != visco_sh_exact_stf_active()) ||
+            (QUELLTYPB == 0) || (READREC < 0) ||
             (READREC > 2) || (request->ns < 1))
         return -1;
     if (READREC != 2) {
@@ -106,7 +107,7 @@ int visco_sh_exact_objective_gradient(
     float **shot_primary = NULL, **shot_rho = NULL, **shot_q = NULL;
     int nshots, ishot, nsrc_local, nrec_local, nrec_global, source_columns;
     int nt, shot_status, status = -1;
-    double objective = 0.0;
+    double objective = 0.0, stf_phi = 0.0;
     double *data_weight = NULL;
 
     shot_status = (result == NULL) ? -1 : exact_multi_preflight(request);
@@ -172,6 +173,12 @@ int visco_sh_exact_objective_gradient(
             status = exact_sh_abort_phase(MPI_COMM_WORLD, "gradient shot barrier", -2);
             goto cleanup;
         }
+        if (visco_sh_exact_stf_active()) {
+            /* SH-S3: estimated source B v, B d, weights, shot objective. */
+            shot_status = visco_sh_exact_stf_prepare_shot(request, ishot,
+                    nshots, nsrc_local, nrec_local, nrec_global,
+                    &data_weight, &stf_phi);
+        } else {
         request->acquisition->signals = wavelet(
                 request->acquisition->srcpos_loc, nsrc_local, ishot);
         if ((QUELLART == 6) && (nsrc_local > 0))
@@ -189,6 +196,7 @@ int visco_sh_exact_objective_gradient(
                     nrec_local, nrec_global, request->ns, &data_weight);
         shot_status = exact_sh_collective_status(MPI_COMM_WORLD,
                 "objective-gradient SH-S2 data operators", shot_status);
+        }
         if (shot_status != 0) {
             free(data_weight);
             data_weight = NULL;
@@ -246,7 +254,22 @@ int visco_sh_exact_objective_gradient(
         free(data_weight);
         data_weight = NULL;
         if (shot_status == 0) {
-            objective += shot_result.objective;
+            if (visco_sh_exact_stf_active()) {
+                /* SH-S3: Phi_s = D(v) + eps/2 |v|^2 from the estimator; the
+                 * adjoint above used the forward of B v with the same
+                 * weights.  Runtime cross-check of s = g * v (review V-7.5):
+                 * data term of the true forward with B v against D. */
+                extern int MYID;
+                double d_est = visco_sh_exact_stf_shot_data_term();
+                objective += stf_phi;
+                if (MYID == 0)
+                    printf("Exact SH STF: shot %d D_forward %e D_estimator %e rel %e\n",
+                           ishot, shot_result.objective, d_est,
+                           fabs(shot_result.objective - d_est) /
+                           (fabs(d_est) > 0.0 ? fabs(d_est) : 1.0));
+            } else {
+                objective += shot_result.objective;
+            }
             exact_multi_add_owned(request->grad_primary, shot_primary);
             exact_multi_add_owned(request->grad_rho, shot_rho);
             exact_multi_add_owned(request->grad_q, shot_q);

@@ -28,7 +28,8 @@ static int exact_objective_multi_preflight(
             (N_ORDER != 0) || !exact_sh_s2_config_valid() ||
             (TRKILL != 0) || (SEISMO != 1) || (EPRECOND != 0) ||
             (SWS_TAPER_CIRCULAR_PER_SHOT != 0) ||
-            (INV_STF != 0) || (QUELLTYPB == 0) || (READREC < 0) ||
+            ((INV_STF != 0) != visco_sh_exact_stf_active()) ||
+            (QUELLTYPB == 0) || (READREC < 0) ||
             (READREC > 2) || (request->ns < 1))
         return -1;
     if (READREC != 2) {
@@ -92,7 +93,7 @@ int visco_sh_exact_objective(
     struct visco_sh_exact_objective_shot_result shot_result;
     int nshots, ishot, nsrc_local, nrec_local, nrec_global, source_columns;
     int nt, shot_status;
-    double objective = 0.0;
+    double objective = 0.0, stf_phi = 0.0;
     double *data_weight = NULL;
 
     shot_status = (result == NULL) ? -1 : exact_objective_multi_preflight(request);
@@ -148,6 +149,12 @@ int visco_sh_exact_objective(
                 &nsrc_local, source_columns);
         if (MPI_Barrier(MPI_COMM_WORLD) != MPI_SUCCESS)
             return exact_sh_abort_phase(MPI_COMM_WORLD, "objective shot barrier", -2);
+        if (visco_sh_exact_stf_active()) {
+            /* SH-S3: the estimation yields the shot objective directly. */
+            shot_status = visco_sh_exact_stf_prepare_shot(request, ishot,
+                    nshots, nsrc_local, nrec_local, nrec_global,
+                    &data_weight, &stf_phi);
+        } else {
         request->acquisition->signals = wavelet(
                 request->acquisition->srcpos_loc, nsrc_local, ishot);
         if ((QUELLART == 6) && (nsrc_local > 0))
@@ -165,6 +172,7 @@ int visco_sh_exact_objective(
                     nrec_local, nrec_global, request->ns, &data_weight);
         shot_status = exact_sh_collective_status(MPI_COMM_WORLD,
                 "objective SH-S2 data operators", shot_status);
+        }
         if (shot_status != 0) {
             free(data_weight);
             data_weight = NULL;
@@ -211,9 +219,14 @@ int visco_sh_exact_objective(
         shot_request.observed_vz =
             request->legacy_fwi_seismogram->sectionvzdata;
         shot_request.data_weight = data_weight;
+        if (visco_sh_exact_stf_active()) {
+            shot_status = 0;
+            objective += stf_phi;
+        } else {
         shot_status = visco_sh_exact_objective_shot(
                 &shot_request, &shot_result);
         if (shot_status == 0) objective += shot_result.objective;
+        }
         free(data_weight);
         data_weight = NULL;
 
