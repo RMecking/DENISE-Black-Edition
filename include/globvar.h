@@ -20,6 +20,8 @@ int OPT_PRECOND = 0, OPT_ALPHA_ADAPT = 0;
 float OPT_PRECOND_EPS = 0.005f, OPT_ALPHA_ADAPT_FACTOR = 2.0f;
 /* SH-LBFGS-01 optional records 132-133 (defaults = 86fd2bf behaviour) */
 int OPT_LBFGS = 0, OPT_LBFGS_M = 5;
+/* SH-S3: source signal support in seconds (< 0: 0.5*TIME); record 134 */
+float STF_LENGTH = -1.0f;
 float ANGLE;
 float REFREC[4] = {0.0, 0.0, 0.0, 0.0}, FPML;
 int SEISMO, NDT, NSRC = 1, SEIS_FORMAT, FREE_SURF, READMOD, READREC, SRCREC, FW = 0;

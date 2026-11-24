@@ -276,6 +276,8 @@ DENISE += alloc_fwiSH.c \
 	  visco_sh_exact_precond.c \
 	  visco_sh_exact_lbfgs.c \
 	  visco_sh_exact_data_operators.c \
+	  visco_sh_exact_stf.c \
+	  visco_sh_exact_stf_shot.c \
 	  visco_sh_exact_trial_state.c \
 	  visco_sh_exact_material_preparation.c \
 	  step_length_est_sh_visc_exact.c \

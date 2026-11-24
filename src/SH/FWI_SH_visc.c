@@ -152,6 +152,9 @@ extern float OPT_WEIGHT_PRIMARY, OPT_WEIGHT_RHO, OPT_WEIGHT_Q;
 extern int OPT_PRECOND, OPT_ALPHA_ADAPT;
 extern float OPT_PRECOND_EPS, OPT_ALPHA_ADAPT_FACTOR;
 extern int OPT_LBFGS, OPT_LBFGS_M;
+extern float STF_LENGTH, EPS_STF;   /* SH-S3 */
+extern int QUELLART;
+extern char INV_MODELFILE[STRING_SIZE];
 extern int POS[3], NPROCX, NPROCY, FREE_SURF, BOUNDARY;
 extern char MISFIT_LOG_FILE[STRING_SIZE];
 extern char PICKS_FILE[STRING_SIZE];
@@ -357,7 +360,14 @@ for(nstage=1;nstage<=stagemax;nstage++){
             "control or parameter (TIME_FILT 0/1 with ORDER >= 1 and "
             "0 <= FC_low < FC_high < 1/(2 DT); TIMEWIN 0/1 with GAMMA, TWIN-, "
             "TWIN+ >= 0; OFFSET_MUTE 0/1/2 with OFFSETC > 0).");
-    exact_sh_require_config_int("INV_STF",INV_STF,0,0,nstage);
+    /* SH-S3: INV_STF 0/1/3 with EPS_STF > 0, OFFSETC_STF >= 0 (only 0 with
+     * INV_STF = 1) and a support of N_w >= 1 samples
+     * (docs/sh_s3_stf_contract.md). */
+    exact_sh_require_collective_success(!visco_sh_exact_stf_config_valid(),
+            "Exact viscoelastic SH FWI: unsupported INV_STF control or parameter "
+            "(INV_STF 0, 1 or 3; with INV_STF != 0: EPS_STF > 0, NORMALIZE = 0, "
+            "STF_LENGTH giving at least one sample, OFFSETC_STF >= 0 and "
+            "OFFSETC_STF = 0 with INV_STF = 1).");
     exact_sh_require_config_int("N_ORDER",N_ORDER,0,0,nstage);
     exact_sh_require_config_int("SPATFILTER",SPATFILTER,0,0,nstage);
     exact_sh_require_config_int("ROWI",ROWI,0,0,nstage);
@@ -703,6 +713,16 @@ if(TIME_FILT!=0 || TIMEWIN!=0 || OFFSET_MUTE!=0){
                TWLENGTH_MINUS,TWLENGTH_PLUS,OFFSET_MUTE,OFFSETC);
     }
 }
+/* SH-S3: per-stage source estimation state (eps per shot, O1 signals). */
+exact_sh_require_collective_success(
+        visco_sh_exact_stf_stage_begin(nstage,RUN_MULTIPLE_SHOTS ? nsrc : 1),
+        "Exact SH STF stage start failed.");
+if(INV_STF!=0 && MYID==0){
+    printf("Exact SH STF: stage %d INV_STF %d STF_LENGTH %e N_w %d EPS_STF %e "
+           "(QUELLART %d not used for the source)\n",nstage,INV_STF,
+           STF_LENGTH<0.0f ? 0.5f*TIME : STF_LENGTH,visco_sh_exact_stf_nw(),
+           EPS_STF,QUELLART);
+}
 if(OPT_LBFGS==1){
     /* SH-LBFGS-01: freeze class scales and clear the memory per stage. */
     exact_sh_require_collective_success(
@@ -997,6 +1017,12 @@ exact_status=visco_sh_exact_objective_gradient(
         &exact_objective_request,&exact_objective_result);
 exact_sh_require_collective_success(exact_status,
         "Exact SH objective-gradient evaluation failed.");
+if(visco_sh_exact_stf_active()){
+    /* SH-S3: signals of this gradient evaluation, before the stage filter. */
+    exact_sh_require_collective_success(
+            visco_sh_exact_stf_write(INV_MODELFILE,nstage,iter),
+            "Exact SH STF output failed.");
+}
 L2sum=exact_objective_result.objective;
 seisSHfwi.L2=L2sum;
 

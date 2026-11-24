@@ -1268,6 +1268,34 @@ int visco_sh_exact_data_weights(double *weight, int nrec_local, int ns,
         float twin_plus, const float *picks, int offset_mute, float offsetc,
         int mask_last_sample);
 
+/* SH-S3 source time function estimation; contract docs/sh_s3_stf_contract.md.
+ * Estimator (src/SH/visco_sh_exact_stf.c): local, no MPI.  0-based arrays:
+ * g[i*nt+n], d[i*nt+n] and w[i*nt+n] (or w == NULL) belong to sample n+1. */
+struct visco_sh_exact_stf_problem {
+   int ntr, nt, nw;
+   const float *g;      /* basis traces: receiver traces of F(m; B e_1) */
+   const float *d;      /* filtered observed traces B d */
+   const double *w;     /* SH-S2 data weights or NULL */
+};
+double visco_sh_exact_stf_mean_diag(const struct visco_sh_exact_stf_problem *p);
+int visco_sh_exact_stf_solve(const struct visco_sh_exact_stf_problem *p, double eps,
+                             double tol, int maxit, double *v, int *iterations,
+                             double *relres);
+int visco_sh_exact_stf_terms(const struct visco_sh_exact_stf_problem *p, const double *v,
+                             double eps, double *data_term, double *eps_term);
+/* Per-shot glue and stage state (src/SH/visco_sh_exact_stf_shot.c). */
+int visco_sh_exact_stf_nw(void);
+int visco_sh_exact_stf_config_valid(void);
+int visco_sh_exact_stf_active(void);
+int visco_sh_exact_stf_stage_begin(int stage, int nshots);
+int visco_sh_exact_stf_write(const char *prefix, int stage, int iteration);
+int visco_sh_exact_stf_max_iterations(void);
+double visco_sh_exact_stf_shot_data_term(void);
+int visco_sh_exact_stf_prepare_shot(
+        const struct visco_sh_exact_multi_shot_request *request, int ishot,
+        int nshots, int nsrc_local, int nrec_local, int nrec_global,
+        double **data_weight, double *phi_shot);
+
 /* Collective on MPI_COMM_WORLD with the normal model topology and Bsend
  * buffer installed. Physical Q is authoritative; no input Tau is accepted.
  * All input storage and target storage must be disjoint, including Base
