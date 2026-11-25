@@ -14,6 +14,128 @@
 
 #include "fd.h"
 
+/* ---- K-5: checkpoint and replay of the forward state of the exact visco-SH
+ * gradient (docs/sh_k5_checkpoint_replay_contract.md).  The context points to
+ * the structures of the forward run in progress; one exact gradient forward
+ * runs at a time per process. ---- */
+static struct {
+    struct waveSH *wave; struct waveSH_PML *pml; struct matSH *mat;
+    struct fwiSH *fwi; struct mpiPSV *mpi; struct acq *acq;
+    float *hc; int nsrc_loc; MPI_Request *req_send, *req_rec;
+    struct visco_sh_material_observable_trajectory *trajectory;
+} sh_replay;
+
+/* K-5 wrappers on the grid globals, for the exact driver: checkpoint size
+ * of this propagator, effective segment count of a requested
+ * SH_EXACT_SEGMENTS value (record 135) for the NT-step exact history, the
+ * bytes of that history per process, and the storage of every following
+ * exact gradient trajectory */
+size_t sh_visc_replay_floats(void) {
+    extern int NX, NY, FDORDER, FW, L;
+    return visco_sh_material_observable_replay_floats(NX, NY, FDORDER, FW, L);
+}
+
+int sh_visc_exact_segments(int requested) {
+    extern int NX, NY, NT;
+    return visco_sh_material_observable_segments(requested, NX, NY, NT,
+                                                 sh_visc_replay_floats());
+}
+
+double sh_visc_exact_history_bytes(int segments) {
+    extern int NX, NY, NT;
+    return visco_sh_material_observable_history_bytes(NX, NY, NT, segments,
+                                                      sh_visc_replay_floats());
+}
+
+void sh_visc_use_exact_segments(int segments) {
+    visco_sh_material_observable_request_segments(segments, sh_visc_replay_floats());
+}
+
+/* direction 1: state -> payload; 0: payload -> state (payload NULL: zero state) */
+static void sh_replay_copy(float *payload, int direction) {
+    extern int NX, NY, FDORDER, FW, L;
+    int nd = FDORDER / 2 + 1;
+    size_t field = ((size_t)NY + 2 * nd) * ((size_t)NX + 2 * nd);
+    float *p = payload;
+#define SH_REPLAY_BLOCK(first, count) do { \
+        size_t bytes = (size_t)(count) * sizeof(float); \
+        if (direction) memcpy(p, (first), bytes); \
+        else if (payload != NULL) memcpy((first), p, bytes); \
+        else memset((first), 0, bytes); \
+        if (payload != NULL) p += (count); } while (0)
+    SH_REPLAY_BLOCK(&sh_replay.wave->pvz[-nd + 1][-nd + 1], field);
+    SH_REPLAY_BLOCK(&sh_replay.wave->psxz[-nd + 1][-nd + 1], field);
+    SH_REPLAY_BLOCK(&sh_replay.wave->psyz[-nd + 1][-nd + 1], field);
+    if (L > 0) {
+        SH_REPLAY_BLOCK(&sh_replay.wave->pr[-nd + 1][-nd + 1][1], field * L);
+        SH_REPLAY_BLOCK(&sh_replay.wave->pq[-nd + 1][-nd + 1][1], field * L);
+    }
+    if (FW > 0) {
+        SH_REPLAY_BLOCK(&sh_replay.pml->psi_sxz_x[1][1], (size_t)NY * 2 * FW);
+        SH_REPLAY_BLOCK(&sh_replay.pml->psi_vzx[1][1], (size_t)NY * 2 * FW);
+        SH_REPLAY_BLOCK(&sh_replay.pml->psi_syz_y[1][1], (size_t)NX * 2 * FW);
+        SH_REPLAY_BLOCK(&sh_replay.pml->psi_vzy[1][1], (size_t)NX * 2 * FW);
+    }
+#undef SH_REPLAY_BLOCK
+}
+
+static void sh_replay_save(void *context, float *payload) {
+    (void)context;
+    sh_replay_copy(payload, 1);
+}
+
+static void sh_replay_restore(void *context, const float *payload) {
+    (void)context;
+    sh_replay_copy((float *)payload, 0);
+}
+
+/* the kernel sequence of one forward time step, as in the loop below (mode 0
+ * with trajectory): no source energy, no seismograms, no snapshots, no legacy
+ * history; infoout only prints timings and is 0 here */
+static void sh_replay_run(void *context, int first_step, int last_step) {
+    extern int NX, NY, FDORDER, FREE_SURF, POS[3];
+    struct waveSH *waveSH = sh_replay.wave;
+    struct waveSH_PML *waveSH_PML = sh_replay.pml;
+    struct matSH *matSH = sh_replay.mat;
+    struct fwiSH *fwiSH = sh_replay.fwi;
+    struct mpiPSV *mpiPSV = sh_replay.mpi;
+    struct acq *acq = sh_replay.acq;
+    float *hc = sh_replay.hc;
+    MPI_Request *req_send = sh_replay.req_send, *req_rec = sh_replay.req_rec;
+    int nt, nsrc_loc = sh_replay.nsrc_loc, infoout = 0, mode = 0;
+    (void)context;
+
+    for (nt = first_step + 1; nt <= last_step + 1; nt++) {
+        if (visco_sh_material_observable_begin_step(sh_replay.trajectory, nt - 1) != 0)
+            err(" Cannot activate viscoelastic SH material-observable step (replay) !");
+
+		update_v_PML_SH(1, NX, 1, NY, nt, (*waveSH).pvz, (*waveSH).pvzp1, (*waveSH).pvzm1, (*waveSH).uttz, (*waveSH).psxz, (*waveSH).psyz, (*matSH).prho, (*matSH).prhoi, (*acq).srcpos_loc, (*acq).signals, nsrc_loc,
+			       (*waveSH_PML).absorb_coeff,hc, infoout, 0, 0, (*waveSH_PML).K_x, (*waveSH_PML).a_x, (*waveSH_PML).b_x, (*waveSH_PML).K_x_half, (*waveSH_PML).a_x_half, (*waveSH_PML).b_x_half, (*waveSH_PML).K_y,
+			       (*waveSH_PML).a_y, (*waveSH_PML).b_y, (*waveSH_PML).K_y_half, (*waveSH_PML).a_y_half, (*waveSH_PML).b_y_half, (*waveSH_PML).psi_sxz_x, (*waveSH_PML).psi_syz_y);
+
+		exchange_v_SH((*waveSH).pvz, (*mpiPSV).bufferlef_to_rig, (*mpiPSV).bufferrig_to_lef, (*mpiPSV).buffertop_to_bot, (*mpiPSV).bufferbot_to_top, req_send, req_rec);
+
+		if(FREE_SURF && (POS[2]==0)){
+			surface_elastic_SH_velocity((*waveSH).pvz, NX, FDORDER/2);
+		}
+
+		update_s_visc_PML_SH(1, NX, 1, NY, (*waveSH).pvz, (*waveSH).uz, (*waveSH).uzx, (*waveSH).psyz, (*waveSH).psxz, (*matSH).pujp, (*matSH).puip, (*matSH).prho, hc, infoout,
+				    (*waveSH).pr, (*waveSH).pp, (*waveSH).pq, (*matSH).fipjp, (*matSH).f, (*matSH).g, (*matSH).bip, (*matSH).bjm, (*matSH).cip, (*matSH).cjm, (*matSH).d,
+			            (*matSH).e, (*matSH).dip, (*waveSH_PML).K_x, (*waveSH_PML).a_x, (*waveSH_PML).b_x, (*waveSH_PML).K_x_half, (*waveSH_PML).a_x_half, (*waveSH_PML).b_x_half,
+        			    (*waveSH_PML).K_y, (*waveSH_PML).a_y, (*waveSH_PML).b_y, (*waveSH_PML).K_y_half, (*waveSH_PML).a_y_half, (*waveSH_PML).b_y_half,
+        			    (*waveSH_PML).psi_vzx, (*waveSH_PML).psi_vzy, fwiSH, mode);
+
+	   if(FREE_SURF && (POS[2]==0)){
+		surface_elastic_SH_stress((*waveSH).psyz, NX, FDORDER/2);
+	   }
+
+	   exchange_s_SH((*waveSH).psxz,(*waveSH).psyz, (*mpiPSV).bufferlef_to_rig, (*mpiPSV).bufferrig_to_lef,
+	      (*mpiPSV).buffertop_to_bot, (*mpiPSV).bufferbot_to_top, req_send, req_rec);
+
+        visco_sh_material_observable_end_step();
+    }
+}
+
 void sh_visc_with_material_trajectory(struct waveSH *waveSH, struct waveSH_PML *waveSH_PML, struct matSH *matSH, struct fwiSH *fwiSH, struct mpiPSV *mpiPSV,
          struct seisSH *seisSH, struct seisSHfwi *seisSHfwi, struct acq *acq, float *hc, int ishot, int nshots, int nsrc_loc, 
          int ns, int ntr, float **Ws, float **Wr, int hin, int *DTINV_help, int mode, MPI_Request * req_send, MPI_Request * req_rec,
@@ -32,6 +154,7 @@ void sh_visc_with_material_trajectory(struct waveSH *waveSH, struct waveSH_PML *
         float tmp, tmp1, muss, lamss, P3, P5;
         float hess_rho, hess_mu, hess_ts;
 	float SUMr, SUMq;
+	int sh_segmented=0;   /* K-5: segmented exact history */
 
         nd = FDORDER/2 + 1;
 
@@ -84,6 +207,17 @@ void sh_visc_with_material_trajectory(struct waveSH *waveSH, struct waveSH_PML *
 		            (*waveSH_PML).psi_sxz_x, (*waveSH_PML).psi_syz_y, (*waveSH_PML).psi_vzx,  (*waveSH_PML).psi_vzy, 
                             (*waveSH).pr, (*waveSH).pp, (*waveSH).pq, (*fwiSH).Rxz, (*fwiSH).Ryz);
 	                                                        	     
+	if(trajectory!=NULL){
+	   sh_replay.wave=waveSH; sh_replay.pml=waveSH_PML; sh_replay.mat=matSH;
+	   sh_replay.fwi=fwiSH; sh_replay.mpi=mpiPSV; sh_replay.acq=acq; sh_replay.hc=hc;
+	   sh_replay.nsrc_loc=nsrc_loc; sh_replay.req_send=req_send; sh_replay.req_rec=req_rec;
+	   sh_replay.trajectory=trajectory;
+	   sh_segmented=visco_sh_material_observable_set_replay(trajectory,
+	         sh_replay_save,sh_replay_restore,sh_replay_run,&sh_replay,
+	         sh_visc_replay_floats());
+	   if(sh_segmented<0) err(" Cannot set up the viscoelastic SH replay !");
+	}
+
 	/*----------------------  loop over timesteps (forward model) ------------------*/
 
 	lsnap=iround(TSNAP1/DT);  
@@ -117,6 +251,10 @@ void sh_visc_with_material_trajectory(struct waveSH *waveSH, struct waveSH_PML *
 		   err(" Simulation is unstable !");}
 
 	   infoout = !(nt%10000);
+
+	   if(sh_segmented && (visco_sh_material_observable_forward_boundary(trajectory,nt-1)!=0)){
+	      err(" Cannot store viscoelastic SH replay checkpoint !");
+	   }
 
 	   if (MYID==0){
 	      if (infoout)  fprintf(FP,"\n Computing timestep %d of %d \n",nt,NT);
@@ -210,6 +348,7 @@ void sh_visc_with_material_trajectory(struct waveSH *waveSH, struct waveSH_PML *
 	  /* store forward wavefields for time-domain inversion and RTM */
           /* ---------------------------------------------------------- */	    
 	    
+		if(trajectory==NULL)   /* K-5: the exact path keeps no legacy history */
 		for (i=1;i<=NX;i=i+IDXI){ 
 		    for (j=1;j<=NY;j=j+IDYI){
 

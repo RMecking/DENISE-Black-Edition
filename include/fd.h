@@ -574,6 +574,34 @@ void visco_sh_material_observable_trajectory_release(
 int visco_sh_material_observable_begin_step(
         struct visco_sh_material_observable_trajectory *trajectory, int step);
 void visco_sh_material_observable_end_step(void);
+/* K-5 segmented storage with checkpoint/replay
+ * (docs/sh_k5_checkpoint_replay_contract.md) */
+size_t visco_sh_material_observable_replay_floats(int nx, int ny, int fdorder,
+                                                  int fw, int l);
+int visco_sh_material_observable_segments(int requested, int nx, int ny, int nsteps,
+                                          size_t checkpoint_floats);
+double visco_sh_material_observable_history_bytes(int nx, int ny, int nsteps,
+                                                  int segments, size_t checkpoint_floats);
+void visco_sh_material_observable_request_segments(int segments,
+                                                   size_t checkpoint_floats);
+/* K-5 wrappers on the parameter globals (sh_visc.c) */
+size_t sh_visc_replay_floats(void);
+int sh_visc_exact_segments(int requested);
+double sh_visc_exact_history_bytes(int segments);
+void sh_visc_use_exact_segments(int segments);
+int visco_sh_material_observable_is_segmented(
+        const struct visco_sh_material_observable_trajectory *trajectory);
+int visco_sh_material_observable_set_replay(
+        struct visco_sh_material_observable_trajectory *trajectory,
+        void (*save)(void *context, float *payload),
+        void (*restore)(void *context, const float *payload),
+        void (*run)(void *context, int first_step, int last_step),
+        void *context, size_t checkpoint_floats);
+int visco_sh_material_observable_forward_boundary(
+        struct visco_sh_material_observable_trajectory *trajectory, int step);
+int visco_sh_material_observable_load_step(
+        const struct visco_sh_material_observable_trajectory *trajectory,
+        int step);
 #if defined(__GNUC__)
 int visco_sh_material_observable_is_active(void) __attribute__((weak));
 void visco_sh_material_observable_capture_qsum(
@@ -976,6 +1004,7 @@ void zero_denise_acoustic_AC(int ny1, int ny2, int nx1, int nx2, float ** vx, fl
 /* ------------- */
 
 void alloc_fwiSH(struct fwiSH *fwiSH);
+void alloc_fwiSH_exact(struct fwiSH *fwiSH);
 
 void alloc_matSH(struct matSH *matSH);
 

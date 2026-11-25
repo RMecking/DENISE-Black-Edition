@@ -7,7 +7,22 @@
 
 #include "fd.h"
 
+/* K-5: the exact viscoelastic SH FWI (FWI_SH_visc.c) never reads the
+ * legacy forward_prop_* history arrays; it allocates them with one element
+ * (alloc_fwiSH_exact).  Their full length NXNYI*NTDTINV is an int and
+ * overflows above 2^31 elements.  Contract: docs/sh_k5_checkpoint_replay_contract.md. */
+static void alloc_fwiSH_len(struct fwiSH *fwiSH, int forward_prop_len);
+
 void alloc_fwiSH(struct fwiSH *fwiSH){
+        extern int NTDTINV, NXNYI;
+        alloc_fwiSH_len(fwiSH, NXNYI*(NTDTINV));
+}
+
+void alloc_fwiSH_exact(struct fwiSH *fwiSH){
+        alloc_fwiSH_len(fwiSH, 1);
+}
+
+static void alloc_fwiSH_len(struct fwiSH *fwiSH, int forward_prop_len){
 
         /* global variables */
 	extern int NX, NY, L, FW, FDORDER, NTDTINV, NXNYI, EPRECOND;
@@ -53,14 +68,14 @@ void alloc_fwiSH(struct fwiSH *fwiSH){
 	}
 
 	/* arrays to store forward wavefields */
-	(*fwiSH).forward_prop_z =  vector(1,NXNYI*(NTDTINV));
-	(*fwiSH).forward_prop_rho_z =  vector(1,NXNYI*(NTDTINV));
-	(*fwiSH).forward_prop_sxz =  vector(1,NXNYI*(NTDTINV));
-	(*fwiSH).forward_prop_syz =  vector(1,NXNYI*(NTDTINV));
+	(*fwiSH).forward_prop_z =  vector(1,forward_prop_len);
+	(*fwiSH).forward_prop_rho_z =  vector(1,forward_prop_len);
+	(*fwiSH).forward_prop_sxz =  vector(1,forward_prop_len);
+	(*fwiSH).forward_prop_syz =  vector(1,forward_prop_len);
 
 	if(L){
-	   (*fwiSH).forward_prop_rxz =  matrix(1,NXNYI*(NTDTINV),1,L);
-	   (*fwiSH).forward_prop_ryz =  matrix(1,NXNYI*(NTDTINV),1,L);
+	   (*fwiSH).forward_prop_rxz =  matrix(1,forward_prop_len,1,L);
+	   (*fwiSH).forward_prop_ryz =  matrix(1,forward_prop_len,1,L);
 	}
 
 	/* weighting constants for gradient computation */

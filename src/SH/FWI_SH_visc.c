@@ -5,6 +5,7 @@
  * Kiel, 12/12/2017
  */
 
+#include <unistd.h>
 #include "fd.h"
 #include "exact_sh_receivers.h"
 #include "exact_sh_data_ops.h"
@@ -534,7 +535,45 @@ alloc_matSH(&matSH);
 alloc_matSH(&exact_trial_material);
 
 /* allocate memory for SH FWI parameters */
-alloc_fwiSH(&fwiSH);
+/* K-5: memory of the exact forward history, checked before any allocation
+ * (docs/sh_k5_checkpoint_replay_contract.md).  The need of every process on
+ * a node is summed in double precision (no int overflow) and compared with
+ * the node's physical memory; the run stops collectively with a pointer to
+ * SH_EXACT_SEGMENTS instead of failing or overflowing later. */
+{
+    extern int SH_EXACT_SEGMENTS;
+    int k5_segments, k5_local_ranks = 1, k5_fail;
+    double k5_need, k5_full, k5_node_need = 0.0, k5_phys;
+    MPI_Comm k5_node;
+    char k5_message[STRING_SIZE2];
+    exact_sh_require_collective_success(SH_EXACT_SEGMENTS < -1,
+            "Exact viscoelastic SH FWI: SH_EXACT_SEGMENTS (parameter record 135) must be "
+            "0 (full storage), -1 (automatic checkpoint/replay) or a segment count > 0.");
+    k5_segments = sh_visc_exact_segments(SH_EXACT_SEGMENTS);
+    k5_need = sh_visc_exact_history_bytes(k5_segments);
+    k5_full = sh_visc_exact_history_bytes(0);
+    k5_phys = (double)sysconf(_SC_PHYS_PAGES) * (double)sysconf(_SC_PAGESIZE);
+    if(MPI_Comm_split_type(MPI_COMM_WORLD,MPI_COMM_TYPE_SHARED,0,MPI_INFO_NULL,&k5_node)!=MPI_SUCCESS)
+        err("Exact SH history check: node communicator failed.");
+    MPI_Allreduce(&k5_need,&k5_node_need,1,MPI_DOUBLE,MPI_SUM,k5_node);
+    MPI_Comm_size(k5_node,&k5_local_ranks);
+    MPI_Comm_free(&k5_node);
+    k5_fail = (k5_phys > 0.0) && (k5_node_need > k5_phys);
+    if(MYID==0){
+        printf("Exact SH history: SH_EXACT_SEGMENTS %d segments %d history_GiB_per_process %.3f "
+               "full_storage_GiB_per_process %.3f node_GiB %.3f physical_GiB %.3f ranks_on_node %d\n",
+               SH_EXACT_SEGMENTS,k5_segments,k5_need/1073741824.0,k5_full/1073741824.0,
+               k5_node_need/1073741824.0,k5_phys/1073741824.0,k5_local_ranks);
+    }
+    snprintf(k5_message,sizeof(k5_message),
+             "Exact viscoelastic SH FWI: the forward history of the exact gradient needs "
+             "%.1f GiB on this node (%.1f GiB physical memory). Set SH_EXACT_SEGMENTS "
+             "(parameter record 135) to -1 for automatic checkpoint/replay or to a segment "
+             "count > 0.",k5_node_need/1073741824.0,k5_phys/1073741824.0);
+    exact_sh_require_collective_success(k5_fail,k5_message);
+    sh_visc_use_exact_segments(k5_segments);   /* every exact gradient trajectory */
+}
+alloc_fwiSH_exact(&fwiSH);   /* K-5: no legacy forward_prop_* history */
 
 /* allocate memory for PSV MPI variables */
 alloc_mpiPSV(&mpiPSV);

@@ -22,6 +22,8 @@ float OPT_PRECOND_EPS = 0.005f, OPT_ALPHA_ADAPT_FACTOR = 2.0f;
 int OPT_LBFGS = 0, OPT_LBFGS_M = 5;
 /* SH-S3: source signal support in seconds (< 0: 0.5*TIME); record 134 */
 float STF_LENGTH = -1.0f;
+/* K-5: exact SH history, 0 = full storage, > 0 segments, -1 automatic; record 135 */
+int SH_EXACT_SEGMENTS = 0;
 float ANGLE;
 float REFREC[4] = {0.0, 0.0, 0.0, 0.0}, FPML;
 int SEISMO, NDT, NSRC = 1, SEIS_FORMAT, FREE_SURF, READMOD, READREC, SRCREC, FW = 0;
