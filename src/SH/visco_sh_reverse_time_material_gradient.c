@@ -91,6 +91,7 @@ static int c7cb2_material_preflight(
     for (l = 1; l <= cfg->mechanisms; ++l)
         if (!isfinite(material->eta_x[l]) ||
                 !isfinite(material->eta_y[l])) return -1;
+    if (!visco_sh_material_observable_is_segmented(material->trajectory))
     for (n = 0; n < nsteps; ++n)
         if ((material->trajectory->steps[n].qsum == NULL) ||
                 (material->trajectory->steps[n].strain_x == NULL) ||
@@ -187,6 +188,11 @@ int visco_sh_reverse_time_adjoint_material(
         previous = (n == 0) ? bar_initial :
                 ((current == scratch) ? bar_terminal_work : scratch);
         memset(&step_material, 0, sizeof(step_material));
+        if (visco_sh_material_observable_load_step(
+                    material->trajectory, n) != 0) {
+            status = MPI_ERR_OTHER;
+            goto cleanup;
+        }
         step_material.observable = &material->trajectory->steps[n];
         step_material.mu_x = material->mu_x;
         step_material.tau_x = material->tau_x;
