@@ -94,6 +94,7 @@ extern int OPT_PRECOND, OPT_ALPHA_ADAPT;
 extern float OPT_PRECOND_EPS, OPT_ALPHA_ADAPT_FACTOR;
 extern int OPT_LBFGS, OPT_LBFGS_M;
 extern float STF_LENGTH;
+extern int SH_EXACT_SEGMENTS;
 
 /* definition of local variables */
 char s[120];
@@ -526,6 +527,10 @@ int  c=0, lineno=0, l;
 	 /* SH-S3: optional, read in order; absent record keeps the default */
 	 case 134 :
 	   fscanf(fp_in,"%s =%f",s,&STF_LENGTH);
+	    break;
+	 /* K-5: optional, read in order; absent record keeps the default 0 */
+	 case 135 :
+	   fscanf(fp_in,"%s =%i",s,&SH_EXACT_SEGMENTS);
 	    break;
 	 default:
 	    break;
