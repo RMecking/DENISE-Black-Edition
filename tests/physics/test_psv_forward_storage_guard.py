@@ -17,6 +17,9 @@ from pathlib import Path
 
 import pytest
 
+# Integration test: under --require-denise a missing build (skip) must fail.
+pytestmark = pytest.mark.integration
+
 GUARD = "PSV adjoint needs the forward wavefield storage"
 
 
