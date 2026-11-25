@@ -354,6 +354,7 @@ struct visco_sh_material_observable_step {
  * Material and observable inputs are read-only.  native_output is overwritten
  * on owned cells only; no temporal accumulation or physical-model mapping is
  * performed by this interface. */
+struct visco_sh_reverse_material_plan;
 struct visco_sh_material_adjoint_step_context {
    const struct visco_sh_material_observable_step *observable;
    float **mu_x, **tau_x;
@@ -361,7 +362,20 @@ struct visco_sh_material_adjoint_step_context {
    double reference_sum;
    const float *eta_x, *eta_y;
    struct visco_sh_native_material_gradient_fields *native_output;
+   /* K-7, optional (zero keeps the behaviour above): plan holds the
+    * time-invariant GSLS derivatives of every cell for exactly these
+    * material inputs; accumulate adds the step output to native_output
+    * instead of overwriting it. */
+   const struct visco_sh_reverse_material_plan *plan;
+   int accumulate;
 };
+
+int visco_sh_reverse_material_plan_create(
+        const struct visco_sh_full_step_config *cfg,
+        const struct visco_sh_material_adjoint_step_context *material,
+        struct visco_sh_reverse_material_plan **plan);
+void visco_sh_reverse_material_plan_free(
+        struct visco_sh_reverse_material_plan *plan);
 
 /* Physical-timestep-major storage.  C7 initially requires dtinv == 1. */
 struct visco_sh_material_observable_trajectory {

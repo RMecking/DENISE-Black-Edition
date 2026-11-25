@@ -122,10 +122,11 @@ int visco_sh_reverse_time_adjoint_material(
     struct visco_sh_full_step_config step_config;
     struct visco_sh_full_state *current, *previous;
     struct visco_sh_material_adjoint_step_context step_material;
-    struct visco_sh_native_material_gradient_fields step_native, sum_native;
-    struct c7cb2_double_field step_fields[5] = {{0}}, sum_fields[5] = {{0}};
+    struct visco_sh_native_material_gradient_fields sum_native;
+    struct c7cb2_double_field sum_fields[5] = {{0}};
     struct visco_sh_material_timestep_vjp_output *unweighted = NULL;
     struct visco_sh_material_timestep_vjp_output *weighted = NULL;
+    struct visco_sh_reverse_material_plan *plan = NULL;
     int i, j, n, source, channel, point, points, status = -1;
 
     if ((base_config == NULL) || (nsteps < 1) ||
@@ -146,13 +147,13 @@ int visco_sh_reverse_time_adjoint_material(
     status = exact_sh_collective_status(MPI_COMM_WORLD, "material reverse preflight", status);
     if (status != 0) return status;
 
+    /* K-7: the step adds its native output directly into the zeroed shot
+     * sums (accumulate), the same double additions in the same order as the
+     * former per-step fields followed by a summation pass. */
     for (channel = 0; channel < 5; ++channel)
-        if ((c7cb2_field_allocate(
-                    &step_fields[channel], base_config->nx,
-                    base_config->ny) != 0) ||
-                (c7cb2_field_allocate(
+        if (c7cb2_field_allocate(
                     &sum_fields[channel], base_config->nx,
-                    base_config->ny) != 0)) {
+                    base_config->ny) != 0) {
             status = MPI_ERR_NO_MEM;
             break;
         }
@@ -166,16 +167,25 @@ int visco_sh_reverse_time_adjoint_material(
     }
     status = exact_sh_collective_status(MPI_COMM_WORLD, "material reverse allocation", status);
     if (status != 0) goto cleanup;
-    step_native.g_rhoi = step_fields[0].row;
-    step_native.g_mu_x = step_fields[1].row;
-    step_native.g_mu_y = step_fields[2].row;
-    step_native.g_tau_x = step_fields[3].row;
-    step_native.g_tau_y = step_fields[4].row;
     sum_native.g_rhoi = sum_fields[0].row;
     sum_native.g_mu_x = sum_fields[1].row;
     sum_native.g_mu_y = sum_fields[2].row;
     sum_native.g_tau_x = sum_fields[3].row;
     sum_native.g_tau_y = sum_fields[4].row;
+
+    /* K-7: the time-invariant GSLS derivatives, once per shot */
+    memset(&step_material, 0, sizeof(step_material));
+    step_material.mu_x = material->mu_x;
+    step_material.tau_x = material->tau_x;
+    step_material.mu_y = material->mu_y;
+    step_material.tau_y = material->tau_y;
+    step_material.reference_sum = material->reference_sum;
+    step_material.eta_x = material->eta_x;
+    step_material.eta_y = material->eta_y;
+    status = visco_sh_reverse_material_plan_create(
+            base_config, &step_material, &plan);
+    status = exact_sh_collective_status(MPI_COMM_WORLD, "material reverse plan", status);
+    if (status != 0) goto cleanup;
 
     for (n = 0; n < nsteps; ++n)
         for (source = 0; source < base_config->nsrc; ++source)
@@ -201,21 +211,15 @@ int visco_sh_reverse_time_adjoint_material(
         step_material.reference_sum = material->reference_sum;
         step_material.eta_x = material->eta_x;
         step_material.eta_y = material->eta_y;
-        step_material.native_output = &step_native;
+        step_material.native_output = &sum_native;
+        step_material.plan = plan;
+        step_material.accumulate = 1;
         status = visco_sh_full_state_adjoint_step_material(
                 &step_config, current, previous,
                 (base_config->nsrc > 0) ?
                     bar_signal_series + (size_t)n * base_config->nsrc : NULL,
                 &step_material);
         if (status != 0) goto cleanup;
-        for (j = 1; j <= base_config->ny; ++j)
-            for (i = 1; i <= base_config->nx; ++i) {
-                sum_native.g_rhoi[j][i] += step_native.g_rhoi[j][i];
-                sum_native.g_mu_x[j][i] += step_native.g_mu_x[j][i];
-                sum_native.g_mu_y[j][i] += step_native.g_mu_y[j][i];
-                sum_native.g_tau_x[j][i] += step_native.g_tau_x[j][i];
-                sum_native.g_tau_y[j][i] += step_native.g_tau_y[j][i];
-            }
         current = previous;
     }
 
@@ -248,11 +252,10 @@ int visco_sh_reverse_time_adjoint_material(
             material->grad_primary, material->grad_rho, material->grad_q);
 
 cleanup:
+    visco_sh_reverse_material_plan_free(plan);
     free(unweighted);
     free(weighted);
-    for (channel = 0; channel < 5; ++channel) {
-        c7cb2_field_release(&step_fields[channel]);
+    for (channel = 0; channel < 5; ++channel)
         c7cb2_field_release(&sum_fields[channel]);
-    }
     return status;
 }
