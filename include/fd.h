@@ -160,6 +160,8 @@ struct fwiPSV{
    float **waveconv_qp_exact, **waveconv_qs_exact;
    float ** gradg, ** gradp,** gradg_rho, ** gradp_rho, ** gradg_u, ** gradp_u;
    float  *forward_prop_x, *forward_prop_y, *forward_prop_rho_x, *forward_prop_u, *forward_prop_rho_y;
+   /* allocated length of each forward_prop_* vector (alloc_fwiPSV) */
+   size_t forward_prop_length;
 } fwiPSV;
 
 /* PSV seismogram variables */

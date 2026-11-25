@@ -230,7 +230,7 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 
 	/* local variables */
 	int i, j, nt, lsamp, lsnap, nsnap, nd, hin1, imat, imat1, imat2, infoout;
-	int exact_elastic_psv_adjoint, checkpoint_test, replaying;
+	int exact_elastic_psv_adjoint, checkpoint_test, replaying, store_forward;
 	int checkpoint_timestep, replay_first_timestep, replay_last_timestep, replay_steps;
 	struct visco_psv_checkpoint *middle_checkpoint;
 	float *receiver_reference;
@@ -256,6 +256,11 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 	                            ((GRAD_FORM==1)||(GRAD_FORM==2)));
 	checkpoint_test = replaying = 0;
 	checkpoint_timestep = replay_first_timestep = replay_last_timestep = replay_steps = 0;
+	/* Forward storage is complete unless alloc_fwiPSV left it out for the
+	 * exact visco-PSV FWI; every adjoint (mode 1) reads it, so fail closed. */
+	store_forward = (*fwiPSV).forward_prop_length >= (size_t)NXNYI * (size_t)NTDTINV;
+	if (mode == 1 && !store_forward)
+		err(" PSV adjoint needs the forward wavefield storage, which is not allocated on the exact visco-PSV FWI path. ");
 	middle_checkpoint = NULL;
 	receiver_reference = NULL;
 	receiver_compared = receiver_mismatches = 0;
@@ -591,6 +596,8 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 
 			/* store forward wavefields for time-domain inversion and RTM */
 			/* ---------------------------------------------------------- */
+			/* (not on the exact visco-PSV FWI path, see alloc_fwiPSV) */
+			if (store_forward) {
 
 			for (i = 1; i <= NX; i = i + IDXI)
 			{
@@ -645,6 +652,8 @@ void psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV
 					imat2++;
 				}
 			}
+
+			} /* store_forward */
 
 			if ((EPRECOND == 1) || (EPRECOND == 3))
 			{
