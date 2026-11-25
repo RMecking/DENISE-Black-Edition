@@ -35,7 +35,8 @@ void FWI_PSV()
 
   /* full waveform inversion */
   extern int GRAD_METHOD, NLBFGS, ITERMAX, IDX, IDY, INVMAT1, EPRECOND, PCG_BETA, LNORM;
-  extern int GRAD_FORM, POS[3], QUELLTYPB, MIN_ITER, MODEL_FILTER, INV_MOD_OUT, ROWI;
+  extern int GRAD_FORM, POS[3], QUELLTYPB, MIN_ITER, MODEL_FILTER, INV_MOD_OUT, ROWI, ORDER;
+  extern int N_ORDER, TIMEWIN, NORMALIZE, OFFSET_MUTE, TRKILL, TIMELAPSE;
   extern float FC_END, PRO, C_vp, C_vs, C_rho;
   extern char MISFIT_LOG_FILE[STRING_SIZE], JACOBIAN[STRING_SIZE];
   extern char *FILEINP1;
@@ -415,10 +416,18 @@ void FWI_PSV()
     exact_visco_fwi=(L>0);
     if(exact_visco_fwi){
       if(!visco_psv_exact_supported())
-        err(" Viscoelastic P/SV FWI is exact only for one-source READMOD=1 L=1, INVMAT1=1, GRAD_FORM=2, DTINV=NDT=1, LNORM=2, FD4, CPML interior, with supported local domains. ");
-      if(!READMOD || nsrc!=1 || GRAD_METHOD!=1 || EPRECOND!=0 ||
-         MODEL_FILTER!=0 || INV_STF!=0 || TIME_FILT!=0 || GRAVITY!=0 || ROWI!=0)
-        err(" Exact viscoelastic P/SV FWI requires READMOD=1, one source, the GRAD_METHOD=1 selector, and no filtering, preconditioning, STF, gravity, or ROWI. ");
+        err(" Viscoelastic P/SV FWI is exact only for sequential-source NCOLORS=1 READMOD=1 L=1, INVMAT1=1, GRAD_FORM=2, DTINV=NDT=1, LNORM=2, FD4, CPML interior, with supported local domains. ");
+      if(!READMOD || nsrc<1 || GRAD_METHOD!=1 || EPRECOND!=0 ||
+         MODEL_FILTER!=0 || INV_STF!=0 || (TIME_FILT!=0 && TIME_FILT!=1) || GRAVITY!=0 || ROWI!=0)
+        err(" Exact viscoelastic P/SV FWI requires READMOD=1, sequential sources, GRAD_METHOD=1, TIME_FILT=0/1, and no model filtering, preconditioning, STF, gravity, or ROWI. ");
+      /* E-7/E-14 is qualified only for the unweighted velocity residual.
+       * Check every newly supported stage; preserve unfiltered single-shot M8. */
+      if((TIME_FILT || nsrc>1) && (SEISMO!=1 || N_ORDER!=0 || TIMEWIN!=0 || NORMALIZE!=0 ||
+         OFFSET_MUTE!=0 || TRKILL!=0 || TIMELAPSE!=0 || QUELLTYPB!=1))
+        err(" New exact visco PSV data operator requires SEISMO=1, N_ORDER=TIMEWIN=NORMALIZE=OFFSET_MUTE=TRKILL=TIMELAPSE=0 and QUELLTYPB=1; transformed/weighted residuals are not qualified. ");
+      if(TIME_FILT && (ORDER<1 || !isfinite(FC_END) || !isfinite(FC_START) ||
+         FC_END<=0.0f || FC_END>=0.5f/DT || FC_START<0.0f || FC_START>=FC_END))
+        err(" Exact visco PSV frequency stages require positive ORDER and 0 <= FC_START < FC_END < Nyquist. ");
     }
 
     if ((EPRECOND == 1) || (EPRECOND == 3))

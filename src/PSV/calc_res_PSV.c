@@ -67,7 +67,7 @@ for(i=1;i<=ntr;i++){
       COMP_WEIGHT = 1;
   }
 
-  (*seisPSVfwi).L2=calc_res((*seisPSVfwi).sectionvxdata,(*seisPSV).sectionvx,(*seisPSVfwi).sectionvxdiff,(*seisPSVfwi).sectionvxdiffold,ntr,ns,LNORM,(*seisPSVfwi).L2,0,1,swstestshot,ntr_glob,recpos,recpos_loc,srcpos,nsrc_glob,ishot,iter);     
+  (*seisPSVfwi).L2=(TIME_FILT && visco_psv_exact_supported() ? calc_res_filtered_exact_psv : calc_res)((*seisPSVfwi).sectionvxdata,(*seisPSV).sectionvx,(*seisPSVfwi).sectionvxdiff,(*seisPSVfwi).sectionvxdiffold,ntr,ns,LNORM,(*seisPSVfwi).L2,0,1,swstestshot,ntr_glob,recpos,recpos_loc,srcpos,nsrc_glob,ishot,iter);
 
   if(swstestshot==1){(*seisPSVfwi).energy=calc_energy((*seisPSVfwi).sectionvxdata,ntr,ns,(*seisPSVfwi).energy, ntr_glob, recpos_loc, nsrc_glob, ishot);}
   /*L2_all_shots=calc_misfit((*seisPSVfwi).sectionvxdiff,ntr,ns,LNORM,L2_all_shots, ntr_glob, recpos_loc, nsrc_glob, ishot);
@@ -120,7 +120,7 @@ if(TIMELAPSE==1){
       COMP_WEIGHT = 2;
   }
                                
-(*seisPSVfwi).L2=calc_res((*seisPSVfwi).sectionvydata,(*seisPSV).sectionvy,(*seisPSVfwi).sectionvydiff,(*seisPSVfwi).sectionvydiffold,ntr,ns,LNORM,(*seisPSVfwi).L2,0,1,swstestshot,ntr_glob,recpos,recpos_loc,srcpos,nsrc_glob,ishot,iter);
+(*seisPSVfwi).L2=(TIME_FILT && visco_psv_exact_supported() ? calc_res_filtered_exact_psv : calc_res)((*seisPSVfwi).sectionvydata,(*seisPSV).sectionvy,(*seisPSVfwi).sectionvydiff,(*seisPSVfwi).sectionvydiffold,ntr,ns,LNORM,(*seisPSVfwi).L2,0,1,swstestshot,ntr_glob,recpos,recpos_loc,srcpos,nsrc_glob,ishot,iter);
 
 if(swstestshot==1){(*seisPSVfwi).energy=calc_energy((*seisPSVfwi).sectionvydata,ntr,ns,(*seisPSVfwi).energy, ntr_glob, recpos_loc, nsrc_glob, ishot);}
 /*L2_all_shots=calc_misfit((*seisPSVfwi).sectionvydiff,ntr,ns,LNORM,L2_all_shots, ntr_glob, recpos_loc, nsrc_glob, ishot);
@@ -171,7 +171,7 @@ if(TIMELAPSE==1){
 
 COMP_WEIGHT = 0;
 
-(*seisPSVfwi).L2=calc_res((*seisPSVfwi).sectionpdata,(*seisPSV).sectionp,(*seisPSVfwi).sectionpdiff,(*seisPSVfwi).sectionpdiffold,ntr,ns,LNORM,(*seisPSVfwi).L2,0,1,swstestshot,ntr_glob,recpos,recpos_loc,srcpos,nsrc_glob,ishot,iter);
+(*seisPSVfwi).L2=(TIME_FILT && visco_psv_exact_supported() ? calc_res_filtered_exact_psv : calc_res)((*seisPSVfwi).sectionpdata,(*seisPSV).sectionp,(*seisPSVfwi).sectionpdiff,(*seisPSVfwi).sectionpdiffold,ntr,ns,LNORM,(*seisPSVfwi).L2,0,1,swstestshot,ntr_glob,recpos,recpos_loc,srcpos,nsrc_glob,ishot,iter);
 
 if(swstestshot==1){(*seisPSVfwi).energy=calc_energy((*seisPSVfwi).sectionpdata,ntr,ns,(*seisPSVfwi).energy, ntr_glob, recpos_loc, nsrc_glob, ishot);}
 

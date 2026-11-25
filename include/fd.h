@@ -201,7 +201,7 @@ struct visco_psv_exact_fwi_request {
    struct acq *acquisition;
    float *hc;
    float **Ws, **Wr;
-   int iter, stage, nsrc, ns, ntr, ntr_glob, nsrc_glob, nsrc_loc;
+   int iter, stage, shot, nsrc, ns, ntr, ntr_glob, nsrc_glob, nsrc_loc;
    int hin;
    int *DTINV_help;
    MPI_Request *req_send, *req_rec;
@@ -1569,6 +1569,7 @@ void calc_envelope(float ** datatrace, float ** envelope, int ns, int ntr);
 void calc_hilbert(float ** datatrace, float ** envelope, int ns, int ntr);
 
 double calc_res(float **sectiondata, float **section, float **sectiondiff, float **sectiondiffold, int ntr, int ns, int LNORM, double L2, int itest, int sws, int swstestshot, int ntr_glob, int **recpos, int **recpos_loc, float **srcpos, int nsrc_glob, int ishot, int iter);
+double calc_res_filtered_exact_psv(float **sectiondata, float **section, float **sectiondiff, float **sectiondiffold, int ntr, int ns, int LNORM, double L2, int itest, int sws, int swstestshot, int ntr_glob, int **recpos, int **recpos_loc, float **srcpos, int nsrc_glob, int ishot, int iter);
 
 double calc_res_grav(int ngrav, float *gz_mod, float *gz_res);
 

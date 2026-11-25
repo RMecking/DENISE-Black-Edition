@@ -26,7 +26,8 @@ static int validate_cuda_envelope(int nsrc_local,int ntr,int mode) {
         BOUNDARY==0&&FREE_SURF==0&&nsrc_local==1&&QUELLTYP==1&&
         SEISMO==1&&NDT==1&&SNAP==0&&INV_STF==0&&ntr>0;
     int forward_only=MODE==0&&mode==0;
-    int exact_fwi=MODE==1&&(mode==0||mode==2)&&NSRC==1&&INVMAT1==1&&
+    int exact_fwi=MODE==1&&(mode==0||mode==2)&&
+        visco_psv_exact_supported()&&INVMAT1==1&&
         GRAD_FORM==2&&DTINV==1&&LNORM==2&&READMOD==1&&FW>0&&
         (Q_PARAMETERIZATION_MODE==0||Q_PARAMETERIZATION_MODE==1);
     if(!common||(!forward_only&&!exact_fwi))

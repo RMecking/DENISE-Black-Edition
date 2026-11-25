@@ -8,6 +8,40 @@
 
 #include "fd.h"
 
+/* Multi-shot diagnostics expose the FP32 sum actually consumed by the update.
+ * The single-shot diagnostic remains the unmodified direct adjoint product. */
+static void write_exact_shot_sum(struct fwiPSV *fwi) {
+    extern int NX, NY, NPROCX, NPROCY, MYID_SHOT, POS[3];
+    extern char JACOBIAN[STRING_SIZE];
+    extern MPI_Comm SHOT_COMM;
+    const char *flag=getenv("DENISE_PSV_EXACT_VISCO_GRADIENT");
+    const char *names[5]={"vp","vs","rho","qp","qs"};
+    float **fields[5]={fwi->waveconv,fwi->waveconv_u,fwi->waveconv_rho,
+                      fwi->waveconv_qp_exact,fwi->waveconv_qs_exact};
+    char path[STRING_SIZE+64],local[STRING_SIZE+80];
+    int f,i,j;
+    FILE *out;
+    if(!flag || strcmp(flag,"1")!=0) return;
+    for(f=0;f<5;++f) {
+        snprintf(path,sizeof(path),"%s.raw.%s",JACOBIAN,names[f]);
+        if(NPROCX*NPROCY==1) snprintf(local,sizeof(local),"%s",path);
+        else snprintf(local,sizeof(local),"%s.%d.%d",path,POS[1],POS[2]);
+        out=fopen(local,"wb");
+        if(!out) err(" Could not open exact multi-shot gradient diagnostic. ");
+        for(i=1;i<=NX;++i) for(j=1;j<=NY;++j)
+            if(fwrite(&fields[f][j][i],sizeof(float),1,out)!=1)
+                err(" Could not write exact multi-shot gradient diagnostic. ");
+        if(fclose(out)!=0) err(" Could not close exact multi-shot gradient diagnostic. ");
+        if(NPROCX*NPROCY>1) {
+            MPI_Barrier(SHOT_COMM);
+            if(MYID_SHOT==0) mergemod(path,3);
+            MPI_Barrier(SHOT_COMM);
+            remove(local);
+        }
+    }
+}
+
+
 double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, struct matPSV *matPSV, struct fwiPSV *fwiPSV, struct mpiPSV *mpiPSV,
 				   struct seisPSV *seisPSV, struct seisPSVfwi *seisPSVfwi, struct acq *acq, float *hc, int iter, int nsrc, int ns, int ntr, int ntr_glob, int nsrc_glob,
 				   int nsrc_loc, int ntr_loc, int nstage, float **We, float **Ws, float **Wr, float **taper_coeff, int hin, int *DTINV_help,
@@ -30,7 +64,7 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 	int i, j, nshots, ishot, nt, lsnap, itestshot, swstestshot;
 	int exact_visco_path=visco_psv_exact_enabled();
 	float tmp_dg;
-	double L2sum, L2_tmp;
+	double L2sum, L2_tmp, exact_total_objective = 0.0;
 	char source_signal_file[STRING_SIZE];
 	struct visco_psv_exact_fwi_request exact_request;
 
@@ -189,11 +223,15 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 	        Calculate objective function and data residuals
 	        =============================================== */
 
-		if ((ishot >= TESTSHOT_START) && (ishot <= TESTSHOT_END) && ((ishot - TESTSHOT_START) % TESTSHOT_INCR == 0))
-		{
+		/* New exact operators use the complete set, without evaluating the
+		 * legacy modulo. Unfiltered single-shot selection remains BASE-compatible. */
+		if (exact_visco_path && (TIME_FILT || nsrc > 1)) {
+			swstestshot = 1;
+			(*seisPSVfwi).L2 = 0.0;
+		} else if ((ishot >= TESTSHOT_START) && (ishot <= TESTSHOT_END) &&
+		           ((ishot - TESTSHOT_START) % TESTSHOT_INCR == 0)) {
 			swstestshot = 1;
 		}
-
 		if (ntr > 0)
 		{
 			calc_res_PSV(seisPSV, seisPSVfwi, (*acq).recswitch, (*acq).recpos, (*acq).recpos_loc, ntr_glob, ntr, nsrc_glob, (*acq).srcpos, ishot, ns, iter, swstestshot);
@@ -204,6 +242,7 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 			double exact_objective_global = 0.0;
 			MPI_Allreduce(&exact_objective_local, &exact_objective_global, 1,
 			              MPI_DOUBLE, MPI_SUM, SHOT_COMM);
+			exact_total_objective += exact_objective_global;
 			memset(&exact_request, 0, sizeof(exact_request));
 			exact_request.wave = wavePSV;
 			exact_request.pml = wavePSV_PML;
@@ -216,6 +255,7 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 			exact_request.hc = hc;
 			exact_request.Ws = Ws;
 			exact_request.Wr = Wr;
+			exact_request.shot = ishot;
 			exact_request.iter = iter;
 			exact_request.stage = nstage;
 			exact_request.nsrc = nsrc;
@@ -228,7 +268,7 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 			exact_request.DTINV_help = DTINV_help;
 			exact_request.req_send = req_send;
 			exact_request.req_rec = req_rec;
-			exact_request.base_objective = exact_objective_global;
+			exact_request.base_objective = exact_total_objective;
 			visco_psv_exact_finish(&exact_request);
 		}
 
@@ -437,6 +477,8 @@ double grad_obj_psv(struct wavePSV *wavePSV, struct wavePSV_PML *wavePSV_PML, st
 			}
 		}
 	
+	if (exact_visco_path && nsrc > 1) write_exact_shot_sum(fwiPSV);
+
 	/* calculate L2 norm of all CPUs*/
 	L2sum = 0.0;
 	L2_tmp = (*seisPSVfwi).L2;
