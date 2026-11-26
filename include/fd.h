@@ -1429,6 +1429,30 @@ int visco_sh_exact_build_preconditioned_step(
 float visco_sh_exact_initial_alpha(float eps_scale, int adaptive,
         float factor, int iteration, float previous_alpha);
 
+/* SH-MASK (task packet SH-MASKE 2026-11-26): update mask from file
+ * (SWS_TAPER_FILE/TFILE) and source taper (SWS_TAPER_GRAD_SOURCES,
+ * SRTSHAPE 3, SRTRADIUS, FILTSIZE) at the exact SH optimizer boundary. */
+struct visco_sh_exact_mask_report {
+   double fixed_change_max;   /* max |trial - base| on fixed cells, all classes */
+   double taper_share;        /* L2 share of the primary change with T < 1, -1 off */
+   double max_change;         /* max |primary change| */
+   int max_i, max_j;          /* its global cell (1-based) */
+};
+
+int visco_sh_exact_apply_mask_file(float **mask, int nx, int ny, int pos_x,
+        int pos_y, int nxg, int nyg, const char *tfile);
+
+int visco_sh_exact_build_source_taper(float **taper, float **mask, int nx,
+        int ny, int pos_x, int pos_y, float dh, float **srcpos, int nsrc,
+        float radius, int filtsize);
+
+int visco_sh_exact_apply_taper_metric(float **metric, float **taper, int nx,
+        int ny);
+
+int visco_sh_exact_mask_change_report(float **base[3], float **trial[3],
+        float **mask, float **taper, int nx, int ny, int pos_x, int pos_y,
+        int nyg, struct visco_sh_exact_mask_report *report);
+
 /* SH-LBFGS-01 (docs/sh_lbfgs_01_contract.md): limited-memory BFGS direction
  * in class-scaled variables with H0 = gamma * diag(w * P). */
 #define VISCO_SH_EXACT_LBFGS_MAX_MEMORY 20
