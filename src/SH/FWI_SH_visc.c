@@ -669,12 +669,28 @@ MPI_Barrier(MPI_COMM_WORLD);
 acq.srcpos=sources(&nsrc);
 
 if(SWS_TAPER_FILE==1){
-    /* SH-MASK: cells with file value 0 are fixed (AND with the CPML mask). */
-    exact_sh_require_collective_success(
-            visco_sh_exact_apply_mask_file(exact_update_mask,NX,NY,POS[1],POS[2],
-                    NXG,NYG,TFILE),
-            "Exact viscoelastic SH FWI: SWS_TAPER_FILE = 1 needs TFILE_u.bin and TFILE_rho.bin "
-            "of NXG x NYG float values, each exactly 0 or 1, both files equal.");
+    /* SH-MASK: cells with file value 0 are fixed (AND with the CPML mask).
+       The message names the violated condition (smallest status of all ranks). */
+    int exact_mask_status, exact_mask_status_all=0;
+    const char *exact_mask_reason;
+    char exact_mask_message[STRING_SIZE2+2*STRING_SIZE];
+    exact_mask_status=visco_sh_exact_apply_mask_file(exact_update_mask,NX,NY,
+            POS[1],POS[2],NXG,NYG,TFILE);
+    if(MPI_Allreduce(&exact_mask_status,&exact_mask_status_all,1,MPI_INT,MPI_MIN,
+                     MPI_COMM_WORLD)!=MPI_SUCCESS)
+        err("Exact SH mask-file reconciliation failed.");
+    switch(exact_mask_status_all){
+        case -2: exact_mask_reason="a file is missing or cannot be read"; break;
+        case -3: exact_mask_reason="a file does not hold exactly NXG x NYG float32 values"; break;
+        case -4: exact_mask_reason="a value is not exactly 0 or 1"; break;
+        case -5: exact_mask_reason="the _u.bin and _rho.bin files differ"; break;
+        case -6: exact_mask_reason="memory allocation failed"; break;
+        default: exact_mask_reason="invalid arguments"; break;
+    }
+    snprintf(exact_mask_message,sizeof(exact_mask_message),
+             "Exact viscoelastic SH FWI: SWS_TAPER_FILE = 1, mask files %s_u.bin and %s_rho.bin "
+             "rejected: %s (status %d).",TFILE,TFILE,exact_mask_reason,exact_mask_status_all);
+    exact_sh_require_collective_success(exact_mask_status_all,exact_mask_message);
 }
 if(SWS_TAPER_GRAD_SOURCES==1){
     /* SH-MASK: source taper T (SRTSHAPE 3); cells with T = 0 are fixed. */

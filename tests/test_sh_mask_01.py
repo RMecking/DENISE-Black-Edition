@@ -16,8 +16,11 @@ M6  the L-BFGS direction equals the reference whose pairs live on the
     effective mask only and whose initial metric is T * P;
 M7  directional derivative of J along the masked, tapered direction
     (central differences, descent);
-M8  decompositions: models bitwise equal (steepest descent, MAX scaling);
-M9  configuration aborts before the first iteration.
+M8  decompositions: mask, taper and fixed cells bitwise; models, gradient,
+    step and log within the decomposition spread of the base (DECOMP_TOL);
+M9  configuration aborts before the first iteration, naming the violated
+    condition of the mask file;
+M10 two sources: T is the minimum over the sources.
 """
 
 from __future__ import annotations
@@ -386,38 +389,129 @@ def test_m7_directional_derivative_along_masked_tapered_direction(driver_case: d
 
 # M8 --------------------------------------------------------------------------
 
+# The exact SH FWI of the base c76ce8ba is not bitwise reproducible across MPI
+# decompositions: with all switches off, the raw gradient of iteration 1 (same
+# start model) differs between 1x1 and 2x1 / 1x2 / 2x2 in its last FP32 bits;
+# models then differ by about 1 ulp in a few cells and the differences grow in
+# iteration 2 (independent review 2026-11-26, section 7, and a base-binary
+# measurement on this 32x32 fixture, 3 optimizer configurations x 4
+# decompositions x 2 iterations, relative to the 1x1 run):
+#   raw gradient and step, iteration 1          <= 3.6e-7 of the field maximum
+#   raw gradient and step, iteration 2          <= 1.3e-4
+#   models after iteration 1 and 2              <= 9.6e-8 of the class maximum
+#   logged J (columns 5-8)                      <= 4.1e-5 of the start J
+#   logged step lengths (columns 1-4)           <= 4.5e-5 relative
+# The package claim is therefore checked bitwise only where it is the
+# package's own: effective mask, taper, fixed cells at the start value, and a
+# zero change on fixed cells in the diagnostics.  Everything that inherits the
+# base's decomposition spread is checked with a tolerance about ten times the
+# base measurement.  This corrects a test that demanded more than the base
+# guarantees; it does not weaken a package claim.
+DECOMP_TOL = {"grad1": 1.0e-6, "grad2": 1.0e-3, "model": 1.0e-6, "j": 4.0e-4,
+              "alpha": 4.0e-4}
+
+
+def _rel_field(a: Path, b: Path) -> float:
+    x, y = _read_native(a), _read_native(b)
+    scale = max(abs(v) for v in x)
+    assert scale > 0.0, a
+    return max(abs(u - v) for u, v in zip(x, y)) / scale
+
+
 @pytest.mark.integration
-def test_m8_decompositions_bitwise_steepest_descent(driver_case: dict) -> None:
-    """Mask, taper, models, misfit log and mask diagnostics are bytewise equal
-    for 1x1, 2x1, 1x2 and 2x2 ranks.  The raw exact gradient (and hence the
-    step) differs between decompositions in the last FP32 bits already at the
-    base c76ce8ba (checked against the base binary); it is compared with the
-    SH-LBFGS-01 step tolerance."""
+@pytest.mark.parametrize("config", ["max_sd", "rms_precond_lbfgs"])
+def test_m8_decompositions(driver_case: dict, config: str) -> None:
+    """1x1, 2x1, 1x2, 2x2: mask, taper and fixed cells bitwise; the rest within
+    the decomposition spread of the base (see DECOMP_TOL)."""
     root = driver_case["root"]
     mask_name = _write_mask_files(root, "m8", _file_mask())
     switches = _switches(driver_case, mask=mask_name, radius=55.0, filtsize=1)
+    options = (dict(scaling=2) if config == "max_sd"
+               else dict(scaling=1, precond=2, lbfgs=1))
+    eff = _effective_mask(_file_mask(), _taper_reference(55.0, 1))
+    start = [struct.pack(f"={DRIVER_CELLS}f", *v) for v in _start(driver_case)]
     outs = {}
     for procs in ((1, 1), (2, 1), (1, 2), (2, 2)):
-        run, out = _fwi(driver_case, f"m8_{procs[0]}x{procs[1]}", itermax=2, scaling=2,
-                        nprocx=procs[0], nprocy=procs[1], taper=switches)
+        run, out = _fwi(driver_case, f"m8_{config}_{procs[0]}x{procs[1]}", itermax=2,
+                        nprocx=procs[0], nprocy=procs[1], taper=switches, **options)
         _ok(run)
-        outs[procs] = (out, MASK_LINE.findall(run.stdout), _misfit(driver_case))
-    exact = MODEL_SUFFIXES + ("update_mask", "taper")
-    close = GRAD_SUFFIXES + STEP_SUFFIXES
-    ref_out, ref_lines, ref_rows = outs[(1, 1)]
-    for procs, (out, lines, rows) in outs.items():
-        assert rows == ref_rows, procs
-        assert [l[:3] + l[4:] for l in lines] == [l[:3] + l[4:] for l in ref_lines], procs
+        lines = MASK_LINE.findall(run.stdout)
+        assert len(lines) == 2 and all(float(l[2]) == 0.0 for l in lines), lines
+        outs[procs] = (out, _misfit(driver_case))
+    ref_out, ref_rows = outs[(1, 1)]
+    j1 = float(ref_rows[0][4])
+    for procs, (out, rows) in outs.items():
+        assert len(rows) == len(ref_rows) == 2
+        for r0, r in zip(ref_rows, rows):
+            for c in range(4, 8):
+                assert abs(float(r[c]) - float(r0[c])) <= DECOMP_TOL["j"] * j1, (procs, c)
+            for c in range(0, 4):
+                assert abs(float(r[c]) - float(r0[c])) <= \
+                    DECOMP_TOL["alpha"] * abs(float(r0[c])), (procs, c)
         for it in (1, 2):
-            a = _files(driver_case, ref_out, it, exact + close)
-            b = _files(driver_case, out, it, exact + close)
-            for s in exact:
+            a = _files(driver_case, ref_out, it, MODEL_SUFFIXES + GRAD_SUFFIXES +
+                       STEP_SUFFIXES + ("update_mask", "taper"))
+            b = _files(driver_case, out, it, MODEL_SUFFIXES + GRAD_SUFFIXES +
+                       STEP_SUFFIXES + ("update_mask", "taper"))
+            for s in ("update_mask", "taper"):                      # bitwise
                 assert a[s].read_bytes() == b[s].read_bytes(), (procs, it, s)
-            for s in close:
-                x, y = _read_native(a[s]), _read_native(b[s])
-                scale = max(abs(v) for v in x)
-                assert scale > 0.0 and max(abs(u - v) for u, v in zip(x, y)) <= \
-                    STEP_TOLERANCE * scale, (procs, it, s)
+            for c, s in enumerate(MODEL_SUFFIXES):                   # fixed cells bitwise
+                got = b[s].read_bytes()
+                for x in range(N):
+                    for y in range(N):
+                        if eff[y][x] == 0.0:
+                            k = 4 * (x * N + y)
+                            assert got[k:k + 4] == start[c][k:k + 4], (procs, it, s, x, y)
+                assert _rel_field(a[s], b[s]) <= DECOMP_TOL["model"], (procs, it, s)
+            for s in GRAD_SUFFIXES + STEP_SUFFIXES:
+                tol = DECOMP_TOL["grad1"] if it == 1 else DECOMP_TOL["grad2"]
+                assert _rel_field(a[s], b[s]) <= tol, (procs, it, s)
+
+
+# N4 (review): T is the minimum over several sources -----------------------------
+
+TWO_SOURCES = ((160.0, 160.0), (220.0, 200.0))   # grid (16, 16) and (22, 20), radii overlap
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("procs", [(1, 1), (2, 2)])
+def test_m10_taper_is_minimum_over_sources(driver_case: dict, procs) -> None:
+    root = driver_case["root"]
+    (root / "source/two.dat").write_text(
+        "2\n" + "".join(f"{x:g} 0 {y:g} 0 20 1 0 1\n" for x, y in TWO_SOURCES),
+        encoding="ascii")
+    two = {"SOURCE_FILE": "source/two.dat", "SEIS_FILE_VY": "su/two_y.su",
+           "DATA_DIR": "su/two", "TESTSHOTS": "1, 2, 1"}
+    if not (root / "su/two_y.su.shot2").exists():
+        forward = root / "two_forward.inp"
+        from tests.utilities.sh_fwi_fixture import write_sh_parameter
+        write_sh_parameter(forward)
+        _patch(forward, two)
+        _ok(_run_denise(driver_case["binary"], driver_case["mpiexec"], root, forward,
+                        driver_case["workflows"]["one"]))
+        assert (root / "su/two_y.su.shot2").exists()
+    run, out = _fwi(driver_case, f"m10_{procs[0]}x{procs[1]}", nprocx=procs[0],
+                    nprocy=procs[1], taper={**two, **_switches(driver_case, radius=55.0)})
+    _ok(run)
+    sources = tuple((int(round(x / DH)), int(round(y / DH))) for x, y in TWO_SOURCES)
+    taper = _taper_reference(55.0, 0, sources)
+    single = [_taper_reference(55.0, 0, (s,)) for s in sources]
+    # The minimum is exercised: cells where both single-source tapers are < 1
+    # and differ, and cells reached only by the second source.
+    both = [(i, j) for j in range(N) for i in range(N)
+            if single[0][j][i] < 1.0 and single[1][j][i] < 1.0
+            and single[0][j][i] != single[1][j][i]]
+    assert len(both) > 5
+    got = _grids(driver_case, out, 1, ("taper",))[0]
+    for j in range(N):
+        for i in range(N):
+            w = taper[j][i]
+            assert abs(got[j][i] - w) <= 1.2e-7 * max(abs(w), 1e-30), (i, j, got[j][i], w)
+    for i, j in both:
+        assert got[j][i] == min(single[0][j][i], single[1][j][i]) or \
+            abs(got[j][i] - min(single[0][j][i], single[1][j][i])) <= 1.2e-7
+    assert _grids(driver_case, out, 1, ("update_mask",))[0] == _effective_mask(None, taper)
+    assert got[sources[1][1] - 1][sources[1][0] - 1] == 0.0      # second source cell fixed
 
 
 # M9 --------------------------------------------------------------------------
@@ -471,3 +565,14 @@ def test_m9_configuration_aborts_before_first_iteration(driver_case: dict, name:
     assert "TDFWI ITERATION" not in run.stdout, run.stdout[-3000:]
     assert not (driver_case["root"] / "log/misfit").exists()
     assert not list((driver_case["root"] / "model").glob(f"{Path(out).name}_*"))
+    if name in ABORT_REASONS:                     # review N5: the violated condition
+        assert ABORT_REASONS[name] in run.stdout, run.stdout[-3000:]
+
+
+ABORT_REASONS = {
+    "file_missing": "rejected: a file is missing or cannot be read (status -2)",
+    "file_short": "rejected: a file does not hold exactly NXG x NYG float32 values (status -3)",
+    "file_half_value": "rejected: a value is not exactly 0 or 1 (status -4)",
+    "files_differ": "rejected: the _u.bin and _rho.bin files differ (status -5)",
+    "file_all_fixed": "the update mask leaves no free cell",
+}

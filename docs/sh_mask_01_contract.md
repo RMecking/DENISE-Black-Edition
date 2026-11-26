@@ -68,8 +68,11 @@ preconditioner, otherwise SH-PRECOND-01; product in double, stored as float):
 - L-BFGS: pairs from the raw gradient on the free cells, initial metric
   `w * D`; the descent test of SH-LBFGS-01 is unchanged.
 
-`D` is diagonal and non-negative, so every direction is a descent direction
-of the unchanged objective.
+The fallback direction `D * g` (before the positive class scaling) is a
+descent direction of the unchanged objective because `D` is diagonal and
+non-negative. The L-BFGS direction is not a descent direction because of `D`;
+it is used only if the unchanged descent test of SH-LBFGS-01 passes, and
+otherwise the memory is cleared and the fallback direction is used.
 
 ## 5. Rejections (collective, before iteration 1, no model output)
 
@@ -90,4 +93,25 @@ iteration
 (must be 0); `taper_share` the L2 share of the primary-class change on cells
 with `T < 1` (-1 without taper); `max_change` and its position (global cell
 times `DH`) the largest primary-class change. With `OPT_DIAG_OUT = 1` the
-fields `.update_mask` and `.taper` are written per iteration.
+fields `.update_mask` and `.taper` are written per iteration. With the source
+taper and `OPT_PRECOND > 0`, the diagnostic field `.precond` holds the metric
+`D = T * P` that enters the step and L-BFGS, not the preconditioner `P` alone.
+
+A rejected mask file names the violated condition and the status code
+(-2 missing or unreadable, -3 wrong size, -4 a value other than 0 or 1,
+-5 `_u.bin` and `_rho.bin` differ, -6 allocation).
+
+## 7. MPI decompositions
+
+Mask, taper and the fixed cells are bitwise equal for every decomposition
+(they are built locally from global indices). The exact SH FWI of the base
+is not bitwise reproducible across decompositions: with all switches off, the
+raw gradient of iteration 1 differs in its last FP32 bits (up to 3.6e-7 of
+its maximum on the 32x32 test fixture), models then differ by about 1 ulp in
+a few cells, and the differences grow in later iterations (gradient up to
+1.3e-4 in iteration 2; logged J up to 4.1e-5 of the start J). This was
+measured with the base binary (independent review of 2026-11-26, section 7)
+and is not caused by this package. The decomposition test (M8) therefore
+checks mask, taper and fixed cells bitwise and the other outputs with about
+ten times the base spread; this corrects a test that asked more than the base
+guarantees and does not weaken a claim of this package.
