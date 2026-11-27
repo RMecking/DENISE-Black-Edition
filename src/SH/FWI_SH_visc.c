@@ -138,6 +138,9 @@ extern int GRAD_FILTER, MODEL_FILTER, TAPER, TRKILL;
 extern int SWS_TAPER_GRAD_VERT, SWS_TAPER_GRAD_HOR;
 extern int SWS_TAPER_GRAD_SOURCES, SWS_TAPER_CIRCULAR_PER_SHOT;
 extern int SWS_TAPER_FILE;
+extern int SRTSHAPE, FILTSIZE;          /* SH-MASK source taper */
+extern float SRTRADIUS, DH;
+extern char TFILE[STRING_SIZE];         /* SH-MASK mask file basename */
 extern int RUN_MULTIPLE_SHOTS, NSHOTS;
 extern int TESTSHOT_START, TESTSHOT_END, TESTSHOT_INCR;
 extern int SPATFILTER, TIMEWIN, INV_STF, N_ORDER, OFFSET_MUTE;
@@ -211,6 +214,11 @@ double exact_lbfgs_sigma[3];
 static const char *exact_lbfgs_action_names[4]={"sd_empty","sd_reset","sd_fallback","lbfgs"};
 static const char *exact_lbfgs_pair_names[3]={"none","stored","skipped"};
 int exact_receiver_extent_valid=0, exact_k;
+/* SH-MASK: update mask from file and source taper (metric factor). */
+float **exact_taper=NULL;
+float **exact_mask_base[3], **exact_mask_trial[3];
+struct visco_sh_exact_mask_report exact_mask_report;
+int exact_mask_active=0;
 struct visco_sh_exact_trial_state_request exact_trial_state;
 struct visco_sh_exact_trial_objective_request exact_trial_objective;
 struct visco_sh_exact_line_search_request exact_line_search;
@@ -258,9 +266,11 @@ exact_sh_require_config_int("TESTSHOT_END",TESTSHOT_END,NSHOTS,NSHOTS,0);
 exact_sh_require_config_int("TESTSHOT_INCR",TESTSHOT_INCR,1,1,0);
 exact_sh_require_config_int("SWS_TAPER_GRAD_VERT",SWS_TAPER_GRAD_VERT,0,0,0);
 exact_sh_require_config_int("SWS_TAPER_GRAD_HOR",SWS_TAPER_GRAD_HOR,0,0,0);
-exact_sh_require_config_int("SWS_TAPER_GRAD_SOURCES",SWS_TAPER_GRAD_SOURCES,0,0,0);
+/* SH-MASK: source taper (record 73) and mask file (record 78) are admitted;
+   their further checks follow the OPT_STEP_SCALING checks below. */
+exact_sh_require_config_int("SWS_TAPER_GRAD_SOURCES",SWS_TAPER_GRAD_SOURCES,0,1,0);
 exact_sh_require_config_int("SWS_TAPER_CIRCULAR_PER_SHOT",SWS_TAPER_CIRCULAR_PER_SHOT,0,0,0);
-exact_sh_require_config_int("SWS_TAPER_FILE",SWS_TAPER_FILE,0,0,0);
+exact_sh_require_config_int("SWS_TAPER_FILE",SWS_TAPER_FILE,0,1,0);
 exact_sh_require_collective_success(L<1,
         "Exact viscoelastic SH FWI requires L >= 1 relaxation mechanism.");
 exact_sh_require_config_int("Q_PARAMETERIZATION_MODE",Q_PARAMETERIZATION_MODE,
@@ -298,6 +308,19 @@ exact_sh_require_collective_success(
         !isfinite(OPT_PRECOND_EPS) || OPT_PRECOND_EPS<=0.0f || OPT_PRECOND_EPS>1.0f,
         "Exact viscoelastic SH FWI: OPT_PRECOND_EPS must be finite, > 0 and <= 1.");
 exact_sh_require_config_int("OPT_ALPHA_ADAPT",OPT_ALPHA_ADAPT,0,1,0);
+/* SH-MASK controls: both act on the cell mask of OPT_STEP_SCALING 1/2. */
+exact_mask_active=(SWS_TAPER_FILE==1 || SWS_TAPER_GRAD_SOURCES==1);
+exact_sh_require_collective_success(
+        exact_mask_active && OPT_STEP_SCALING==0,
+        "Exact viscoelastic SH FWI: SWS_TAPER_FILE and SWS_TAPER_GRAD_SOURCES require OPT_STEP_SCALING 1 or 2.");
+if(SWS_TAPER_GRAD_SOURCES==1){
+    exact_sh_require_config_int("SRTSHAPE",SRTSHAPE,3,3,0);
+    exact_sh_require_collective_success(
+            !isfinite(SRTRADIUS) || SRTRADIUS<DH,
+            "Exact viscoelastic SH FWI: SRTRADIUS must be finite and >= DH.");
+    exact_sh_require_collective_success(FILTSIZE<0,
+            "Exact viscoelastic SH FWI: FILTSIZE must be >= 0.");
+}
 exact_sh_require_collective_success(
         !isfinite(OPT_ALPHA_ADAPT_FACTOR) || OPT_ALPHA_ADAPT_FACTOR<1.0f,
         "Exact viscoelastic SH FWI: OPT_ALPHA_ADAPT_FACTOR must be finite and >= 1.");
@@ -642,8 +665,67 @@ hc = holbergcoeff();
 
 MPI_Barrier(MPI_COMM_WORLD);
 
-/* Reading source positions from SOURCE_FILE */ 	
+/* Reading source positions from SOURCE_FILE */
 acq.srcpos=sources(&nsrc);
+
+if(SWS_TAPER_FILE==1){
+    /* SH-MASK: cells with file value 0 are fixed (AND with the CPML mask).
+       The message names the violated condition (smallest status of all ranks). */
+    int exact_mask_status, exact_mask_status_all=0;
+    const char *exact_mask_reason;
+    char exact_mask_message[STRING_SIZE2+2*STRING_SIZE];
+    exact_mask_status=visco_sh_exact_apply_mask_file(exact_update_mask,NX,NY,
+            POS[1],POS[2],NXG,NYG,TFILE);
+    if(MPI_Allreduce(&exact_mask_status,&exact_mask_status_all,1,MPI_INT,MPI_MIN,
+                     MPI_COMM_WORLD)!=MPI_SUCCESS)
+        err("Exact SH mask-file reconciliation failed.");
+    switch(exact_mask_status_all){
+        case -2: exact_mask_reason="a file is missing or cannot be read"; break;
+        case -3: exact_mask_reason="a file does not hold exactly NXG x NYG float32 values"; break;
+        case -4: exact_mask_reason="a value is not exactly 0 or 1"; break;
+        case -5: exact_mask_reason="the _u.bin and _rho.bin files differ"; break;
+        case -6: exact_mask_reason="memory allocation failed"; break;
+        default: exact_mask_reason="invalid arguments"; break;
+    }
+    snprintf(exact_mask_message,sizeof(exact_mask_message),
+             "Exact viscoelastic SH FWI: SWS_TAPER_FILE = 1, mask files %s_u.bin and %s_rho.bin "
+             "rejected: %s (status %d).",TFILE,TFILE,exact_mask_reason,exact_mask_status_all);
+    exact_sh_require_collective_success(exact_mask_status_all,exact_mask_message);
+}
+if(SWS_TAPER_GRAD_SOURCES==1){
+    /* SH-MASK: source taper T (SRTSHAPE 3); cells with T = 0 are fixed. */
+    exact_taper = matrix(1,NY,1,NX);
+    exact_sh_require_collective_success(
+            visco_sh_exact_build_source_taper(exact_taper,exact_update_mask,NX,NY,
+                    POS[1],POS[2],DH,acq.srcpos,nsrc,SRTRADIUS,FILTSIZE),
+            "Exact SH source-taper construction failed.");
+    if(OPT_PRECOND==0){
+        /* T is then the whole metric factor of the preconditioned step. */
+        exact_work_primary = matrix(1,NY,1,NX);
+        exact_work_rho = matrix(1,NY,1,NX);
+        exact_work_q = matrix(1,NY,1,NX);
+    }
+}
+if(exact_mask_active){
+    double exact_free_local=0.0, exact_free_global=0.0;
+    for(exact_j=1;exact_j<=NY;exact_j++){
+        for(exact_i=1;exact_i<=NX;exact_i++){
+            if(exact_update_mask[exact_j][exact_i]==1.0f) exact_free_local+=1.0;
+        }
+    }
+    exact_sh_require_collective_success(
+            MPI_Allreduce(&exact_free_local,&exact_free_global,1,MPI_DOUBLE,
+                    MPI_SUM,MPI_COMM_WORLD)!=MPI_SUCCESS,
+            "Exact SH update-mask reduction failed.");
+    exact_sh_require_collective_success(exact_free_global<1.0,
+            "Exact viscoelastic SH FWI: the update mask leaves no free cell.");
+    if(MYID==0){
+        printf("Exact SH update mask: SWS_TAPER_FILE %d TFILE %s SWS_TAPER_GRAD_SOURCES %d "
+               "SRTSHAPE %d SRTRADIUS %e FILTSIZE %d free_cells %.0f of %d\n",SWS_TAPER_FILE,
+               SWS_TAPER_FILE ? TFILE : "-",SWS_TAPER_GRAD_SOURCES,SRTSHAPE,
+               (double)SRTRADIUS,FILTSIZE,exact_free_global,NXG*NYG);
+    }
+}
 
 
 /* create model grids */
@@ -1090,9 +1172,14 @@ exact_status=visco_sh_exact_build_steepest_subtractive_step(
     exact_step_scaling.weight_primary=exact_w_primary;
     exact_step_scaling.weight_rho=exact_w_rho;
     exact_step_scaling.weight_q=exact_w_q;
-    if(OPT_PRECOND==0){
+    if(OPT_PRECOND==0 && exact_taper==NULL){
     exact_status=visco_sh_exact_build_scaled_steepest_step(
             &exact_optimizer_boundary,&exact_step_scaling);
+    } else if(OPT_PRECOND==0){
+        /* SH-MASK: source taper as the metric factor, q = T * g. */
+        exact_status=visco_sh_exact_build_preconditioned_step(
+                &exact_optimizer_boundary,&exact_step_scaling,exact_taper,
+                exact_work_primary,exact_work_rho,exact_work_q);
     } else {
         memset(&exact_precond_request,0,sizeof(exact_precond_request));
         exact_precond_request.precond_mode=OPT_PRECOND;
@@ -1106,6 +1193,12 @@ exact_status=visco_sh_exact_build_steepest_subtractive_step(
         exact_sh_require_collective_success(
                 visco_sh_exact_build_illumination_precond(&exact_precond_request),
                 "Exact SH illumination preconditioner construction failed.");
+        if(exact_taper!=NULL){
+            /* SH-MASK: metric D = T * P (also the L-BFGS initial metric). */
+            exact_sh_require_collective_success(
+                    visco_sh_exact_apply_taper_metric(exact_precond,exact_taper,NX,NY),
+                    "Exact SH source-taper metric failed.");
+        }
         exact_status=visco_sh_exact_build_preconditioned_step(
                 &exact_optimizer_boundary,&exact_step_scaling,exact_precond,
                 exact_work_primary,exact_work_rho,exact_work_q);
@@ -1126,7 +1219,7 @@ if(OPT_LBFGS==1){
     exact_lbfgs_request.grad_rho=exact_grad_rho;
     exact_lbfgs_request.grad_q=exact_grad_q;
     exact_lbfgs_request.update_mask=exact_update_mask;
-    exact_lbfgs_request.precond=(OPT_PRECOND>0) ? exact_precond : NULL;
+    exact_lbfgs_request.precond=(OPT_PRECOND>0) ? exact_precond : exact_taper;
     exact_lbfgs_request.weight_primary=exact_w_primary;
     exact_lbfgs_request.weight_rho=exact_w_rho;
     exact_lbfgs_request.weight_q=exact_w_q;
@@ -1156,6 +1249,12 @@ if(OPT_DIAG_OUT==1){
     if(OPT_PRECOND!=0){
         exact_sh_write_diag_field(exact_energy,"energy",nstage,iter);
         exact_sh_write_diag_field(exact_precond,"precond",nstage,iter);
+    }
+    if(exact_mask_active){
+        /* SH-MASK: effective mask (CPML, file, T = 0) and source taper. */
+        exact_sh_write_diag_field(exact_update_mask,"update_mask",nstage,iter);
+        if(exact_taper!=NULL)
+            exact_sh_write_diag_field(exact_taper,"taper",nstage,iter);
     }
 }
 
@@ -1227,6 +1326,27 @@ exact_trial_state.alpha=exact_line_search_result.selected_alpha;
 exact_status=visco_sh_exact_build_trial_parameter_state(&exact_trial_state);
 exact_sh_require_collective_success(exact_status,
         "Exact SH accepted Trial construction failed.");
+if(exact_mask_active){
+    /* SH-MASK diagnostics of the accepted update (fixed cells must be 0). */
+    exact_mask_base[0]=exact_base_primary;
+    exact_mask_base[1]=exact_base_rho;
+    exact_mask_base[2]=exact_base_q;
+    exact_mask_trial[0]=exact_trial_primary;
+    exact_mask_trial[1]=exact_trial_rho;
+    exact_mask_trial[2]=exact_trial_q;
+    exact_sh_require_collective_success(
+            visco_sh_exact_mask_change_report(exact_mask_base,exact_mask_trial,
+                    exact_update_mask,exact_taper,NX,NY,POS[1],POS[2],NYG,
+                    &exact_mask_report),
+            "Exact SH update-mask report failed.");
+    if(MYID==0){
+        printf("Exact SH update mask: stage %d iteration %d fixed_change_max %e "
+               "taper_share %e max_change %e at x %e y %e\n",nstage,iter,
+               exact_mask_report.fixed_change_max,exact_mask_report.taper_share,
+               exact_mask_report.max_change,(double)exact_mask_report.max_i*DH,
+               (double)exact_mask_report.max_j*DH);
+    }
+}
 
 for(exact_j=1;exact_j<=NY;exact_j++){
     for(exact_i=1;exact_i<=NX;exact_i++){
@@ -1356,6 +1476,7 @@ free_matrix(exact_step_primary,1,NY,1,NX);
 free_matrix(exact_step_rho,1,NY,1,NX);
 free_matrix(exact_step_q,1,NY,1,NX);
 if(exact_update_mask!=NULL) free_matrix(exact_update_mask,1,NY,1,NX);
+if(exact_taper!=NULL) free_matrix(exact_taper,1,NY,1,NX);
 if(exact_energy!=NULL) free_matrix(exact_energy,1,NY,1,NX);
 if(exact_precond!=NULL) free_matrix(exact_precond,1,NY,1,NX);
 if(exact_receiver_term!=NULL) free_matrix(exact_receiver_term,1,NY,1,NX);
